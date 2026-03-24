@@ -165,9 +165,10 @@ function closeGroupPickOverlay() {
 
 // ══ SOCKET ══
 // ══ Play explosion waves ทีละ wave ══
-const WAVE_DELAY = 450; // ms ต่อ wave
+const WAVE_DELAY = 520; // ms ต่อ wave (เท่ากับ STEP_DELAY ใน offline)
 let _pendingExplosionWaves = 0;
 let _cardVfxPlaying = false;
+let _vfxFinishTime = 0;
 
 async function playExplosionWaves(waves, stateData) {
   const rows = stateData.rows || stateData.size || 8;
@@ -179,32 +180,39 @@ async function playExplosionWaves(waves, stateData) {
       if (chainLen >= 4) SFX.bigChain && SFX.bigChain();
       else SFX.explode && SFX.explode(chainLen);
 
+      // Phase 1: burst + ripple + flying orbs (ทันที)
       waveExplosions.forEach(({ r, c, owner }) => {
         const el = document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
         if (el) {
           el.classList.add('bursting');
-          setTimeout(() => el.classList.remove('bursting'), WAVE_DELAY - 40);
+          setTimeout(() => el.classList.remove('bursting'), 460);
         }
         if (window.spawnRipple) spawnRipple(r, c, owner);
-
         const nbs = [];
         if (r > 0) nbs.push([r-1, c]);
         if (r < rows-1) nbs.push([r+1, c]);
         if (c > 0) nbs.push([r, c-1]);
         if (c < cols-1) nbs.push([r, c+1]);
         if (window.spawnFlyingOrbs) spawnFlyingOrbs(r, c, owner, nbs);
-
-        // flash neighbors ทันที
-        nbs.forEach(([nr, nc]) => {
-          const nel = document.querySelector(`.cell[data-r="${nr}"][data-c="${nc}"]`);
-          if (nel) {
-            nel.classList.add('explosion-flash');
-            setTimeout(() => nel.classList.remove('explosion-flash'), 180);
-          }
-        });
       });
 
-      setTimeout(resolve, WAVE_DELAY);
+      // Phase 2 (45%): renderGrid + flash neighbors
+      setTimeout(() => {
+        if (typeof renderGrid === 'function') renderGrid(false);
+        waveExplosions.forEach(({ r, c }) => {
+          const nbs = [];
+          if (r > 0) nbs.push([r-1, c]);
+          if (r < rows-1) nbs.push([r+1, c]);
+          if (c > 0) nbs.push([r, c-1]);
+          if (c < cols-1) nbs.push([r, c+1]);
+          nbs.forEach(([nr, nc]) => {
+            const nel = document.querySelector(`.cell[data-r="${nr}"][data-c="${nc}"]`);
+            if (nel) { nel.classList.add('explosion-flash'); setTimeout(() => nel.classList.remove('explosion-flash'), 200); }
+          });
+        });
+        // Phase 3 (55%): resolve
+        setTimeout(resolve, WAVE_DELAY * 0.55);
+      }, WAVE_DELAY * 0.45);
     });
   };
 
@@ -387,9 +395,10 @@ function initSocket() {
           }
         };
 
-        // รอ card animation เสร็จก่อน (ถ้ามี)
-        if (_cardVfxPlaying) {
-          setTimeout(doRender, 600);
+        // รอ card VFX เสร็จก่อน (เหมือน offline vfxFinishTime)
+        const waitMs = Math.max(0, _vfxFinishTime - Date.now() + 200);
+        if (_cardVfxPlaying || waitMs > 50) {
+          setTimeout(doRender, _cardVfxPlaying ? 1800 : waitMs);
         } else {
           doRender();
         }
@@ -462,6 +471,8 @@ function initSocket() {
   socket.on('card_vfx', ({ cardId, targets, playerIdx, vfxData }) => {
     if (!onlineMode) return;
     _cardVfxPlaying = true;
+    // Cards that modify orbs need extra wait (match offline vfxFinishTime)
+    const ORB_CARDS = ['c14','u10','c2','c3','c9','u6','r4','ep5','c4','l3','ep6'];
     const cardDef = (window.CARD_DEFS || []).find(d => d.id === cardId);
     if (cardDef) {
       SFX.card && SFX.card(cardDef.rarity);
@@ -469,9 +480,16 @@ function initSocket() {
       SFX.cardSpecial && SFX.cardSpecial(cardId);
     }
     if (window.spawnCardVfx) {
+      const vfxStart = Date.now();
       spawnCardVfx(cardId, targets || {}, playerIdx, vfxData || {})
         .catch(() => {})
-        .finally(() => { _cardVfxPlaying = false; });
+        .finally(() => {
+          _cardVfxPlaying = false;
+          // track when VFX finished for orb cards
+          if (ORB_CARDS.includes(cardId)) {
+            _vfxFinishTime = Date.now();
+          }
+        });
     } else {
       _cardVfxPlaying = false;
     }
