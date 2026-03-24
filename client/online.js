@@ -171,8 +171,9 @@ let _cardVfxPlaying = false;
 let _vfxFinishTime = 0;
 
 async function playExplosionWaves(waves, stateData) {
-  const rows = stateData.rows || stateData.size || 8;
-  const cols = stateData.cols || rows;
+  // ใช้ STATE โดยตรงเพราะ sync แล้ว
+  const rows = STATE.size || stateData.rows || stateData.size || 8;
+  const cols = STATE.cols || stateData.cols || rows;
 
   const playWave = (waveExplosions) => {
     return new Promise(resolve => {
@@ -378,7 +379,7 @@ function initSocket() {
         const waves = room.state.explosionWaves;
         const finalRender = () => {
           syncStateFromServer(room.state);
-          renderGrid(true);
+          renderGrid(true); // render ทันทีไม่มี wave
           renderHandBar();
           renderScoreboard();
           updateTurnLabel();
@@ -386,10 +387,9 @@ function initSocket() {
 
         const doRender = () => {
           if (waves && waves.length > 0) {
-            // มี explosion: เล่น wave animation ก่อน render สุดท้าย
-            const finalState = room.state;
-            playExplosionWaves(waves, finalState).then(() => {
-              syncStateFromServer(finalState);
+            // sync state ก่อนเล่น animation เพื่อให้ STATE.cols/rows ถูกต้อง
+            syncStateFromServer(room.state);
+            playExplosionWaves(waves, room.state).then(() => {
               renderGrid(true);
               renderHandBar();
               renderScoreboard();
