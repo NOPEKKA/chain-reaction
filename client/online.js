@@ -191,6 +191,7 @@ function closeGroupPickOverlay() {
 const WAVE_DELAY = 300; // ms ต่อ wave — ช้าพอให้เห็นทีละขั้น
 let _pendingExplosionWaves = 0;
 let _rerollsUsed = 0;
+let _cardVfxPlaying = false;
 
 async function playExplosionWaves(waves, stateData) {
   const rows = stateData.rows || stateData.size || 8;
@@ -392,15 +393,30 @@ function initSocket() {
         }
 
         const waves = room.state.explosionWaves;
-        syncStateFromServer(room.state);
-        // render ทันที ไม่รอ animation
-        renderGrid(true);
-        renderHandBar();
-        renderScoreboard();
-        updateTurnLabel();
-        // เล่น animation ทับหลัง render (ไม่ block)
-        if (waves && waves.length > 0) {
-          playExplosionWaves(waves, room.state);
+        const doRender = () => {
+          if (waves && waves.length > 0) {
+            const finalState = room.state;
+            playExplosionWaves(waves, finalState).then(() => {
+              syncStateFromServer(finalState);
+              renderGrid(true);
+              renderHandBar();
+              renderScoreboard();
+              updateTurnLabel();
+            });
+          } else {
+            syncStateFromServer(room.state);
+            renderGrid(true);
+            renderHandBar();
+            renderScoreboard();
+            updateTurnLabel();
+          }
+        };
+
+        // รอ card animation เสร็จก่อน (ถ้ามี)
+        if (_cardVfxPlaying) {
+          setTimeout(doRender, 600);
+        } else {
+          doRender();
         }
 
         if (room.phase === 'playing' && room.state.current === mySlot) {
@@ -467,6 +483,7 @@ function initSocket() {
   // ── VFX ──
   socket.on('card_vfx', ({ cardId, targets, playerIdx, vfxData }) => {
     if (!onlineMode) return;
+    _cardVfxPlaying = true;
     const cardDef = (window.CARD_DEFS || []).find(d => d.id === cardId);
     if (cardDef) {
       SFX.card && SFX.card(cardDef.rarity);
@@ -474,7 +491,11 @@ function initSocket() {
       SFX.cardSpecial && SFX.cardSpecial(cardId);
     }
     if (window.spawnCardVfx) {
-      spawnCardVfx(cardId, targets || {}, playerIdx, vfxData || {}).catch(() => {});
+      spawnCardVfx(cardId, targets || {}, playerIdx, vfxData || {})
+        .catch(() => {})
+        .finally(() => { _cardVfxPlaying = false; });
+    } else {
+      _cardVfxPlaying = false;
     }
   });
 
