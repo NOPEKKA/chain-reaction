@@ -141,24 +141,34 @@ function showGroupPickOverlay(cards, handSize, timeLimit, mySlotName) {
   });
   ov.appendChild(row);
 
-  // Skip button
-  const skipBtn = document.createElement('button');
-  skipBtn.className = 'skip-pick-btn';
-  skipBtn.textContent = '⏭️ ข้าม';
-  skipBtn.addEventListener('click', () => {
-    if (chosen) return;
+  // Reroll button (max 2 per game)
+  const rerollBtn = document.createElement('button');
+  rerollBtn.className = 'skip-pick-btn';
+  const rerollLeft = 2 - _rerollsUsed;
+  rerollBtn.textContent = `🔀 สุ่มใหม่ (เหลือ ${rerollLeft} ครั้ง)`;
+  if (_rerollsUsed >= 2) {
+    rerollBtn.disabled = true;
+    rerollBtn.style.opacity = '0.4';
+  }
+  rerollBtn.addEventListener('click', () => {
+    if (chosen || _rerollsUsed >= 2) return;
+    _rerollsUsed++;
     chosen = true;
     clearAllTimers();
-    socket.emit('group_pick_skip', {}, () => {});
-    skipBtn.style.display = 'none';
-    progRow.textContent = '⏭️ ข้ามแล้ว — รอผู้เล่นอื่น...';
+    socket.emit('group_pick_reroll', {}, (res) => {
+      if (!res?.ok) {
+        // reroll failed - treat as skip
+        socket.emit('group_pick_skip', {}, () => {});
+      }
+    });
+    rerollBtn.style.display = 'none';
+    progRow.textContent = '🔀 สุ่มใหม่แล้ว — รอผู้เล่นอื่น...';
     row.querySelectorAll('.pick-card').forEach(c => {
       c.style.opacity = '0.35'; c.style.pointerEvents = 'none';
     });
-    // safety: ถ้า 8 วินาทีแล้วยัง overlay อยู่ ปิดเลย
     setTimeout(() => closeGroupPickOverlay(), 8000);
   });
-  ov.appendChild(skipBtn);
+  ov.appendChild(rerollBtn);
 
   // เริ่ม countdown
   startCountdown(timeLimit, '#5bc4e0', () => {
@@ -166,9 +176,8 @@ function showGroupPickOverlay(cards, handSize, timeLimit, mySlotName) {
       chosen = true;
       socket.emit('group_pick_skip', {}, () => {});
       progRow.textContent = '⏰ หมดเวลา — รอผู้เล่นอื่น...';
+      setTimeout(() => closeGroupPickOverlay(), 8000);
     }
-    // safety: ปิด overlay หลัง 8 วิ ไม่ว่าจะเกิดอะไร
-    setTimeout(() => closeGroupPickOverlay(), 8000);
   });
 }
 
@@ -183,8 +192,9 @@ function closeGroupPickOverlay() {
 
 // ══ SOCKET ══
 // ══ Play explosion waves ทีละ wave ══
-const WAVE_DELAY = 220; // ms ต่อ wave
+const WAVE_DELAY = 300; // ms ต่อ wave — ช้าพอให้เห็นทีละขั้น
 let _pendingExplosionWaves = 0;
+let _rerollsUsed = 0;
 
 async function playExplosionWaves(waves, stateData) {
   const rows = stateData.rows || stateData.size || 8;
@@ -192,22 +202,18 @@ async function playExplosionWaves(waves, stateData) {
 
   const playWave = (waveExplosions) => {
     return new Promise(resolve => {
-      // เสียง
       const chainLen = waveExplosions.length;
       if (chainLen >= 4) SFX.bigChain && SFX.bigChain();
       else SFX.explode && SFX.explode(chainLen);
 
       waveExplosions.forEach(({ r, c, owner }) => {
-        // burst animation
         const el = document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
         if (el) {
           el.classList.add('bursting');
-          setTimeout(() => el.classList.remove('bursting'), 460);
+          setTimeout(() => el.classList.remove('bursting'), WAVE_DELAY - 40);
         }
-        // ripple
         if (window.spawnRipple) spawnRipple(r, c, owner);
 
-        // flying orbs to neighbors
         const nbs = [];
         if (r > 0) nbs.push([r-1, c]);
         if (r < rows-1) nbs.push([r+1, c]);
@@ -215,15 +221,20 @@ async function playExplosionWaves(waves, stateData) {
         if (c < cols-1) nbs.push([r, c+1]);
         if (window.spawnFlyingOrbs) spawnFlyingOrbs(r, c, owner, nbs);
 
-        // flash neighbors
+        // flash neighbors ทันที
         nbs.forEach(([nr, nc]) => {
           const nel = document.querySelector(`.cell[data-r="${nr}"][data-c="${nc}"]`);
           if (nel) {
             nel.classList.add('explosion-flash');
-            setTimeout(() => nel.classList.remove('explosion-flash'), 200);
+            setTimeout(() => nel.classList.remove('explosion-flash'), 180);
           }
         });
       });
+
+      // กลาง wave: renderGrid ชั่วคราวเพื่อแสดงผลระหว่างระเบิด
+      setTimeout(() => {
+        if (typeof renderGrid === 'function') renderGrid(false);
+      }, WAVE_DELAY / 2);
 
       setTimeout(resolve, WAVE_DELAY);
     });
@@ -375,6 +386,7 @@ function initSocket() {
         onlineMode = true;
         STATE._dead = false;
         _pendingExplosionWaves = 0;
+        _rerollsUsed = 0;
       }
       if (onlineMode) {
         // reset animating ทุกครั้ง
