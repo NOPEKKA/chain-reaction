@@ -153,20 +153,16 @@ function showGroupPickOverlay(cards, handSize, timeLimit, mySlotName) {
   rerollBtn.addEventListener('click', () => {
     if (chosen || _rerollsUsed >= 2) return;
     _rerollsUsed++;
-    chosen = true;
     clearAllTimers();
+    // ปิด overlay เก่า รอ server ส่ง group_pick_start ใหม่
+    closeGroupPickOverlay();
     socket.emit('group_pick_reroll', {}, (res) => {
       if (!res?.ok) {
-        // reroll failed - treat as skip
+        // reroll ไม่ได้ - ข้ามเลย
+        chosen = true;
         socket.emit('group_pick_skip', {}, () => {});
       }
     });
-    rerollBtn.style.display = 'none';
-    progRow.textContent = '🔀 สุ่มใหม่แล้ว — รอผู้เล่นอื่น...';
-    row.querySelectorAll('.pick-card').forEach(c => {
-      c.style.opacity = '0.35'; c.style.pointerEvents = 'none';
-    });
-    setTimeout(() => closeGroupPickOverlay(), 8000);
   });
   ov.appendChild(rerollBtn);
 
@@ -230,11 +226,6 @@ async function playExplosionWaves(waves, stateData) {
           }
         });
       });
-
-      // กลาง wave: renderGrid ชั่วคราวเพื่อแสดงผลระหว่างระเบิด
-      setTimeout(() => {
-        if (typeof renderGrid === 'function') renderGrid(false);
-      }, WAVE_DELAY / 2);
 
       setTimeout(resolve, WAVE_DELAY);
     });
