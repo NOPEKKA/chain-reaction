@@ -455,29 +455,6 @@ io.on('connection', (socket) => {
   // ── ข้ามการ์ด group pick ──
 
 
-  // ── สุ่มการ์ดใหม่ (reroll) ──
-  socket.on('group_pick_reroll', (_data, cb) => {
-    const room = getRoomBySocket(socket.id);
-    if (!room?.groupPick) return cb?.({ ok: true });
-    if (room.phase !== 'group_pick') return cb?.({ ok: true });
-    const member = room.members.find(m => m.socketId === socket.id);
-    if (!member || !room.groupPick.eligible.includes(member.slot)) return cb?.({ ok: false });
-    if (room.groupPick.responses[member.slot] !== undefined) return cb?.({ ok: false });
-
-    // สุ่มการ์ดใหม่ให้คนนี้
-    const newCards = draw3UniqueCards(room.state.keyActive);
-    room.groupPick.choices[member.slot] = newCards;
-
-    cb?.({ ok: true });
-
-    // ส่งการ์ดใหม่ให้คนนี้พร้อม flag isReroll
-    io.to(member.socketId).emit('group_pick_start', {
-      cards: newCards,
-      handSize: room.state.hands[member.slot].length,
-      timeLimit: 30,
-      isReroll: true,
-    });
-  });
 
   socket.on('leave_room', () => {
     const room = getRoomBySocket(socket.id);
