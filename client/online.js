@@ -188,7 +188,7 @@ function closeGroupPickOverlay() {
 
 // ══ SOCKET ══
 // ══ Play explosion waves ทีละ wave ══
-const WAVE_DELAY = 300; // ms ต่อ wave — ช้าพอให้เห็นทีละขั้น
+const WAVE_DELAY = 450; // ms ต่อ wave
 let _pendingExplosionWaves = 0;
 let _rerollsUsed = 0;
 let _cardVfxPlaying = false;
@@ -448,14 +448,19 @@ function initSocket() {
   });
 
   // ── Group pick ──
-  socket.on('group_pick_start', ({ cards, handSize, timeLimit }) => {
+  socket.on('group_pick_start', ({ cards, handSize, timeLimit, isReroll }) => {
     if (!onlineMode) return;
     clearAllTimers();
-    // รอ animation ระเบิดเสร็จก่อนค่อยแสดงการ์ด
     const animDelay = _pendingExplosionWaves > 0 ? _pendingExplosionWaves * WAVE_DELAY + 100 : 0;
     setTimeout(() => {
       SFX.select && SFX.select();
-      showGroupPickOverlay(cards, handSize, timeLimit || CARD_LIMIT, myName);
+      if (isReroll) {
+        // ปิด overlay เก่าก่อนแล้วเปิดใหม่
+        closeGroupPickOverlay();
+        setTimeout(() => showGroupPickOverlay(cards, handSize, timeLimit || CARD_LIMIT, myName), 50);
+      } else {
+        showGroupPickOverlay(cards, handSize, timeLimit || CARD_LIMIT, myName);
+      }
     }, animDelay);
   });
 
