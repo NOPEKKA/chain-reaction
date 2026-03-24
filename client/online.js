@@ -376,8 +376,17 @@ function initSocket() {
         }
 
         const waves = room.state.explosionWaves;
+        const finalRender = () => {
+          syncStateFromServer(room.state);
+          renderGrid(true);
+          renderHandBar();
+          renderScoreboard();
+          updateTurnLabel();
+        };
+
         const doRender = () => {
           if (waves && waves.length > 0) {
+            // มี explosion: เล่น wave animation ก่อน render สุดท้าย
             const finalState = room.state;
             playExplosionWaves(waves, finalState).then(() => {
               syncStateFromServer(finalState);
@@ -387,18 +396,14 @@ function initSocket() {
               updateTurnLabel();
             });
           } else {
-            syncStateFromServer(room.state);
-            renderGrid(true);
-            renderHandBar();
-            renderScoreboard();
-            updateTurnLabel();
+            finalRender();
           }
         };
 
-        // รอ card VFX เสร็จก่อน (เหมือน offline vfxFinishTime)
+        // รอ card VFX เสร็จก่อน (เหมือน offline waitMs = vfxFinishTime - now + 200)
         const waitMs = Math.max(0, _vfxFinishTime - Date.now() + 200);
-        if (_cardVfxPlaying || waitMs > 50) {
-          setTimeout(doRender, _cardVfxPlaying ? 1800 : waitMs);
+        if (waitMs > 50) {
+          setTimeout(doRender, waitMs);
         } else {
           doRender();
         }
@@ -473,6 +478,15 @@ function initSocket() {
     _cardVfxPlaying = true;
     // Cards that modify orbs need extra wait (match offline vfxFinishTime)
     const ORB_CARDS = ['c14','u10','c2','c3','c9','u6','r4','ep5','c4','l3','ep6'];
+    const vfxDur = {
+      c1:600,c2:1400,c3:1100,c4:1400,c5:700,c6:900,c7:500,c8:700,c9:1300,c10:500,c11:700,c13:800,c14:1300,
+      u1:400,u2:700,u3:700,u4:700,u5:500,u6:1100,u7:600,u8:700,u9:600,u10:1100,
+      r1:700,r2:900,r3:900,r4:1500,r5:1300,r6:700,r7:700,r8:1400,
+      sr1:600,sr2:900,sr3:500,
+      ep3:1000,ep4:600,ep5:1400,ep6:1200,e1:500,e2:800,e3:500,e4:800,
+      l1:1400,l2:1800,l3:1800,l4:1400,l5:1300,
+      m1:1800,m2:1500,
+    };
     const cardDef = (window.CARD_DEFS || []).find(d => d.id === cardId);
     if (cardDef) {
       SFX.card && SFX.card(cardDef.rarity);
@@ -480,18 +494,16 @@ function initSocket() {
       SFX.cardSpecial && SFX.cardSpecial(cardId);
     }
     if (window.spawnCardVfx) {
-      const vfxStart = Date.now();
+      // คำนวณ vfxFinishTime ก่อน เหมือน offline
+      const baseDur = (vfxData && (vfxData.dur || vfxData.novaDur)) || vfxDur[cardId] || 500;
+      const extraDur = cardId === 'l3' ? ((vfxData && vfxData.maxDist) || 0) * 55 + 900 : 0;
+      _vfxFinishTime = Date.now() + baseDur + extraDur;
       spawnCardVfx(cardId, targets || {}, playerIdx, vfxData || {})
         .catch(() => {})
-        .finally(() => {
-          _cardVfxPlaying = false;
-          // track when VFX finished for orb cards
-          if (ORB_CARDS.includes(cardId)) {
-            _vfxFinishTime = Date.now();
-          }
-        });
+        .finally(() => { _cardVfxPlaying = false; });
     } else {
       _cardVfxPlaying = false;
+      _vfxFinishTime = 0;
     }
   });
 
