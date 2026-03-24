@@ -170,6 +170,80 @@ let _pendingExplosionWaves = 0;
 let _cardVfxPlaying = false;
 let _vfxFinishTime = 0;
 
+// เล่น explosion ทีละ wave พร้อม apply cells ทีละขั้น (เหมือน offline explodeWave)
+async function playExplosionWavesIncremental(waves, finalState) {
+  const rows = STATE.size || finalState.rows || 8;
+  const cols = STATE.cols || finalState.cols || rows;
+  const STEP = 520; // เหมือน STEP_DELAY offline
+
+  for (const wave of waves) {
+    const explosions = wave.explosions || [];
+    if (!explosions.length) continue;
+
+    // Phase 1: burst + ripple + flying orbs ทันที (เหมือน offline)
+    const chainLen = explosions.length;
+    if (chainLen >= 4) SFX.bigChain && SFX.bigChain();
+    else SFX.explode && SFX.explode(chainLen);
+
+    explosions.forEach(({ r, c, owner }) => {
+      const el = document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+      if (el) { el.classList.add('bursting'); setTimeout(() => el.classList.remove('bursting'), 460); }
+      if (window.spawnRipple) spawnRipple(r, c, owner);
+      const nbs = [];
+      if (r > 0) nbs.push([r-1, c]);
+      if (r < rows-1) nbs.push([r+1, c]);
+      if (c > 0) nbs.push([r, c-1]);
+      if (c < cols-1) nbs.push([r, c+1]);
+      if (window.spawnFlyingOrbs) spawnFlyingOrbs(r, c, owner, nbs);
+    });
+
+    // Phase 2 (45%): apply cells ของ wave นี้ + renderGrid + flash
+    await new Promise(resolve => {
+      setTimeout(() => {
+        // Apply wave นี้ให้ STATE.cells
+        explosions.forEach(({ r, c, owner }) => {
+          if (!STATE.cells[r] || !STATE.cells[r][c]) return;
+          const cell = STATE.cells[r][c];
+          const cap = cell.cap || 4;
+          cell.count -= cap;
+          if (cell.count <= 0) { cell.count = 0; cell.owner = -1; }
+          // บวกให้ neighbors
+          const nbs = [];
+          if (r > 0) nbs.push([r-1, c]);
+          if (r < rows-1) nbs.push([r+1, c]);
+          if (c > 0) nbs.push([r, c-1]);
+          if (c < cols-1) nbs.push([r, c+1]);
+          nbs.forEach(([nr, nc]) => {
+            if (STATE.cells[nr] && STATE.cells[nr][nc]) {
+              STATE.cells[nr][nc].count++;
+              STATE.cells[nr][nc].owner = owner;
+            }
+          });
+        });
+
+        // Render หลัง apply
+        renderGrid(false);
+
+        // Flash neighbors
+        explosions.forEach(({ r, c }) => {
+          const nbs = [];
+          if (r > 0) nbs.push([r-1, c]);
+          if (r < rows-1) nbs.push([r+1, c]);
+          if (c > 0) nbs.push([r, c-1]);
+          if (c < cols-1) nbs.push([r, c+1]);
+          nbs.forEach(([nr, nc]) => {
+            const nel = document.querySelector(`.cell[data-r="${nr}"][data-c="${nc}"]`);
+            if (nel) { nel.classList.add('explosion-flash'); setTimeout(() => nel.classList.remove('explosion-flash'), 200); }
+          });
+        });
+
+        // Phase 3 (55%): resolve
+        setTimeout(resolve, STEP * 0.55);
+      }, STEP * 0.45);
+    });
+  }
+}
+
 async function playExplosionWaves(waves, stateData) {
   // ใช้ STATE โดยตรงเพราะ sync แล้ว
   const rows = STATE.size || stateData.rows || stateData.size || 8;
@@ -387,9 +461,17 @@ function initSocket() {
 
         const doRender = () => {
           if (waves && waves.length > 0) {
-            // sync state ก่อนเล่น animation เพื่อให้ STATE.cols/rows ถูกต้อง
-            syncStateFromServer(room.state);
-            playExplosionWaves(waves, room.state).then(() => {
+            // Sync ขนาด map เท่านั้น ไม่ sync cells (รักษา state เก่าไว้ก่อน)
+            const s = room.state;
+            STATE.size = s.rows || s.size || 8;
+            STATE.cols = s.cols || STATE.size;
+            STATE.players = s.players;
+            // renderGrid ด้วย state เก่าก่อน (ก่อนระเบิด)
+            renderGrid(false);
+            // เล่น wave animation ทีละ wave พร้อม apply cells ทีละขั้น
+            playExplosionWavesIncremental(waves, room.state).then(() => {
+              // sync state สุดท้ายหลัง animation จบ
+              syncStateFromServer(room.state);
               renderGrid(true);
               renderHandBar();
               renderScoreboard();
