@@ -470,11 +470,12 @@ io.on('connection', (socket) => {
 
     cb?.({ ok: true });
 
-    // ส่งการ์ดใหม่ให้คนนี้
+    // ส่งการ์ดใหม่ให้คนนี้พร้อม flag isReroll
     io.to(member.socketId).emit('group_pick_start', {
       cards: newCards,
       handSize: room.state.hands[member.slot].length,
       timeLimit: 30,
+      isReroll: true,
     });
   });
 
