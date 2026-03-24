@@ -153,14 +153,8 @@ function finalizeGroupPick(room) {
 
   room.groupPick = null;
   state.phase = 'playing';
-  state._lastExplosions = null; // clear หลัง broadcast
   broadcastRoom(room);
   sendAllHands(room);
-  } catch(err) {
-    console.error('[processTurnEnd ERROR]', err.message, err.stack);
-    // พยายาม broadcast ถึงแม้ error
-    try { broadcastRoom(room); sendAllHands(room); } catch(e2) {}
-  }
 }
 
 // ── ตรวจว่าครบรอบยัง (ทุกคนที่ยังเล่นอยู่เล่นครบ interval รอบ) ──
@@ -197,14 +191,11 @@ function processTurnEnd(room) {
   if (!room?.state) return;
   const state = room.state;
 
-  try {
-  // ประมวลผล explosion ทีละ wave และเก็บไว้
   const waves = processExplosionsWithWaves(state);
   if (tickTimeBombs(state)) {
     const bombWaves = processExplosionsWithWaves(state);
     waves.push(...bombWaves);
   }
-  // ส่ง wave data ให้ client เล่น animation
   state._lastExplosions = waves.length > 0 ? waves[0].explosions : null;
   state._allWaves = waves.length > 0 ? waves : null;
   checkEliminations(state);
