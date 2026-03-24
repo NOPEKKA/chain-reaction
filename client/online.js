@@ -154,14 +154,19 @@ function showGroupPickOverlay(cards, handSize, timeLimit, mySlotName) {
     if (chosen || _rerollsUsed >= 2) return;
     _rerollsUsed++;
     clearAllTimers();
-    // ปิด overlay เก่า รอ server ส่ง group_pick_start ใหม่
-    closeGroupPickOverlay();
+    // แสดง loading ใน overlay รอ server ส่งการ์ดใหม่
+    rerollBtn.style.display = 'none';
+    row.querySelectorAll('.pick-card').forEach(c => {
+      c.style.opacity = '0.3'; c.style.pointerEvents = 'none';
+    });
+    progRow.textContent = '🔀 กำลังสุ่มใหม่...';
     socket.emit('group_pick_reroll', {}, (res) => {
       if (!res?.ok) {
-        // reroll ไม่ได้ - ข้ามเลย
         chosen = true;
         socket.emit('group_pick_skip', {}, () => {});
+        progRow.textContent = '⏭️ ไม่สามารถสุ่มได้ — รอผู้เล่นอื่น...';
       }
+      // ถ้า ok: รอ group_pick_start ใหม่จาก server
     });
   });
   ov.appendChild(rerollBtn);
@@ -451,16 +456,14 @@ function initSocket() {
   socket.on('group_pick_start', ({ cards, handSize, timeLimit, isReroll }) => {
     if (!onlineMode) return;
     clearAllTimers();
-    const animDelay = _pendingExplosionWaves > 0 ? _pendingExplosionWaves * WAVE_DELAY + 100 : 0;
+    // รอทั้ง wave animation และ card VFX ก่อนแสดงการ์ด
+    const waveDelay = _pendingExplosionWaves > 0 ? _pendingExplosionWaves * WAVE_DELAY + 200 : 0;
+    const cardDelay = _cardVfxPlaying ? 1800 : 0;
+    const animDelay = Math.max(waveDelay, cardDelay);
     setTimeout(() => {
       SFX.select && SFX.select();
-      if (isReroll) {
-        // ปิด overlay เก่าก่อนแล้วเปิดใหม่
-        closeGroupPickOverlay();
-        setTimeout(() => showGroupPickOverlay(cards, handSize, timeLimit || CARD_LIMIT, myName), 50);
-      } else {
-        showGroupPickOverlay(cards, handSize, timeLimit || CARD_LIMIT, myName);
-      }
+      closeGroupPickOverlay();
+      showGroupPickOverlay(cards, handSize, timeLimit || CARD_LIMIT, myName);
     }, animDelay);
   });
 
