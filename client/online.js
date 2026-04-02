@@ -462,22 +462,14 @@ function initSocket() {
 
         const doRender = () => {
           if (waves && waves.length > 0) {
-            // Sync ขนาด map เท่านั้น ไม่ sync cells (รักษา state เก่าไว้ก่อน)
-            const s = room.state;
-            STATE.size = s.rows || s.size || 8;
-            STATE.cols = s.cols || STATE.size;
-            STATE.players = s.players;
-            // คำนวณเวลาที่ animation จะจบ
             const totalWaves = waves.length;
             _animFinishTime = Date.now() + totalWaves * 520 + 200;
             _pendingExplosionWaves = totalWaves;
-            // renderGrid ด้วย state เก่าก่อน (ก่อนระเบิด)
-            renderGrid(false);
-            // เล่น wave animation ทีละ wave พร้อม apply cells ทีละขั้น
+            // เล่น wave animation (ใช้ STATE.cells ปัจจุบัน + apply ทีละ wave)
             playExplosionWavesIncremental(waves, room.state).then(() => {
               _pendingExplosionWaves = 0;
               _animFinishTime = 0;
-              // sync state สุดท้ายหลัง animation จบ
+              // sync state สุดท้ายจาก server
               syncStateFromServer(room.state);
               renderGrid(true);
               renderHandBar();
