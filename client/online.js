@@ -841,18 +841,22 @@ function setupRoomPills() {
     p.addEventListener('click', () => {
       document.querySelectorAll('#room-map-pills .pill, #room-map-rect-pills .pill').forEach(x => x.classList.remove('active'));
       p.classList.add('active');
-      roomCfg.mapSize = parseInt(p.dataset.val);
-      roomCfg.mapCols = parseInt(p.dataset.val);
-      socket.emit('update_cfg', { cfg: roomCfg });
+      const size = parseInt(p.dataset.val);
+      roomCfg.mapSize = size;
+      roomCfg.mapCols = size;
+      socket.emit('update_cfg', { cfg: { mapSize: size, mapCols: size } });
     });
   });
   document.getElementById('room-map-rect-pills')?.querySelectorAll('.pill').forEach(p => {
     p.addEventListener('click', () => {
       document.querySelectorAll('#room-map-pills .pill, #room-map-rect-pills .pill').forEach(x => x.classList.remove('active'));
       p.classList.add('active');
-      roomCfg.mapSize = parseInt(p.dataset.rows);
-      roomCfg.mapCols = parseInt(p.dataset.cols);
-      socket.emit('update_cfg', { cfg: roomCfg });
+      const rows = parseInt(p.dataset.rows);
+      const cols = parseInt(p.dataset.cols);
+      roomCfg.mapSize = rows;
+      roomCfg.mapCols = cols;
+      console.log('[rect] selected', rows, 'x', cols);
+      socket.emit('update_cfg', { cfg: { mapSize: rows, mapCols: cols } });
     });
   });
   document.getElementById('room-card-pills')?.querySelectorAll('.pill').forEach(p => {
