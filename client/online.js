@@ -170,6 +170,7 @@ let _pendingExplosionWaves = 0;
 let _cardVfxPlaying = false;
 let _vfxFinishTime = 0;
 let _animFinishTime = 0; // เวลาที่ animation ทั้งหมดจะจบ
+let _waveAnimating = false; // กำลังเล่น wave animation อยู่
 
 // เล่น explosion ทีละ wave พร้อม apply cells ทีละขั้น (เหมือน offline explodeWave)
 async function playExplosionWavesIncremental(waves, finalState) {
@@ -438,6 +439,9 @@ function initSocket() {
         onlineMode = true;
         STATE._dead = false;
         _pendingExplosionWaves = 0;
+        _waveAnimating = false;
+        _vfxFinishTime = 0;
+        _animFinishTime = 0;
       }
       if (onlineMode) {
         // reset animating ทุกครั้ง
@@ -453,6 +457,7 @@ function initSocket() {
 
         const waves = room.state.explosionWaves;
         const finalRender = () => {
+          if (_waveAnimating) return; // รอ wave animation เสร็จก่อน
           syncStateFromServer(room.state);
           renderGrid(true); // render ทันทีไม่มี wave
           renderHandBar();
@@ -465,10 +470,12 @@ function initSocket() {
             const totalWaves = waves.length;
             _animFinishTime = Date.now() + totalWaves * 520 + 200;
             _pendingExplosionWaves = totalWaves;
+            _waveAnimating = true;
             // เล่น wave animation (ใช้ STATE.cells ปัจจุบัน + apply ทีละ wave)
             playExplosionWavesIncremental(waves, room.state).then(() => {
               _pendingExplosionWaves = 0;
               _animFinishTime = 0;
+              _waveAnimating = false;
               // sync state สุดท้ายจาก server
               syncStateFromServer(room.state);
               renderGrid(true);
