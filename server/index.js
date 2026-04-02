@@ -329,8 +329,10 @@ io.on('connection', (socket) => {
 
   socket.on('update_cfg', ({ cfg }) => {
     const room = getRoomBySocket(socket.id);
+    console.log(`[update_cfg] received:`, JSON.stringify(cfg), `host=${room?.host === socket.id} phase=${room?.phase}`);
     if (!room || room.host !== socket.id || room.phase !== 'lobby') return;
     Object.assign(room.cfg, cfg);
+    console.log(`[update_cfg] room.cfg now:`, JSON.stringify(room.cfg));
     broadcastRoom(room);
   });
 
@@ -342,7 +344,9 @@ io.on('connection', (socket) => {
     if (connected.length < 2) return cb?.({ ok: false, msg: 'ต้องมีผู้เล่น 2 คนขึ้นไป' });
 
     room.cfg.players = room.members.length;
+    console.log(`[start_game] cfg:`, JSON.stringify(room.cfg));
     room.state = createInitialState(room.cfg);
+    console.log(`[start_game] state rows=${room.state.rows} cols=${room.state.cols}`);
     room.phase = 'playing'; room.groupPick = null;
     cb?.({ ok: true });
     broadcastRoom(room);
