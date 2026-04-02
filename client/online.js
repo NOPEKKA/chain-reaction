@@ -629,6 +629,7 @@ function syncStateFromServer(serverState) {
   cfg.players = serverState.players;
 
   STATE.size    = serverState.rows || serverState.size;
+  STATE.rows    = STATE.size; // alias
   STATE.cols    = serverState.cols || STATE.size;
   STATE.players = serverState.players;
   STATE.current = serverState.current;
