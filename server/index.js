@@ -198,7 +198,17 @@ function processTurnEnd(room) {
   }
   state._lastExplosions = waves.length > 0 ? waves[0].explosions : null;
   state._allWaves = waves.length > 0 ? waves : null;
+  const aliveB4 = [...state.alive];
   checkEliminations(state);
+  if (aliveB4.length !== state.alive.length) {
+    console.log(`[elim] alive before: ${aliveB4}, after: ${state.alive}`);
+    // Log cells for eliminated players
+    aliveB4.filter(i => !state.alive.includes(i)).forEach(i => {
+      let cellCount = 0;
+      state.cells.forEach(row => row.forEach(c => { if(c.owner===i) cellCount++; }));
+      console.log(`[elim] P${i} eliminated, cells remaining: ${cellCount}, moved: ${state.moved[i]}`);
+    });
+  }
 
   if (checkWin(state)) {
     room.phase = 'finished';
@@ -349,8 +359,13 @@ io.on('connection', (socket) => {
     if (!state) return cb?.({ ok: false, msg: 'ไม่มี state' });
     if (state.current !== member.slot) return cb?.({ ok: false, msg: 'ยังไม่ใช่ตาของคุณ' });
     if (state.phase !== 'playing') return cb?.({ ok: false, msg: 'รอก่อน' });
+    console.log(`[place] slot=${member.slot} r=${r} c=${c} rows=${state.rows} cols=${state.cols}`);
     const result = applyPlace(state, member.slot, r, c);
-    if (!result.ok) return cb?.({ ok: false, msg: result.msg });
+    if (!result.ok) {
+      console.log(`[place] FAILED: ${result.msg}`);
+      return cb?.({ ok: false, msg: result.msg });
+    }
+    console.log(`[place] OK cell=${JSON.stringify(state.cells[r][c])}`);
     cb?.({ ok: true, isFirstPlace: result.isFirstPlace });
     io.to(room.code).emit('place_vfx', { r, c, playerIdx: member.slot, isFirstPlace: result.isFirstPlace });
     processTurnEnd(room);
