@@ -360,6 +360,11 @@ io.on('connection', (socket) => {
     if (state.current !== member.slot) return cb?.({ ok: false, msg: 'ยังไม่ใช่ตาของคุณ' });
     if (state.phase !== 'playing') return cb?.({ ok: false, msg: 'รอก่อน' });
     console.log(`[place] slot=${member.slot} r=${r} c=${c} rows=${state.rows} cols=${state.cols}`);
+    // Validate bounds explicitly for rect map
+    if (r < 0 || r >= state.rows || c < 0 || c >= state.cols) {
+      console.log(`[place] OUT OF BOUNDS r=${r} c=${c} rows=${state.rows} cols=${state.cols}`);
+      return cb?.({ ok: false, msg: 'ช่องอยู่นอกกระดาน' });
+    }
     const result = applyPlace(state, member.slot, r, c);
     if (!result.ok) {
       console.log(`[place] FAILED: ${result.msg}`);
