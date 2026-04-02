@@ -1534,7 +1534,8 @@ function updateCellDisplay(r,co){
 function renderGrid(forceResize=false){
   const g=document.getElementById('grid'),size=STATE.size;
   // คำนวณ cellSize ใหม่เฉพาะตอน forceResize หรือยังไม่มี grid
-  if(forceResize||!STATE._cellSize||STATE._gridSize!==size){
+  const cols2=STATE.cols||size;
+  if(forceResize||!STATE._cellSize||STATE._gridSize!==size||STATE._gridCols!==cols2){
     // ใช้ scoreboard + hud เท่านั้น ไม่นับ hand-bar (เพื่อไม่ให้กระดานขยับตอนการ์ดขยาย)
     const scoreH=document.getElementById('scoreboard').offsetHeight;
     const hudH=document.getElementById('hud').offsetHeight;
@@ -1542,7 +1543,6 @@ function renderGrid(forceResize=false){
     const uiH=scoreH+hudH+handBarReserved+28;
     const availW=window.innerWidth*0.97;
     const availH=(window.innerHeight||window.screen.height)*0.99-uiH;
-    const cols2=STATE.cols||size;
     const cellByW=Math.floor((availW-(cols2+1)*5)/cols2);
     const cellByH=Math.floor((availH-(size+1)*5)/size);
     STATE._cellSize=Math.max(24,Math.min(cellByW,cellByH,80));
