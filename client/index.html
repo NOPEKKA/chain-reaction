@@ -1510,8 +1510,10 @@ function renderGridHighlight(){
           type='enemy';
         }
         div.classList.add(valid?(type==='own'?'target-own':'target-enemy'):'target-inactive');
-        // ไฮไลต์ช่องแรกที่เลือกใน twoTarget
-        if(targetingCard&&targetingCard.twoTarget&&r===targetData.r1&&c===targetData.c1){
+        // ไฮไลต์ช่องแรกที่เลือกใน twoTarget (ทั้ง offline และ online)
+        const isTwoTargetFirst=(targetingCard&&targetingCard.twoTarget)||
+          (selectedHandCard&&aCard&&aCard.twoTarget&&targetData.r1Done);
+        if(isTwoTargetFirst&&r===targetData.r1&&c===targetData.c1){
           div.classList.remove('target-own','target-enemy','target-inactive');
           div.classList.add('first-picked');
         }
@@ -1821,6 +1823,7 @@ function spawnArrow(fromR,fromC,toR,toC,emoji='🌀',opts={}){
 }
 
 async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
+  const _onlineMode=!!(window._getOnlineMode&&window._getOnlineMode());
   const{r,c}=targets;
   const pos=(r!==undefined&&c!==undefined)?getCellCenter(r,c):{x:window.innerWidth/2,y:window.innerHeight/2};
   const cx=window.innerWidth/2,cy=window.innerHeight/2;
@@ -1858,8 +1861,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
       (vfxData.area||[]).forEach(([nr,nc],i)=>{
         spawnArrow(r,c,nr,nc,'💧',{delay:i*0.06,size:'1rem'});
         setTimeout(()=>{
-          STATE.cells[nr][nc].count++;;STATE.cells[nr][nc].owner=playerIdx;
-          updateCellDisplay(nr,nc);flashCell(nr,nc,'#00ccffbb');
+          if(!_onlineMode){STATE.cells[nr][nc].count++;STATE.cells[nr][nc].owner=playerIdx;updateCellDisplay(nr,nc);}flashCell(nr,nc,'#00ccffbb');
         },i*60+380);
       });
       await delay((vfxData.area||[]).length*60+500);
@@ -1872,8 +1874,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
         spawnCellEmoji(r,c,'🎯',{size:'2rem'});flashCell(r,c,'#ff000099');
         await delay(150);spawnArrow(r,c,tr,tc,'🎯',{size:'1.1rem',delay:0.05});
         await delay(480);
-        STATE.cells[tr][tc].count--;;if(STATE.cells[tr][tc].count<=0)STATE.cells[tr][tc].owner=-1;
-        updateCellDisplay(tr,tc);spawnCellEmoji(tr,tc,'💥',{size:'1.5rem',dur:0.4});flashCell(tr,tc,'#ff0000bb');spawnFloatingNumber(tr,tc,-1,{color:'#ff6677'});
+        if(!_onlineMode){STATE.cells[tr][tc].count--;if(STATE.cells[tr][tc].count<=0)STATE.cells[tr][tc].owner=-1;updateCellDisplay(tr,tc);}spawnCellEmoji(tr,tc,'💥',{size:'1.5rem',dur:0.4});flashCell(tr,tc,'#ff0000bb');spawnFloatingNumber(tr,tc,-1,{color:'#ff6677'});
         await delay(300);
       }
     }break;
@@ -1902,18 +1903,14 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
         spawnCellEmoji(tr,tc,'💜',{size:'1.5rem',dur:0.5});
         await delay(300);
         // ขั้น 2: ลบบอลช่องศัตรู
-        STATE.cells[tr][tc].count--;;if(STATE.cells[tr][tc].count<=0)STATE.cells[tr][tc].owner=-1;
-        updateCellDisplay(tr,tc);spawnFloatingNumber(tr,tc,-1,{color:'#ff6677'});
+        if(!_onlineMode){STATE.cells[tr][tc].count--;if(STATE.cells[tr][tc].count<=0)STATE.cells[tr][tc].owner=-1;updateCellDisplay(tr,tc);}spawnFloatingNumber(tr,tc,-1,{color:'#ff6677'});
         // ขั้น 3: เอฟเฟคเดินทางจากช่องศัตรู → ช่องที่+1
         if(vfxData.bonusCell){
           const[br,bc]=vfxData.bonusCell;
           spawnArrow(tr,tc,br,bc,'💜',{size:'1.1rem',delay:0.05});
           await delay(550);
           // บวกพอลูกศรถึง
-          STATE.cells[br][bc].count++;;
-          updateCellDisplay(br,bc);
-          flashCell(br,bc,'#cc44ccbb');
-          spawnCellEmoji(br,bc,'✨',{size:'1.3rem',dur:0.5});spawnFloatingNumber(br,bc,1,{color:'#88ffaa'});
+          if(!_onlineMode){STATE.cells[br][bc].count++;updateCellDisplay(br,bc);}flashCell(br,bc,'#cc44ccbb');spawnCellEmoji(br,bc,'✨',{size:'1.3rem',dur:0.5});spawnFloatingNumber(br,bc,1,{color:'#88ffaa'});
         }
         await delay(300);
       }
@@ -1941,9 +1938,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
         spawnCellEmoji(r,c,'⚔️',{size:'2rem'});flashCell(r,c,'#dd0000bb');
         await delay(120);spawnArrow(r,c,tr,tc,'⚔️',{size:'1.1rem',delay:0.05});
         await delay(500);
-        STATE.cells[tr][tc].count=Math.max(0,STATE.cells[tr][tc].count-2);
-        if(STATE.cells[tr][tc].count<=0)STATE.cells[tr][tc].owner=-1;
-        updateCellDisplay(tr,tc);spawnCellEmoji(tr,tc,'💥',{size:'1.8rem',dur:0.5});flashCell(tr,tc,'#ff0000cc');spawnFloatingNumber(tr,tc,-2,{color:'#ff6677'});
+        if(!_onlineMode){STATE.cells[tr][tc].count=Math.max(0,STATE.cells[tr][tc].count-2);if(STATE.cells[tr][tc].count<=0)STATE.cells[tr][tc].owner=-1;updateCellDisplay(tr,tc);}spawnCellEmoji(tr,tc,'💥',{size:'1.8rem',dur:0.5});flashCell(tr,tc,'#ff0000cc');spawnFloatingNumber(tr,tc,-2,{color:'#ff6677'});
         await delay(300);
       }
     }break;
@@ -1965,9 +1960,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
         spawnCellEmoji(ro,co,'⚡',{size:'1.4rem',delay:i*0.04,dur:0.5});
         flashCell(ro,co,'#ffdd00bb',i*35);
         setTimeout(()=>{
-          STATE.cells[ro][co].count--;;if(STATE.cells[ro][co].count<=0)STATE.cells[ro][co].owner=-1;
-          updateCellDisplay(ro,co);
-          spawnFloatingNumber(ro,co,-1,{color:'#ff6677',size:'0.9rem'});
+          if(!_onlineMode){STATE.cells[ro][co].count--;if(STATE.cells[ro][co].count<=0)STATE.cells[ro][co].owner=-1;updateCellDisplay(ro,co);}spawnFloatingNumber(ro,co,-1,{color:'#ff6677',size:'0.9rem'});
         },i*35+300);
       });
       await delay(hits.length*35+500);
@@ -2038,11 +2031,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
         await delay(350);
         spawnArrow(r,c,er,ec,'💥',{size:'1.2rem',delay:0.05});
         await delay(550);
-        STATE.cells[er][ec].count=Math.max(0,STATE.cells[er][ec].count-2);
-        if(STATE.cells[er][ec].count===0)STATE.cells[er][ec].owner=-1;
-        updateCellDisplay(er,ec);
-        spawnCellEmoji(er,ec,'💥',{size:'1.8rem',dur:0.6});
-        flashCell(er,ec,'#ff0000cc');
+        if(!_onlineMode){STATE.cells[er][ec].count=Math.max(0,STATE.cells[er][ec].count-2);if(STATE.cells[er][ec].count===0)STATE.cells[er][ec].owner=-1;updateCellDisplay(er,ec);}spawnCellEmoji(er,ec,'💥',{size:'1.8rem',dur:0.6});flashCell(er,ec,'#ff0000cc');
       }
       await delay(600);
     }break;
@@ -2111,10 +2100,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
         (vfxData.boosted||[]).forEach(([ro,co],i)=>{
           spawnArrow(br,bc,ro,co,'⭐',{size:'1rem',delay:i*0.08+0.1});
           setTimeout(()=>{
-            STATE.cells[ro][co].count+=2;STATE.cells[ro][co].owner=playerIdx;
-            updateCellDisplay(ro,co);
-            flashCell(ro,co,'#ffcc00bb');
-            spawnCellEmoji(ro,co,'⭐',{size:'1.4rem',dur:0.5});
+            if(!_onlineMode){STATE.cells[ro][co].count+=2;STATE.cells[ro][co].owner=playerIdx;updateCellDisplay(ro,co);}flashCell(ro,co,'#ffcc00bb');spawnCellEmoji(ro,co,'⭐',{size:'1.4rem',dur:0.5});
             spawnFloatingNumber(ro,co,2,{color:'#ffdd44',size:'1.1rem'});
           },(i*80)+500);
         });
@@ -2130,11 +2116,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
       infC.forEach(([ro,co],i)=>{
         const t=i*40;
         setTimeout(()=>{
-          spawnCellEmoji(ro,co,'🔥',{size:'1.5rem',dur:0.6});
-          flashCell(ro,co,'#ff3300cc',0,350);
-          STATE.cells[ro][co].count++;;
-          updateCellDisplay(ro,co);
-          spawnFloatingNumber(ro,co,1,{delay:0.1,size:'0.9rem',color:'#ff8844'});
+          spawnCellEmoji(ro,co,'🔥',{size:'1.5rem',dur:0.6});flashCell(ro,co,'#ff3300cc',0,350);if(!_onlineMode){STATE.cells[ro][co].count++;updateCellDisplay(ro,co);}spawnFloatingNumber(ro,co,1,{delay:0.1,size:'0.9rem',color:'#ff8844'});
         },t);
       });
       await delay(infC.length*40+400);
@@ -2155,8 +2137,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
         flashCell(ro,co,'#ffaa00cc',t+150,400);
         spawnCellEmoji(ro,co,'💥',{size:'1.2rem',delay:t/1000,dur:0.5});
         setTimeout(()=>{
-          STATE.cells[ro][co].count=STATE.cells[ro][co].cap;
-          updateCellDisplay(ro,co);
+          if(!_onlineMode){STATE.cells[ro][co].count=STATE.cells[ro][co].cap;updateCellDisplay(ro,co);}
         },t+100);
       });
       await delay(maxD*40+800);nEl.remove();
@@ -2178,8 +2159,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
           el.style.background='rgba(255,200,0,0.55)';
           el.style.boxShadow='0 0 20px gold,inset 0 0 16px rgba(255,200,0,0.6)';
           setTimeout(()=>{
-            STATE.cells[ro][co].owner=own;STATE.cells[ro][co].count=1;
-            el.style.transition='background .5s,box-shadow .5s';
+            if(!_onlineMode){STATE.cells[ro][co].owner=own;STATE.cells[ro][co].count=1;}el.style.transition='background .5s,box-shadow .5s';
             el.style.background='';el.style.boxShadow='';
             updateCellDisplay(ro,co);setTimeout(()=>{el.style.transition='';},500);
           },350);
@@ -2261,8 +2241,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
         const[nr,nc]=vfxData.bonusCell;const val=vfxData.bonusVal||1;
         await delay(200);spawnArrow(r,c,nr,nc,'✨',{size:'1rem',delay:0.05});
         await delay(500);
-        STATE.cells[nr][nc].count+=val;STATE.cells[nr][nc].owner=playerIdx;
-        renderGrid();
+        if(!_onlineMode){STATE.cells[nr][nc].count+=val;STATE.cells[nr][nc].owner=playerIdx;renderGrid();}
         flashCell(nr,nc,'#bb44ffaa');spawnCellEmoji(nr,nc,'🪄',{size:'1.4rem',dur:0.5});
         const p3=getCellCenter(nr,nc);const lbl2=document.createElement('div');
         lbl2.style.cssText=`position:fixed;left:${p3.x}px;top:${p3.y-10}px;font-family:'Fredoka One',cursive;font-size:2.2rem;color:#fff;font-weight:900;pointer-events:none;z-index:999;animation:vfxFloat 1.1s ease-out forwards;transform:translateX(-50%);text-shadow:0 0 12px #bb44ff;`;
@@ -2272,7 +2251,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
     }break;
     case 'u10':{
       spawnCellEmoji(r,c,'🎁',{size:'2.2rem'});flashCell(r,c,'#00ff88bb');
-      if(vfxData.enemyCell){const[er,ec]=vfxData.enemyCell;await delay(200);spawnArrow(r,c,er,ec,'🎁',{size:'1rem',delay:0.05});await delay(500);STATE.cells[er][ec].count++;;updateCellDisplay(er,ec);flashCell(er,ec,'#ff8800bb');spawnCellEmoji(er,ec,'💢',{size:'1.6rem',dur:0.5});}
+      if(vfxData.enemyCell){const[er,ec]=vfxData.enemyCell;await delay(200);spawnArrow(r,c,er,ec,'🎁',{size:'1rem',delay:0.05});await delay(500);STATE.cells[er][ec].count++;updateCellDisplay(er,ec);flashCell(er,ec,'#ff8800bb');spawnCellEmoji(er,ec,'💢',{size:'1.6rem',dur:0.5});}
       await delay(400);
     }break;
     case 'r7':spawnCellEmoji(r,c,'⬛',{size:'2.5rem'});flashCell(r,c,'#000000aa');await delay(300);flashCell(r,c,'#111111bb');await delay(400);break;
