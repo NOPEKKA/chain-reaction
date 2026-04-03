@@ -442,6 +442,12 @@ function initSocket() {
         _waveAnimating = false;
         _vfxFinishTime = 0;
         _animFinishTime = 0;
+        // Force render เมื่อเกมเริ่ม (ไม่ว่า _waveAnimating จะเป็นยังไง)
+        syncStateFromServer(room.state);
+        renderGrid(true);
+        renderHandBar();
+        renderScoreboard();
+        updateTurnLabel();
       }
       if (onlineMode) {
         // reset animating ทุกครั้ง
@@ -454,6 +460,8 @@ function initSocket() {
             if (m.name) window.PLAYER_NAMES[m.slot] = m.name;
           });
         }
+
+        if (wasInRoom) return; // render แล้ว ไม่ต้องทำซ้ำ
 
         const waves = room.state.explosionWaves;
         const finalRender = () => {
@@ -519,6 +527,12 @@ function initSocket() {
         room.members.forEach(m => {
           if (m.name) window.PLAYER_NAMES[m.slot] = m.name;
         });
+      }
+      // Sync roomCfg from server to keep local state accurate
+      if (room.cfg) {
+        roomCfg.mapSize = room.cfg.mapSize || 8;
+        roomCfg.mapCols = room.cfg.mapCols || room.cfg.mapSize || 8;
+        roomCfg.cardInterval = room.cfg.cardInterval ?? 2;
       }
       renderRoomScreen(room);
     }
@@ -871,7 +885,7 @@ function setupRoomPills() {
       document.getElementById('room-card-pills').querySelectorAll('.pill').forEach(x => x.classList.remove('active'));
       p.classList.add('active');
       roomCfg.cardInterval = parseInt(p.dataset.val);
-      socket.emit('update_cfg', { cfg: roomCfg });
+      socket.emit('update_cfg', { cfg: { cardInterval: roomCfg.cardInterval } });
     });
   });
 }
