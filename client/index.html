@@ -145,6 +145,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);min-height:100vh;displ
 .cell.voided::after{content:'⬛';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:1.2rem;pointer-events:none;}
 .cell.card-fx{animation:cardFx .6s ease-out;}
 @keyframes cardFx{0%{box-shadow:0 0 0 4px rgba(255,255,100,0.9),0 0 16px rgba(255,220,0,0.6);}100%{box-shadow:0 4px 0 rgba(0,0,0,0.12);}}
+@keyframes floatNumber{0%{opacity:0;transform:translate(-50%,-120%);}20%{opacity:1;}80%{opacity:1;}100%{opacity:0;transform:translate(-50%,-220%);}}
 @keyframes cellEmojiPop{0%{opacity:0;transform:translate(-50%,-50%) scale(0.1);filter:blur(4px);}20%{opacity:1;filter:blur(0);transform:translate(-50%,-50%) scale(1.5);}50%{transform:translate(-50%,-80%) scale(1.1);}80%{opacity:1;transform:translate(-50%,-130%) scale(1.0);}100%{opacity:0;transform:translate(-50%,-170%) scale(0.6);}}
 @keyframes arrowFly{0%{opacity:0;transform:translate(-50%,-50%) rotate(var(--rot,0deg)) scale(0.5);}20%{opacity:1;}80%{opacity:1;transform:translate(calc(-50% + var(--tx)),calc(-50% + var(--ty))) rotate(var(--rot,0deg)) scale(1);}100%{opacity:0;transform:translate(calc(-50% + var(--tx)),calc(-50% + var(--ty))) rotate(var(--rot,0deg)) scale(0.6);}}
 .cell.orb-placed{animation:orbPlace .35s cubic-bezier(.34,1.7,.64,1);}
@@ -1793,7 +1794,16 @@ function showCardResult(emoji,text){return Promise.resolve();}
 function getCellCenter(r,c){const gWrap=document.getElementById('grid-wrap'),rect=gWrap.getBoundingClientRect();const cells=document.querySelectorAll('.cell');if(!cells.length)return{x:window.innerWidth/2,y:window.innerHeight/2};const cellSize=parseFloat(cells[0].style.width),gap=5,pad=10;return{x:rect.left+pad+c*(cellSize+gap)+cellSize/2,y:rect.top+pad+r*(cellSize+gap)+cellSize/2};}
 
 // แสดง emoji ลอยบนช่อง
-function spawnCellEmoji(r,c,emoji,opts={}){
+function spawnFloatingNumber(r,c,value,opts={}){
+  const p=getCellCenter(r,c);
+  const el=document.createElement('div');
+  const color=opts.color||(value>0?'#88ffaa':'#ff6677');
+  const text=(value>0?'+':'')+value;
+  el.style.cssText=`position:fixed;left:${p.x}px;top:${p.y}px;font-family:'Fredoka One',cursive;font-size:${opts.size||'1.1rem'};font-weight:900;color:${color};text-shadow:0 2px 8px rgba(0,0,0,0.5),0 0 12px ${color};pointer-events:none;z-index:1200;transform:translate(-50%,-50%);animation:floatNumber ${opts.dur||0.8}s ease-out forwards;animation-delay:${opts.delay||0}s;opacity:0;`;
+  el.textContent=text;document.body.appendChild(el);
+  setTimeout(()=>el.remove(),(opts.dur||0.8)*1000+(opts.delay||0)*1000+100);
+}
+function spawnCellEmoji(r,c,emoji,opts={}) {
   const p=getCellCenter(r,c);const el=document.createElement('div');
   el.style.cssText=`position:fixed;left:${p.x}px;top:${p.y}px;font-size:${opts.size||'1.6rem'};pointer-events:none;z-index:900;transform:translate(-50%,-50%);animation:cellEmojiPop ${opts.dur||0.7}s ease-out forwards;animation-delay:${opts.delay||0}s;opacity:0;`;
   el.textContent=emoji;document.body.appendChild(el);
@@ -1863,7 +1873,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
         await delay(150);spawnArrow(r,c,tr,tc,'🎯',{size:'1.1rem',delay:0.05});
         await delay(480);
         STATE.cells[tr][tc].count--;;if(STATE.cells[tr][tc].count<=0)STATE.cells[tr][tc].owner=-1;
-        updateCellDisplay(tr,tc);spawnCellEmoji(tr,tc,'💥',{size:'1.5rem',dur:0.4});flashCell(tr,tc,'#ff0000bb');
+        updateCellDisplay(tr,tc);spawnCellEmoji(tr,tc,'💥',{size:'1.5rem',dur:0.4});flashCell(tr,tc,'#ff0000bb');spawnFloatingNumber(tr,tc,-1,{color:'#ff6677'});
         await delay(300);
       }
     }break;
@@ -1893,7 +1903,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
         await delay(300);
         // ขั้น 2: ลบบอลช่องศัตรู
         STATE.cells[tr][tc].count--;;if(STATE.cells[tr][tc].count<=0)STATE.cells[tr][tc].owner=-1;
-        updateCellDisplay(tr,tc);
+        updateCellDisplay(tr,tc);spawnFloatingNumber(tr,tc,-1,{color:'#ff6677'});
         // ขั้น 3: เอฟเฟคเดินทางจากช่องศัตรู → ช่องที่+1
         if(vfxData.bonusCell){
           const[br,bc]=vfxData.bonusCell;
@@ -1903,7 +1913,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
           STATE.cells[br][bc].count++;;
           updateCellDisplay(br,bc);
           flashCell(br,bc,'#cc44ccbb');
-          spawnCellEmoji(br,bc,'✨',{size:'1.3rem',dur:0.5});
+          spawnCellEmoji(br,bc,'✨',{size:'1.3rem',dur:0.5});spawnFloatingNumber(br,bc,1,{color:'#88ffaa'});
         }
         await delay(300);
       }
@@ -1913,7 +1923,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
     case 'c10':spawnCellEmoji(r,c,'🔄',{size:'2rem'});await delay(400);break;
 
     // ── c11 Store / u3 Double Shot: flash สองช่อง ──
-    case 'c11':case 'u3':(vfxData.boosted||[]).forEach(([ro,co],i)=>{spawnCellEmoji(ro,co,'📦',{size:'1.6rem',delay:i*0.12});flashCell(ro,co,'#88ffaa88',i*120);});await delay(700);break;
+    case 'c11':case 'u3':(vfxData.boosted||[]).forEach(([ro,co],i)=>{spawnCellEmoji(ro,co,'📦',{size:'1.6rem',delay:i*0.12});flashCell(ro,co,'#88ffaa88',i*120);spawnFloatingNumber(ro,co,1,{delay:i*0.12+0.1,color:'#88ffaa'});});await delay(700);break;
 
     // ── c12 Scout: ตาส่อง ──
     case 'c12':spawnCellEmoji(r||0,c||0,'🔍',{size:'1.8rem'});await delay(400);break;
@@ -1933,7 +1943,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
         await delay(500);
         STATE.cells[tr][tc].count=Math.max(0,STATE.cells[tr][tc].count-2);
         if(STATE.cells[tr][tc].count<=0)STATE.cells[tr][tc].owner=-1;
-        updateCellDisplay(tr,tc);spawnCellEmoji(tr,tc,'💥',{size:'1.8rem',dur:0.5});flashCell(tr,tc,'#ff0000cc');
+        updateCellDisplay(tr,tc);spawnCellEmoji(tr,tc,'💥',{size:'1.8rem',dur:0.5});flashCell(tr,tc,'#ff0000cc');spawnFloatingNumber(tr,tc,-2,{color:'#ff6677'});
         await delay(300);
       }
     }break;
@@ -1942,7 +1952,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
     case 'u7':(vfxData.zone||[]).forEach(([ro,co],i)=>{spawnCellEmoji(ro,co,'🎪',{size:'1.3rem',delay:i*0.05,dur:0.5});flashCell(ro,co,'#cc88ff88',i*50);});await delay(600);break;
 
     // ── r1 Mega Burst: area flash ──
-    case 'r1':(vfxData.area||[]).forEach(([ro,co],i)=>{spawnCellEmoji(ro,co,'🌋',{size:'1.5rem',delay:i*0.04,dur:0.6});flashCell(ro,co,'#ff884488',i*40);});await delay(700);break;
+    case 'r1':(vfxData.area||[]).forEach(([ro,co],i)=>{spawnCellEmoji(ro,co,'🌋',{size:'1.5rem',delay:i*0.04,dur:0.6});flashCell(ro,co,'#ff884488',i*40);spawnFloatingNumber(ro,co,1,{delay:i*0.04+0.1,size:'1rem'});});await delay(700);break;
 
     // ── r3 Freeze ──
     case 'r3':{const el=document.createElement('div');el.className='freeze-vfx';el.style.cssText=`left:${cx}px;top:${cy}px;width:90px;height:90px;background:rgba(100,200,255,0.35);border:4px solid #88eeff;border-radius:50%;`;document.body.appendChild(el);spawnCellEmoji(r||0,c||0,'🧊',{size:'2.5rem'});await delay(900);el.remove();}break;
@@ -1957,6 +1967,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
         setTimeout(()=>{
           STATE.cells[ro][co].count--;;if(STATE.cells[ro][co].count<=0)STATE.cells[ro][co].owner=-1;
           updateCellDisplay(ro,co);
+          spawnFloatingNumber(ro,co,-1,{color:'#ff6677',size:'0.9rem'});
         },i*35+300);
       });
       await delay(hits.length*35+500);
@@ -2013,6 +2024,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
       (vfxData.boosted||[[r,c]]).forEach(([ro,co],i)=>{
         spawnCellEmoji(ro,co,'🪄',{size:'1.4rem',delay:i*0.06,dur:0.5});
         flashCell(ro,co,'#cc88ff88',i*60);
+        spawnFloatingNumber(ro,co,1,{delay:i*0.06+0.1,color:'#cc88ff'});
       });
       await delay(600);
     }break;
@@ -2103,6 +2115,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
             updateCellDisplay(ro,co);
             flashCell(ro,co,'#ffcc00bb');
             spawnCellEmoji(ro,co,'⭐',{size:'1.4rem',dur:0.5});
+            spawnFloatingNumber(ro,co,2,{color:'#ffdd44',size:'1.1rem'});
           },(i*80)+500);
         });
         await delay((vfxData.boosted||[]).length*80+600);
@@ -2121,6 +2134,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
           flashCell(ro,co,'#ff3300cc',0,350);
           STATE.cells[ro][co].count++;;
           updateCellDisplay(ro,co);
+          spawnFloatingNumber(ro,co,1,{delay:0.1,size:'0.9rem',color:'#ff8844'});
         },t);
       });
       await delay(infC.length*40+400);
