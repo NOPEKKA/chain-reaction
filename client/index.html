@@ -2064,7 +2064,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
       el.style.cssText=`left:${cx}px;top:${cy}px;font-size:4rem;`;el.textContent='🌑';
       document.body.appendChild(el);
       // flash ทุกช่องบนกระดาน
-      for(let ro=0;ro<STATE.size;ro++)for(let co=0;co<STATE.size;co++)
+      for(let ro=0;ro<STATE.size;ro++)for(let co=0;co<(STATE.cols||STATE.size);co++)
         flashCell(ro,co,'#11113388',(ro+co)*15);
       await delay(800);el.remove();
     }break;
@@ -2081,7 +2081,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
       const el=document.createElement('div');el.className='card-vfx';
       el.style.cssText=`left:${cx}px;top:${cy}px;font-size:3rem;`;el.textContent='⚖️';
       document.body.appendChild(el);
-      for(let ro=0;ro<STATE.size;ro++)for(let co=0;co<STATE.size;co++)
+      for(let ro=0;ro<STATE.size;ro++)for(let co=0;co<(STATE.cols||STATE.size);co++)
         if(STATE.cells[ro][co].count>0)flashCell(ro,co,'#88aaff55',(ro*STATE.size+co)*10);
       await delay(800);el.remove();
     }break;
@@ -2294,7 +2294,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
       const el2=document.createElement('div');el2.className='annihilate-vfx';
       el2.style.cssText=`left:${cx}px;top:${cy}px;font-size:4rem;`;el2.textContent='🌑';
       document.body.appendChild(el2);flashScreen('#00001188',600);
-      for(let ro=0;ro<STATE.size;ro++)for(let co=0;co<STATE.size;co++)flashCell(ro,co,'#000044cc',(ro+co)*15,500);
+      for(let ro=0;ro<STATE.size;ro++)for(let co=0;co<(STATE.cols||STATE.size);co++)flashCell(ro,co,'#000044cc',(ro+co)*15,500);
       await delay(800);el2.remove();
     }break;
     case 'sr3':spawnCellEmoji(r,c,'🔑',{size:'2.5rem'});flashCell(r,c,'#ffcc00bb');await delay(500);break;
@@ -2440,24 +2440,24 @@ async function executeCard(cardDef,playerIdx,cardIdx,targets){
   SFX.card(cardDef.rarity);
   SFX.cardCat(cardDef.cat);
   SFX.cardSpecial(cardDef.id);
-  const{r,c,r2,c2}=targets,size=STATE.size;let resultText='';let vfxData={};
+  const{r,c,r2,c2}=targets,size=STATE.size,cols=STATE.cols||STATE.size;let resultText='';let vfxData={};
   switch(cardDef.id){
     case 'c1':if(STATE.cells[r][c].owner===cur||STATE.cells[r][c].owner===-1){STATE.cells[r][c].count+=2;STATE.cells[r][c].owner=cur;resultText='+2 ลูกบอล!';}break;
     case 'c2':{const area=neighbors(r,c,size,STATE.cols).filter(([nr,nc])=>STATE.cells[nr][nc].owner===cur||STATE.cells[nr][nc].owner===-1);vfxData={area};resultText='ช่องรอบข้าง +1!';}break;
     case 'c3':if(STATE.cells[r][c].owner!==cur&&STATE.cells[r][c].count>0&&STATE.shielded[r][c]<=0){vfxData={target:[r,c]};resultText='ลบ -1 ลูกบอลศัตรู!';}else if(STATE.shielded[r][c]>0)resultText='❌ ช่องนั้นมีเกราะ!';break;
-    case 'c4':{STATE.cells[r][c].count+=2;STATE.cells[r][c].owner=cur;const enemies=[];for(let ro=0;ro<size;ro++)for(let co=0;co<size;co++)if(STATE.cells[ro][co].owner!==cur&&STATE.cells[ro][co].owner!==-1)enemies.push([ro,co]);let enemyCell=null;if(enemies.length){const[er,ec]=enemies[Math.floor(Math.random()*enemies.length)];enemyCell=[er,ec];}vfxData={enemyCell};resultText='Exchange! +2 / สุ่มศัตรู -2!';}break;
+    case 'c4':{STATE.cells[r][c].count+=2;STATE.cells[r][c].owner=cur;const enemies=[];for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner!==cur&&STATE.cells[ro][co].owner!==-1)enemies.push([ro,co]);let enemyCell=null;if(enemies.length){const[er,ec]=enemies[Math.floor(Math.random()*enemies.length)];enemyCell=[er,ec];}vfxData={enemyCell};resultText='Exchange! +2 / สุ่มศัตรู -2!';}break;
     case 'c5':{const nbs=neighbors(r,c,size,STATE.cols);if(nbs.length&&STATE.cells[r][c].count>0){const[nr,nc]=nbs[Math.floor(Math.random()*nbs.length)];const ow=STATE.cells[r][c].owner;STATE.cells[r][c].count--;if(STATE.cells[r][c].count<=0)STATE.cells[r][c].owner=-1;STATE.cells[nr][nc].count++;STATE.cells[nr][nc].owner=ow;vfxData={moves:[{from:[r,c],to:[nr,nc]}]};resultText='ย้ายลูกบอลไปข้างๆ!';}}break;
     case 'c6':{const pulled=[];neighbors(r,c,size,STATE.cols).forEach(([nr,nc])=>{if(STATE.cells[nr][nc].count>0&&STATE.cells[nr][nc].owner===cur){STATE.cells[nr][nc].count--;if(STATE.cells[nr][nc].count<=0)STATE.cells[nr][nc].owner=-1;STATE.cells[r][c].count++;STATE.cells[r][c].owner=cur;pulled.push([nr,nc]);}});vfxData={pulled,to:[r,c]};resultText='ดึงลูกบอลรอบข้างมา!';}break;
     case 'c7':if(STATE.cells[r][c].owner!==cur){STATE.cells[r][c].count++;resultText='ศัตรู +1 (ใกล้ระเบิด!)';}break;
     case 'c8':STATE.shielded[r][c]=1;STATE.shieldOwner[r][c]=cur;resultText='ป้องกัน 1 เทิร์น!';break;
-    case 'c9':if(STATE.cells[r][c].owner!==cur&&STATE.cells[r][c].count>0&&STATE.shielded[r][c]<=0){const own=[];for(let ro=0;ro<size;ro++)for(let co=0;co<size;co++)if(STATE.cells[ro][co].owner===cur)own.push([ro,co]);const bonusCell=own.length?own[Math.floor(Math.random()*own.length)]:null;vfxData={target:[r,c],bonusCell};resultText='ดูด -1 ลูกบอล!';}else if(STATE.shielded[r][c]>0)resultText='❌ ช่องนั้นมีเกราะ!';break;
+    case 'c9':if(STATE.cells[r][c].owner!==cur&&STATE.cells[r][c].count>0&&STATE.shielded[r][c]<=0){const own=[];for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===cur)own.push([ro,co]);const bonusCell=own.length?own[Math.floor(Math.random()*own.length)]:null;vfxData={target:[r,c],bonusCell};resultText='ดูด -1 ลูกบอล!';}else if(STATE.shielded[r][c]>0)resultText='❌ ช่องนั้นมีเกราะ!';break;
     case 'c10':{STATE.hands[playerIdx]=[];const nc2=drawRandomCard();STATE.hands[playerIdx].push({...nc2});resultText=`จั่ว ${nc2.emoji} ${nc2.name}!`;}break;
-    case 'c11':{const own=[];for(let ro=0;ro<size;ro++)for(let co=0;co<size;co++)if(STATE.cells[ro][co].owner===cur)own.push([ro,co]);const picked=own.sort(()=>Math.random()-.5).slice(0,2);picked.forEach(([ro,co])=>STATE.cells[ro][co].count++);vfxData={boosted:picked};resultText='+1 สองช่อง!';}break;
+    case 'c11':{const own=[];for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===cur)own.push([ro,co]);const picked=own.sort(()=>Math.random()-.5).slice(0,2);picked.forEach(([ro,co])=>STATE.cells[ro][co].count++);vfxData={boosted:picked};resultText='+1 สองช่อง!';}break;
     case 'c12':{const others=STATE.alive.filter(i=>i!==cur);if(others.length>0){const t=others[Math.floor(Math.random()*others.length)];const names=STATE.hands[t].map(x=>x.name).join(', ')||'ไม่มีการ์ด';resultText=`${PLAYER_NAMES[t]}: ${names}`;}}break;
     case 'u1':STATE.cells[r][c].count=STATE.cells[r][c].cap;STATE.cells[r][c].owner=cur;resultText='ระเบิดทันที!';break;
     case 'u2':{const tmp={...STATE.cells[r][c]};STATE.cells[r][c]={...STATE.cells[r2][c2]};STATE.cells[r2][c2]=tmp;STATE.cells[r][c].cap=capacity(r,c,size);STATE.cells[r2][c2].cap=capacity(r2,c2,size);vfxData={moves:[{from:[r,c],to:[r2,c2]},{from:[r2,c2],to:[r,c]}]};resultText='สลับ 2 ช่อง!';}break;
     case 'u3':[[r,c],[r2,c2]].forEach(([ro,co])=>{if(STATE.cells[ro][co].owner===cur||STATE.cells[ro][co].owner===-1){STATE.cells[ro][co].count++;STATE.cells[ro][co].owner=cur;}});vfxData={boosted:[[r,c],[r2,c2]]};resultText='+1 สองช่อง!';break;
-    case 'u4':{const own=[];for(let ro=0;ro<size;ro++)for(let co=0;co<size;co++)if(STATE.cells[ro][co].owner===cur)own.push([ro,co]);const sh3=own.sort(()=>Math.random()-.5).slice(0,3);sh3.forEach(([ro,co])=>{STATE.shielded[ro][co]=1;STATE.shieldOwner[ro][co]=cur;});vfxData={shielded:sh3};resultText='ป้องกัน 3 ช่อง 1 เทิร์น!';}break;
+    case 'u4':{const own=[];for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===cur)own.push([ro,co]);const sh3=own.sort(()=>Math.random()-.5).slice(0,3);sh3.forEach(([ro,co])=>{STATE.shielded[ro][co]=1;STATE.shieldOwner[ro][co]=cur;});vfxData={shielded:sh3};resultText='ป้องกัน 3 ช่อง 1 เทิร์น!';}break;
     case 'u5':STATE.timeBombs.push({r,c,turnsLeft:2,owner:cur});resultText='วางระเบิด 2 เทิร์น!';break;
     case 'u6':if(STATE.cells[r][c].owner!==cur&&STATE.shielded[r][c]<=0){vfxData={target:[r,c]};resultText='-2 ลูกบอลศัตรู!';}else if(STATE.shielded[r][c]>0)resultText='❌ ช่องนั้นมีเกราะ!';break;
     case 'u7':{
@@ -2498,34 +2498,34 @@ async function executeCard(cardDef,playerIdx,cardIdx,targets){
       resultText='Pin! ระเบิดไม่ได้ 1 เทิร์น';
     }break;
     case 'u9':spawnCellEmoji(r,c,'📌',{size:'2.5rem'});flashCell(r,c,'#ff4400bb');await delay(500);break;
-    case 'u8':if(STATE.cells[r][c].owner!==cur&&STATE.cells[r][c].count>0){let bd=999,br=-1,bc=-1;for(let ro=0;ro<size;ro++)for(let co=0;co<size;co++)if(STATE.cells[ro][co].owner===cur){const d=Math.abs(ro-r)+Math.abs(co-c);if(d<bd){bd=d;br=ro;bc=co;}}if(br>=0){STATE.cells[br][bc].count=STATE.cells[r][c].count;vfxData={moves:[{from:[r,c],to:[br,bc]}]};resultText='คัดลอกลูกบอล!';}}break;
+    case 'u8':if(STATE.cells[r][c].owner!==cur&&STATE.cells[r][c].count>0){let bd=999,br=-1,bc=-1;for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===cur){const d=Math.abs(ro-r)+Math.abs(co-c);if(d<bd){bd=d;br=ro;bc=co;}}if(br>=0){STATE.cells[br][bc].count=STATE.cells[r][c].count;vfxData={moves:[{from:[r,c],to:[br,bc]}]};resultText='คัดลอกลูกบอล!';}}break;
     case 'r1':{const area=[];for(let ro=Math.max(0,r-1);ro<=Math.min(size-1,r+1);ro++)for(let co=Math.max(0,c-1);co<=Math.min(size-1,c+1);co++)if(STATE.cells[ro][co].owner===cur||STATE.cells[ro][co].owner===-1){STATE.cells[ro][co].count++;STATE.cells[ro][co].owner=cur;area.push([ro,co]);}vfxData={area};resultText='3×3 area +1!';}break;
     case 'r2':{const absorbed=neighbors(r,c,size,STATE.cols).filter(([nr,nc])=>STATE.cells[nr][nc].count>0).map(x=>[...x]);neighbors(r,c,size,STATE.cols).forEach(([nr,nc])=>{STATE.cells[r][c].count+=STATE.cells[nr][nc].count;STATE.cells[r][c].owner=cur;STATE.cells[nr][nc].count=0;STATE.cells[nr][nc].owner=-1;});vfxData={pulled:absorbed,to:[r,c]};resultText='ดูดทุกอย่าง!';}break;
     case 'r3':{const others=STATE.alive.filter(i=>i!==cur);if(others.length>0){const t=others[Math.floor(Math.random()*others.length)];STATE.frozen[t]=Math.max(STATE.frozen[t],1);vfxData={frozenPlayer:t};resultText=`${PLAYER_NAMES[t]} ถูก Freeze!`;}}break;
-    case 'r4':{const others=STATE.alive.filter(i=>i!==cur);if(others.length>0){const t=others[Math.floor(Math.random()*others.length)];const hit=[];for(let ro=0;ro<size;ro++)for(let co=0;co<size;co++)if(STATE.cells[ro][co].owner===t&&STATE.shielded[ro][co]<=0)hit.push([ro,co]);vfxData={hit};resultText=`โจมตีทุกช่องของ ${PLAYER_NAMES[t]}!`;}}break;
-    case 'r5':{const moves=[];const all=[];for(let ro=0;ro<size;ro++)for(let co=0;co<size;co++)if(STATE.cells[ro][co].count>0)all.push([ro,co]);all.filter(()=>Math.random()<.2).forEach(([ro,co])=>{const nbs2=neighbors(ro,co,size,STATE.cols);if(nbs2.length&&STATE.cells[ro][co].count>0){const[nr,nc]=nbs2[Math.floor(Math.random()*nbs2.length)];const ow=STATE.cells[ro][co].owner;STATE.cells[ro][co].count--;if(STATE.cells[ro][co].count<=0)STATE.cells[ro][co].owner=-1;STATE.cells[nr][nc].count++;STATE.cells[nr][nc].owner=ow;moves.push({from:[ro,co],to:[nr,nc],owner:ow});}});vfxData={moves};resultText='พายุ! ย้ายลูกบอล 20%!';}break;
-    case 'r6':{const shAll=[];for(let ro=0;ro<size;ro++)for(let co=0;co<size;co++)if(STATE.cells[ro][co].owner===cur){STATE.shielded[ro][co]=1;STATE.shieldOwner[ro][co]=cur;shAll.push([ro,co]);}vfxData={shielded:shAll};resultText='ป้องกันทุกช่อง!';}break;
+    case 'r4':{const others=STATE.alive.filter(i=>i!==cur);if(others.length>0){const t=others[Math.floor(Math.random()*others.length)];const hit=[];for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===t&&STATE.shielded[ro][co]<=0)hit.push([ro,co]);vfxData={hit};resultText=`โจมตีทุกช่องของ ${PLAYER_NAMES[t]}!`;}}break;
+    case 'r5':{const moves=[];const all=[];for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].count>0)all.push([ro,co]);all.filter(()=>Math.random()<.2).forEach(([ro,co])=>{const nbs2=neighbors(ro,co,size,STATE.cols);if(nbs2.length&&STATE.cells[ro][co].count>0){const[nr,nc]=nbs2[Math.floor(Math.random()*nbs2.length)];const ow=STATE.cells[ro][co].owner;STATE.cells[ro][co].count--;if(STATE.cells[ro][co].count<=0)STATE.cells[ro][co].owner=-1;STATE.cells[nr][nc].count++;STATE.cells[nr][nc].owner=ow;moves.push({from:[ro,co],to:[nr,nc],owner:ow});}});vfxData={moves};resultText='พายุ! ย้ายลูกบอล 20%!';}break;
+    case 'r6':{const shAll=[];for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===cur){STATE.shielded[ro][co]=1;STATE.shieldOwner[ro][co]=cur;shAll.push([ro,co]);}vfxData={shielded:shAll};resultText='ป้องกันทุกช่อง!';}break;
     case 'e1':STATE.cells[r][c].count=Math.max(STATE.cells[r][c].count,STATE.cells[r][c].cap);STATE.cells[r][c].owner=cur;resultText='ระเบิด 2 รอบ!';break;
-    case 'e2':{const row=[];for(let co=0;co<size;co++)if(STATE.cells[r][co].owner===cur||STATE.cells[r][co].owner===-1){STATE.cells[r][co].count++;STATE.cells[r][co].owner=cur;row.push([r,co]);}vfxData={row};resultText='ทั้ง row +1!';}break;
+    case 'e2':{const row=[];for(let co=0;co<cols;co++)if(STATE.cells[r][co].owner===cur||STATE.cells[r][co].owner===-1){STATE.cells[r][co].count++;STATE.cells[r][co].owner=cur;row.push([r,co]);}vfxData={row};resultText='ทั้ง row +1!';}break;
     case 'e3':if(STATE.cells[r][c].owner!==cur&&STATE.cells[r][c].owner!==-1){STATE.cells[r][c].owner=cur;resultText='ขโมยช่อง!';}break;
-    case 'l1':{const others=STATE.alive.filter(i=>i!==cur);if(others.length>0){const t=others[Math.floor(Math.random()*others.length)];const wiped=[];for(let ro=0;ro<size;ro++)for(let co=0;co<size;co++)if(STATE.cells[ro][co].owner===t){STATE.cells[ro][co].count=0;STATE.cells[ro][co].owner=-1;wiped.push([ro,co]);}vfxData={wiped};resultText=`ANNIHILATE ${PLAYER_NAMES[t]}!`;}}break;
+    case 'l1':{const others=STATE.alive.filter(i=>i!==cur);if(others.length>0){const t=others[Math.floor(Math.random()*others.length)];const wiped=[];for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===t){STATE.cells[ro][co].count=0;STATE.cells[ro][co].owner=-1;wiped.push([ro,co]);}vfxData={wiped};resultText=`ANNIHILATE ${PLAYER_NAMES[t]}!`;}}break;
     // ── การ์ดใหม่ ──
     case 'c13':{const vals=[-2,-1,0,1,2];const v=vals[Math.floor(Math.random()*vals.length)];STATE.cells[r][c].count=Math.max(0,STATE.cells[r][c].count+v);if(STATE.cells[r][c].count>0)STATE.cells[r][c].owner=cur;vfxData={value:v};resultText=`Gamble: ${v>=0?'+':''}${v}!`;}break;
     case 'c14':{STATE.cells[r][c].count++;STATE.cells[r][c].owner=cur;const boosted=[[r,c]];neighbors(r,c,size,STATE.cols).forEach(([nr,nc])=>{if(STATE.cells[nr][nc].owner===cur){STATE.cells[nr][nc].count++;boosted.push([nr,nc]);}});vfxData={boosted};resultText='Boost!';}break;
     case 'u9':{if(STATE.cells[r][c].owner!==cur&&STATE.cells[r][c].owner!==-1){if(!STATE.pinned)STATE.pinned={};STATE.pinned[`${r},${c}`]=1;resultText='Pin!';}else{resultText='❌ เลือกช่องศัตรูที่มีบอล';}break;}
-    case 'u10':{STATE.cells[r][c].count+=2;STATE.cells[r][c].owner=cur;const others=STATE.alive.filter(i=>i!==cur);let enemyCell=null;if(others.length){const t=others[Math.floor(Math.random()*others.length)];const tcells=[];for(let ro=0;ro<size;ro++)for(let co=0;co<size;co++)if(STATE.cells[ro][co].owner===t)tcells.push([ro,co]);if(tcells.length){const[ro,co]=tcells[Math.floor(Math.random()*tcells.length)];STATE.cells[ro][co].count++;enemyCell=[ro,co];}}vfxData={enemyCell};resultText='Gift!';}break;
+    case 'u10':{STATE.cells[r][c].count+=2;STATE.cells[r][c].owner=cur;const others=STATE.alive.filter(i=>i!==cur);let enemyCell=null;if(others.length){const t=others[Math.floor(Math.random()*others.length)];const tcells=[];for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===t)tcells.push([ro,co]);if(tcells.length){const[ro,co]=tcells[Math.floor(Math.random()*tcells.length)];STATE.cells[ro][co].count++;enemyCell=[ro,co];}}vfxData={enemyCell};resultText='Gift!';}break;
     case 'r7':{if(!STATE.voidCells)STATE.voidCells={};if(!STATE.voidSnapshot)STATE.voidSnapshot={};STATE.voidCells[`${r},${c}`]=2;STATE.voidSnapshot[`${r},${c}`]={count:STATE.cells[r][c].count,owner:STATE.cells[r][c].owner};STATE.cells[r][c].count=0;STATE.cells[r][c].owner=-1;resultText='Void!';}break;
     case 'r8':{// Rewind: คำนวณ diff ก่อน แล้วค่อย apply
     if(STATE._snapshot){
       const snap=STATE._snapshot;
       const diff=[];
-      for(let ro=0;ro<size;ro++)for(let co=0;co<size;co++){
+      for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++){
         const cur3=STATE.cells[ro][co],old3=snap[ro][co];
         if(cur3.count!==old3.count||cur3.owner!==old3.owner)
           diff.push({r:ro,c:co,fromCount:cur3.count,fromOwner:cur3.owner,toCount:old3.count,toOwner:old3.owner});
       }
       vfxData={diff};
-      for(let ro=0;ro<size;ro++)for(let co=0;co<size;co++){STATE.cells[ro][co].count=snap[ro][co].count;STATE.cells[ro][co].owner=snap[ro][co].owner;}
+      for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++){STATE.cells[ro][co].count=snap[ro][co].count;STATE.cells[ro][co].owner=snap[ro][co].owner;}
       resultText='Rewind!';
     }}break;
     case 'sr1':{// Sever: เลือก 2 ช่อง ระเบิดออกไม่ได้ 4 เทิร์น
@@ -2538,27 +2538,27 @@ async function executeCard(cardDef,playerIdx,cardIdx,targets){
     case 'sr3':{// Key: การ์ดถัดไปเป็น rare+
     STATE.keyActive=(STATE.keyActive||0)+1;resultText='Key! การ์ดถัดไป rare+!';}break;
     case 'ep2':{// Cascade: ทุกช่องตัวเอง +1
-    const cascaded=[];for(let ro=0;ro<size;ro++)for(let co=0;co<size;co++)if(STATE.cells[ro][co].owner===cur&&STATE.cells[ro][co].count>0){STATE.cells[ro][co].count++;cascaded.push([ro,co]);}vfxData={cascaded};resultText='Cascade!';}break;
+    const cascaded=[];for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===cur&&STATE.cells[ro][co].count>0){STATE.cells[ro][co].count++;cascaded.push([ro,co]);}vfxData={cascaded};resultText='Cascade!';}break;
     case 'ep3':{// Balance: เฉลี่ยทุกช่อง
-    let total=0,cnt=0;for(let ro=0;ro<size;ro++)for(let co=0;co<size;co++)if(STATE.cells[ro][co].count>0){total+=STATE.cells[ro][co].count;cnt++;}const avg=cnt>0?Math.round(total/cnt):0;for(let ro=0;ro<size;ro++)for(let co=0;co<size;co++)if(STATE.cells[ro][co].count>0)STATE.cells[ro][co].count=avg;resultText='Balance!';}break;
+    let total=0,cnt=0;for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].count>0){total+=STATE.cells[ro][co].count;cnt++;}const avg=cnt>0?Math.round(total/cnt):0;for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].count>0)STATE.cells[ro][co].count=avg;resultText='Balance!';}break;
     case 'ep4':{STATE._pendingDelayFor=cur;resultText='Delay! เทิร์นหน้าทำได้ 2 action!';}break;
-    case 'ep5':{let best=null,bestRatio=-1;for(let ro=0;ro<size;ro++)for(let co=0;co<size;co++)if(STATE.cells[ro][co].owner===cur){const ratio=STATE.cells[ro][co].count/STATE.cells[ro][co].cap;if(ratio>bestRatio){bestRatio=ratio;best=[ro,co];}}if(best){const[br,bc]=best;const boosted=neighbors(br,bc,size,STATE.cols).filter(([nr,nc])=>STATE.cells[nr][nc].owner===cur||STATE.cells[nr][nc].owner===-1);const novaDur=boosted.length*80+700;vfxData={best,novaDur,boosted};resultText='Nova!';}else resultText='Nova: ไม่มีช่อง';}break;
+    case 'ep5':{let best=null,bestRatio=-1;for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===cur){const ratio=STATE.cells[ro][co].count/STATE.cells[ro][co].cap;if(ratio>bestRatio){bestRatio=ratio;best=[ro,co];}}if(best){const[br,bc]=best;const boosted=neighbors(br,bc,size,STATE.cols).filter(([nr,nc])=>STATE.cells[nr][nc].owner===cur||STATE.cells[nr][nc].owner===-1);const novaDur=boosted.length*80+700;vfxData={best,novaDur,boosted};resultText='Nova!';}else resultText='Nova: ไม่มีช่อง';}break;
     case 'ep6':{// Inferno: VFX บวก
     const infCells=[];
-    for(let ro=0;ro<size;ro++)for(let co=0;co<size;co++)if(STATE.cells[ro][co].owner===cur)infCells.push([ro,co]);
+    for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===cur)infCells.push([ro,co]);
     vfxData={cells:infCells,dur:infCells.length*40+500};resultText='Inferno!';}break;
     case 'l2':{// Big Bang: ทุกช่องระเบิดพร้อมกัน
-    for(let ro=0;ro<size;ro++)for(let co=0;co<size;co++)if(STATE.cells[ro][co].count>0)STATE.cells[ro][co].count=STATE.cells[ro][co].cap;resultText='BIG BANG!';}break;
+    for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].count>0)STATE.cells[ro][co].count=STATE.cells[ro][co].cap;resultText='BIG BANG!';}break;
     case 'l3':{// Dominion: VFX จะ set owner ทีละช่อง
     const empts=[];const mid3=STATE.size/2;
-    for(let ro=0;ro<size;ro++)for(let co=0;co<size;co++)if(STATE.cells[ro][co].owner===-1)empts.push([ro,co]);
+    for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===-1)empts.push([ro,co]);
     let md=0;empts.forEach(([ro,co])=>{const d=Math.abs(ro-mid3)+Math.abs(co-mid3);if(d>md)md=d;});
     vfxData={empties:empts,maxDist:md,owner:cur};resultText='DOMINION!';}break;
     case 'l4':{// Invasion: สุ่มช่องศัตรู 3 ช่องเป็นของตัวเอง
-    const enemyCells2=[];for(let ro=0;ro<size;ro++)for(let co=0;co<size;co++)if(STATE.cells[ro][co].owner!==cur&&STATE.cells[ro][co].owner!==-1)enemyCells2.push([ro,co]);for(let i=enemyCells2.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[enemyCells2[i],enemyCells2[j]]=[enemyCells2[j],enemyCells2[i]];}const invaded=enemyCells2.slice(0,3);invaded.forEach(([ro,co])=>{STATE.cells[ro][co].owner=cur;});vfxData={invaded};resultText="INVASION!";}break;
+    const enemyCells2=[];for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner!==cur&&STATE.cells[ro][co].owner!==-1)enemyCells2.push([ro,co]);for(let i=enemyCells2.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[enemyCells2[i],enemyCells2[j]]=[enemyCells2[j],enemyCells2[i]];}const invaded=enemyCells2.slice(0,3);invaded.forEach(([ro,co])=>{STATE.cells[ro][co].owner=cur;});vfxData={invaded};resultText="INVASION!";}break;
     case 'm1':{// Singularity: ดูด 50% ทั้งกระดาน
     let totalOrbs=0;const affected=[];
-    for(let ro=0;ro<size;ro++)for(let co=0;co<size;co++){
+    for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++){
       if(ro===r&&co===c)continue;
       if(STATE.cells[ro][co].count>0){
         const taken=Math.ceil(STATE.cells[ro][co].count/2);
@@ -2570,7 +2570,7 @@ async function executeCard(cardDef,playerIdx,cardIdx,targets){
     STATE.cells[r][c].count+=totalOrbs;STATE.cells[r][c].owner=cur;
     vfxData={affected};resultText='SINGULARITY!';}break;
     case 'm2':{// Big Bang: ทุกช่องตัวเองระเบิด แล้ว +2 คืน
-    const exploded=[];for(let ro=0;ro<size;ro++)for(let co=0;co<size;co++)if(STATE.cells[ro][co].owner===cur){STATE.cells[ro][co].count=STATE.cells[ro][co].cap;exploded.push([ro,co]);}vfxData={exploded};resultText='BIG BANG!';}break;
+    const exploded=[];for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===cur){STATE.cells[ro][co].count=STATE.cells[ro][co].cap;exploded.push([ro,co]);}vfxData={exploded};resultText='BIG BANG!';}break;
     case 'l5':{// Rebirth: คืนชีพ — เฉพาะช่องว่าง
     if(STATE.cells[r][c].owner!==-1){showToast('❌ วางได้เฉพาะช่องว่าง');break;}
     if(!STATE.alive.includes(cur)){STATE.alive.push(cur);STATE.alive.sort((a,b)=>a-b);}
@@ -2756,8 +2756,8 @@ async function doBotTurn(){
   } else {document.getElementById('bot-thinking').classList.remove('show');await doBotPlace(cur,size);}
 }
 function botPickTarget(cardDef,playerIdx,size,exclude=null){
-  if(cardDef.targetSelf){let best=null,bestScore=-1;for(let r=0;r<size;r++)for(let c=0;c<size;c++){if(exclude&&exclude[0]===r&&exclude[1]===c)continue;const cell=STATE.cells[r][c];if(cell.owner===playerIdx||cell.owner===-1){const score=cell.count/cell.cap;if(score>bestScore){bestScore=score;best=[r,c];}}}return best;}
-  else{let best=null,bestCount=-1;for(let r=0;r<size;r++)for(let c=0;c<size;c++){if(exclude&&exclude[0]===r&&exclude[1]===c)continue;const cell=STATE.cells[r][c];if(cell.owner!==-1&&cell.owner!==playerIdx&&cell.count>bestCount){bestCount=cell.count;best=[r,c];}}return best;}
+  if(cardDef.targetSelf){let best=null,bestScore=-1;for(let r=0;r<size;r++)for(let c=0;c<cols;c++){if(exclude&&exclude[0]===r&&exclude[1]===c)continue;const cell=STATE.cells[r][c];if(cell.owner===playerIdx||cell.owner===-1){const score=cell.count/cell.cap;if(score>bestScore){bestScore=score;best=[r,c];}}}return best;}
+  else{let best=null,bestCount=-1;for(let r=0;r<size;r++)for(let c=0;c<cols;c++){if(exclude&&exclude[0]===r&&exclude[1]===c)continue;const cell=STATE.cells[r][c];if(cell.owner!==-1&&cell.owner!==playerIdx&&cell.count>bestCount){bestCount=cell.count;best=[r,c];}}return best;}
 }
 async function doBotPlace(playerIdx,size){
   if(STATE._dead)return;
@@ -2784,7 +2784,7 @@ async function doBotPlace(playerIdx,size){
       // ลดคะแนนถ้าใกล้บอทอื่นเกินไป
       STATE.alive.forEach(pi=>{
         if(pi===playerIdx)return;
-        for(let ro=0;ro<size;ro++)for(let co=0;co<size;co++){
+        for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++){
           if(STATE.cells[ro][co].owner===pi){
             const d=Math.abs(r-ro)+Math.abs(c-co);
             if(d<MIN_DIST) score-=(MIN_DIST-d)*8;
