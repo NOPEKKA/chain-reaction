@@ -2756,6 +2756,7 @@ async function doBotTurn(){
   } else {document.getElementById('bot-thinking').classList.remove('show');await doBotPlace(cur,size);}
 }
 function botPickTarget(cardDef,playerIdx,size,exclude=null){
+  const cols=STATE.cols||size;
   if(cardDef.targetSelf){let best=null,bestScore=-1;for(let r=0;r<size;r++)for(let c=0;c<cols;c++){if(exclude&&exclude[0]===r&&exclude[1]===c)continue;const cell=STATE.cells[r][c];if(cell.owner===playerIdx||cell.owner===-1){const score=cell.count/cell.cap;if(score>bestScore){bestScore=score;best=[r,c];}}}return best;}
   else{let best=null,bestCount=-1;for(let r=0;r<size;r++)for(let c=0;c<cols;c++){if(exclude&&exclude[0]===r&&exclude[1]===c)continue;const cell=STATE.cells[r][c];if(cell.owner!==-1&&cell.owner!==playerIdx&&cell.count>bestCount){bestCount=cell.count;best=[r,c];}}return best;}
 }
@@ -2784,7 +2785,7 @@ async function doBotPlace(playerIdx,size){
       // ลดคะแนนถ้าใกล้บอทอื่นเกินไป
       STATE.alive.forEach(pi=>{
         if(pi===playerIdx)return;
-        for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++){
+        for(let ro=0;ro<size;ro++)for(let co=0;co<bCols;co++){
           if(STATE.cells[ro][co].owner===pi){
             const d=Math.abs(r-ro)+Math.abs(c-co);
             if(d<MIN_DIST) score-=(MIN_DIST-d)*8;
