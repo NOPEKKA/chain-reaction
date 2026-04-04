@@ -2259,13 +2259,17 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
           const dist=Math.abs(ro-r)+Math.abs(co-c);
           spawnArrow(ro,co,r,c,'🟣',{delay:dist*0.04,size:'1rem'});
           flashCell(ro,co,'#aa44ffbb',dist*40,300);
-          // ใน online mode: fade cell ออกเมื่อลูกศรถึงจุดหมาย
+          // online mode: ลบบอลออกทันทีเมื่อลูกศรถึงจุดหมาย
           if(_onlineMode){
-            const arriveMs=dist*40+380;
+            const arriveMs=dist*40+350;
             const captRo=ro,captCo=co;
             setTimeout(()=>{
               const el=document.querySelector(`.cell[data-r="${captRo}"][data-c="${captCo}"]`);
-              if(el){el.style.transition='opacity .3s';el.style.opacity='0.15';}
+              if(el){
+                el.style.transition='opacity .15s,background .15s';
+                el.style.opacity='0';
+                el.style.background='transparent';
+              }
             },arriveMs);
           }
         }
@@ -3026,7 +3030,8 @@ function nextTurn(){
 function updateTurnLabel(){
   const label=document.getElementById('turn-label'),cur=STATE.current;
   const color=PLAYER_COLORS[cur];
-  label.textContent=`${isBot(cur)?'🤖 ':'🎯 '}${getPlayerName(cur)}`;
+  const isFrozen=STATE.frozen&&STATE.frozen[cur]>0;
+  label.textContent=`${isFrozen?'❄️ ':isBot(cur)?'🤖 ':'🎯 '}${getPlayerName(cur)}${isFrozen?' (Frozen)':''}`;
   label.style.background=color+'55';
   label.classList.remove('turn-flash');void label.offsetWidth;label.classList.add('turn-flash');
   setTimeout(()=>label.classList.remove('turn-flash'),520);
