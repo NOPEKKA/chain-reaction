@@ -759,11 +759,11 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);min-height:100vh;displ
 
 <script>
 const CARD_DEFS=[
-  {id:'c1',emoji:'⚡',name:'Overload',rarity:'uncommon',cat:'burst',desc:'เพิ่มลูกบอล +2 ในช่องที่เลือก',needTarget:true,targetSelf:true},
+  {id:'c1',emoji:'⚡',name:'Overload',rarity:'uncommon',cat:'burst',desc:'เพิ่มลูกบอล +2 ในช่องของตัวเองที่เลือก',needTarget:true,targetSelf:true,ownOnly:true},
   {id:'c2',emoji:'💠',name:'Pulse',rarity:'uncommon',cat:'burst',desc:'ช่องรอบๆ ที่เลือก +1 ทุกช่อง',needTarget:true,targetSelf:true},
   {id:'c3',emoji:'🎯',name:'Sniper',rarity:'common',cat:'attack',desc:'เลือกช่องศัตรู -1 ลูกบอล',needTarget:true,targetSelf:false},
   {id:'c4',emoji:'⚖️',name:'Exchange',rarity:'uncommon',cat:'chaos',desc:'+2 ช่องตัวเองที่เลือก แล้วสุ่มช่องศัตรู -2',needTarget:true,targetSelf:true},
-  {id:'c5',emoji:'🌀',name:'Spin',rarity:'common',cat:'chaos',desc:'ย้ายลูกบอล 1 ช่องไปข้างๆ สุ่ม',needTarget:true,targetSelf:true},
+  {id:'c5',emoji:'🌀',name:'Spin',rarity:'common',cat:'chaos',desc:'เลือกช่องตัวเอง แล้วเลือกช่องติดกันที่จะย้ายไป',needTarget:true,targetSelf:true,twoTarget:true},
   {id:'c6',emoji:'🧲',name:'Attract',rarity:'common',cat:'burst',desc:'ดึงลูกบอลจากข้างๆ มารวม',needTarget:true,targetSelf:true},
   {id:'c7',emoji:'💢',name:'Poke',rarity:'common',cat:'attack',desc:'เพิ่มลูกบอลศัตรู +1 (ใกล้ระเบิด!)',needTarget:true,targetSelf:false},
   {id:'c8',emoji:'🛡️',name:'Shield',rarity:'common',cat:'defense',desc:'ช่องนั้นไม่ระเบิด 1 เทิร์น',needTarget:true,targetSelf:true},
@@ -771,9 +771,9 @@ const CARD_DEFS=[
   {id:'c10',emoji:'🔄',name:'Cycle',rarity:'common',cat:'strategy',desc:'ทิ้งการ์ดทั้งหมด แล้วจั่ว 1 ใบใหม่',needTarget:false},
   {id:'c11',anyTarget:true,emoji:'📦',name:'Store',rarity:'common',cat:'burst',desc:'+1 สองช่องของตัวเองสุ่ม',needTarget:false},
   {id:'c12',emoji:'🔍',name:'Scout',rarity:'common',cat:'strategy',desc:'ดูการ์ดในมือของผู้เล่นอื่นสุ่ม',needTarget:false,anyTarget:false},
-  {id:'u1',emoji:'💣',name:'Instant Burst',rarity:'uncommon',cat:'burst',desc:'ช่องที่เลือกระเบิดทันที',needTarget:true,targetSelf:true},
+  {id:'u1',emoji:'💣',name:'Instant Burst',rarity:'uncommon',cat:'burst',desc:'ช่องของตัวเองที่เลือกระเบิดทันที',needTarget:true,targetSelf:true,ownOnly:true},
   {id:'u2',emoji:'🔁',name:'Swap',rarity:'uncommon',cat:'strategy',desc:'สลับตำแหน่ง 2 ช่องบนกระดาน',needTarget:true,targetSelf:true,twoTarget:true},
-  {id:'u3',emoji:'💥',name:'Double Shot',rarity:'uncommon',cat:'burst',desc:'+1 สองช่องที่เลือก',needTarget:true,targetSelf:true,twoTarget:true},
+  {id:'u3',emoji:'💥',name:'Double Shot',rarity:'uncommon',cat:'burst',desc:'+1 สองช่องของตัวเองที่เลือก',needTarget:true,targetSelf:true,twoTarget:true,ownOnly:true},
   {id:'u4',anyTarget:true,emoji:'🧱',name:'Wall',rarity:'uncommon',cat:'defense',desc:'ป้องกัน 3 ช่องของตัวเอง 1 เทิร์น',needTarget:false},
   {id:'u5',emoji:'⏳',name:'Time Bomb',rarity:'rare',cat:'chaos',desc:'อีก 2 เทิร์น ช่องนั้นระเบิดเอง',needTarget:true,targetSelf:false},
   {id:'u6',emoji:'⚔️',name:'Raid',rarity:'uncommon',cat:'attack',desc:'ลบลูกบอลศัตรู -2',needTarget:true,targetSelf:false},
@@ -794,7 +794,7 @@ const CARD_DEFS=[
   {id:'c13',emoji:'🎲',name:'Gamble',rarity:'common',cat:'chaos',desc:'สุ่ม -2 ถึง +2 ในช่องที่เลือก',needTarget:true,targetSelf:true},
   {id:'c14',emoji:'🪄',name:'Boost',rarity:'uncommon',cat:'burst',desc:'ช่องที่เลือก +1 และช่องตัวเองข้างๆ +1 ด้วย',needTarget:true,targetSelf:true},
   // UNCOMMON
-  {id:'u10',emoji:'🎁',name:'Gift',rarity:'common',cat:'chaos',desc:'ช่องตัวเองที่เลือก +2 แล้วสุ่มช่องศัตรู +1',needTarget:true,targetSelf:true},
+  {id:'u10',emoji:'🎁',name:'Gift',rarity:'common',cat:'chaos',desc:'ช่องตัวเองที่เลือก +2 แล้วสุ่ม 2 ช่องของศัตรูสุ่ม +1',needTarget:true,targetSelf:true},
   // RARE
   {id:'r7',emoji:'⬛',name:'Void',rarity:'rare',cat:'chaos',desc:'ช่องที่เลือกหายไปจากกระดาน 2 เทิร์น ไม่มีใครวางได้',needTarget:true,targetSelf:true},
   {id:'r8',anyTarget:true,emoji:'🔙',name:'Rewind',rarity:'epic',cat:'strategy',desc:'ย้อนกลับกระดานไปสภาพก่อนหน้า 1 เทิร์น',needTarget:false},
@@ -1534,8 +1534,11 @@ function renderGridHighlight(){
         if(aCard.rebirthOnly){
           valid=(cellOwner===-1);
           type='own';
+        } else if(aCard.ownOnly){
+          valid=(cellOwner===pi&&cellCount>0);
+          type='own';
         } else if(aCard.targetSelf){
-          const emptyOk=['c1','c2','c4','c5','c6','c8','u1','u7','r1','r2','e1','e2','u2','u3'].includes(aCard.id);
+          const emptyOk=['c2','c4','c5','c6','c8','u7','r1','r2','e1','e2','u2'].includes(aCard.id);
           valid=emptyOk?(cellOwner===pi||cellOwner===-1):(cellOwner===pi&&cellCount>0);
           type='own';
         } else {
@@ -1549,6 +1552,16 @@ function renderGridHighlight(){
         if(isTwoTargetFirst&&r===targetData.r1&&c===targetData.c1){
           div.classList.remove('target-own','target-enemy','target-inactive');
           div.classList.add('first-picked');
+        }
+        // c5 Spin second pick: เฉพาะ neighbors ของช่องแรก
+        if(isTwoTargetFirst&&aCard&&aCard.id==='c5'&&targetData.r1Done){
+          const nbs5=[];const r1=targetData.r1,c1=targetData.c1;
+          if(r1>0)nbs5.push([r1-1,c1]);if(r1<STATE.size-1)nbs5.push([r1+1,c1]);
+          if(c1>0)nbs5.push([r1,c1-1]);if(c1<(STATE.cols||STATE.size)-1)nbs5.push([r1,c1+1]);
+          const isNb=nbs5.some(([a,b])=>a===r&&b===c);
+          div.classList.remove('target-own','target-enemy','target-inactive','first-picked');
+          if(isNb)div.classList.add('target-own');
+          else div.classList.add('target-inactive');
         }
       }
     }
@@ -2104,10 +2117,18 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
 
     // ── u10 Gift ──
     case 'u10':{
-      spawnCellEmoji(r,c,'🎁',{size:'2rem'});
-      flashCell(r,c,'#44ff8888');
-      if(vfxData.enemyCell){const[er,ec]=vfxData.enemyCell;await delay(150);spawnCellEmoji(er,ec,'💢',{size:'1.4rem',dur:0.4});flashCell(er,ec,'#ffaa4488');}
-      await delay(600);
+      spawnCellEmoji(r,c,'🎁',{size:'2rem'});flashCell(r,c,'#44ff8888');
+      spawnFloatingNumber(r,c,2,{color:'#88ffaa'});
+      // boosted[0] = ช่องตัวเอง (+2), boosted[1,2] = ช่องศัตรู (+1)
+      const u10b=vfxData.boosted||[];
+      u10b.slice(1).forEach(([er,ec],i)=>{
+        setTimeout(()=>{
+          spawnCellEmoji(er,ec,'🎁',{size:'1.2rem',dur:0.5});
+          flashCell(er,ec,'#ffaa4488');
+          spawnFloatingNumber(er,ec,1,{color:'#ffcc44',size:'0.9rem'});
+        },150+i*100);
+      });
+      await delay(700);
     }break;
 
 
