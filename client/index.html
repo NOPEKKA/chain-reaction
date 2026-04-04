@@ -1916,7 +1916,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
     case 'c5':case 'u8':case 'u2':(vfxData.moves||[]).forEach((mv,i)=>{spawnArrow(mv.from[0],mv.from[1],mv.to[0],mv.to[1],'🌀',{delay:i*0.1});flashCell(mv.to[0],mv.to[1],'#cc88ff88',i*100+300);});await delay(700);break;
 
     // ── c6 Attract / r2 Black Hole: ดึงเข้า ──
-    case 'c6':case 'r2':{const to=vfxData.to||[r,c];(vfxData.pulled||[]).forEach(([pr,pc],i)=>{spawnArrow(pr,pc,to[0],to[1],'🧲',{delay:i*0.07,size:'1.3rem'});flashCell(pr,pc,'#ffaa4488',i*70);});spawnCellEmoji(to[0],to[1],'⭕',{size:'2rem',delay:0.4});await delay(800);}break;
+    case 'c6':case 'r2':{const to=vfxData.to||[r,c];(vfxData.pulled||[]).forEach(([pr,pc],i)=>{spawnArrow(pr,pc,to[0],to[1],'🧲',{delay:i*0.07,size:'1.3rem'});flashCell(pr,pc,'#ffaa4488',i*70);if(_onlineMode){setTimeout(()=>{const el=document.querySelector(`.cell[data-r="${pr}"][data-c="${pc}"]`);if(el){el.style.transition='opacity .3s';el.style.opacity='0.15';}},i*70+350);}});spawnCellEmoji(to[0],to[1],'⭕',{size:'2rem',delay:0.4});await delay(800);}break;
 
     // ── c7 Poke: กดระเบิด ──
     case 'c7':spawnCellEmoji(r,c,'💢',{size:'2rem'});flashCell(r,c,'#ff888888');await delay(400);break;
@@ -2024,6 +2024,12 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
       (vfxData.wiped||[]).forEach(([ro,co],i)=>{
         flashCell(ro,co,'#ff0000cc',i*25,500);
         spawnCellEmoji(ro,co,'💀',{size:'1.2rem',delay:i*0.025,dur:0.6});
+        if(_onlineMode){
+          setTimeout(()=>{
+            const el=document.querySelector(`.cell[data-r="${ro}"][data-c="${co}"]`);
+            if(el){el.style.transition='opacity .3s';el.style.opacity='0.1';}
+          },i*25+400);
+        }
       });
       await delay(1200);a1.remove();
     }break;
@@ -2225,6 +2231,15 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
           const dist=Math.abs(ro-r)+Math.abs(co-c);
           spawnArrow(ro,co,r,c,'🟣',{delay:dist*0.04,size:'1rem'});
           flashCell(ro,co,'#aa44ffbb',dist*40,300);
+          // ใน online mode: fade cell ออกเมื่อลูกศรถึงจุดหมาย
+          if(_onlineMode){
+            const arriveMs=dist*40+380;
+            const captRo=ro,captCo=co;
+            setTimeout(()=>{
+              const el=document.querySelector(`.cell[data-r="${captRo}"][data-c="${captCo}"]`);
+              if(el){el.style.transition='opacity .3s';el.style.opacity='0.15';}
+            },arriveMs);
+          }
         }
       }
       for(let i=0;i<12;i++){
@@ -2251,6 +2266,12 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
       (vfxData.exploded||[]).forEach(([ro,co],i)=>{
         flashCell(ro,co,'#ff6600cc',i*18,500);
         spawnCellEmoji(ro,co,'💥',{size:'1.6rem',delay:i*0.018,dur:0.7});
+        if(_onlineMode){
+          setTimeout(()=>{
+            const el=document.querySelector(`.cell[data-r="${ro}"][data-c="${co}"]`);
+            if(el){el.style.transition='opacity .3s';el.style.opacity='0.1';}
+          },i*18+500);
+        }
       });
       await delay(1400);flashScreen('#ffffff88',500);await delay(300);bbEl.remove();
     }break;
