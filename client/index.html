@@ -1819,7 +1819,7 @@ function initiateTarget(cardDef,playerIdx,cardIdx,firstR,firstC){
   if(cardDef.id!=='l5'&&!isValidTarget(cardDef,firstR,firstC,playerIdx)){showToast('❌ เลือกช่องนั้นไม่ได้');return;}
   selectedHandCard=null;
   document.getElementById('target-banner').classList.remove('show');
-  if(cardDef.twoTarget){targetingCard=cardDef;targetData={playerIdx,cardIdx,r1:firstR,c1:firstC};document.getElementById('target-text').textContent=`✅ ช่อง 1 เลือกแล้ว — เลือกช่องที่ 2`;document.getElementById('target-banner').classList.add('show');renderGridHighlight();}
+  if(cardDef.twoTarget){targetingCard=cardDef;targetData={playerIdx,cardIdx,r1:firstR,c1:firstC,r1Done:true};document.getElementById('target-text').textContent=`✅ ช่อง 1 เลือกแล้ว — เลือกช่องที่ 2`;document.getElementById('target-banner').classList.add('show');renderGridHighlight();}
   else executeCard(cardDef,playerIdx,cardIdx,{r:firstR,c:firstC});
 }
 function handleTargetClick(r,c){
