@@ -63,6 +63,10 @@ function broadcastRoom(room) {
 function sanitizeState(state) {
   const s = JSON.parse(JSON.stringify(state));
   s.disabledCards = state.disabledCards || [];
+  s.lastCardId = state._lastCardId || null;
+  s.lastCardVfxData = state._lastCardVfxData || null;
+  // Clear after sending
+  if (state._lastCardId) { delete state._lastCardId; delete state._lastCardVfxData; }
   s.handsCount = s.hands.map(h => h.length);
   delete s.hands;
   // ส่ง all waves data พร้อม state
@@ -435,6 +439,9 @@ io.on('connection', (socket) => {
     if (!result.ok) return cb?.({ ok: false, msg: result.msg });
     cb?.({ ok: true, vfxData: result.vfxData, resultText: result.resultText });
     io.to(room.code).emit('card_vfx', { cardId, targets: targets||{}, playerIdx: member.slot, vfxData: result.vfxData||{} });
+    // บันทึกการ์ดล่าสุดใน state เพื่อให้ room_update รู้ว่ามี VFX
+    state._lastCardId = cardId;
+    state._lastCardVfxData = result.vfxData || {};
     processTurnEnd(room);
   });
 
