@@ -632,16 +632,29 @@ function initSocket() {
     }
   });
 
-  // ── Frozen skip notification ──
-  socket.on('frozen_skip', ({ playerIdx, playerName }) => {
+  // ── Frozen cancel notification ──
+  socket.on('frozen_cancel', ({ playerIdx, action, cardId }) => {
     if (!onlineMode) return;
     SFX.frozen && SFX.frozen();
-    showToast(`❄️ ${playerName} ถูก Freeze! ข้ามเทิร์น`);
-    // Flash frozen player's score card
+    const pName = (window.PLAYER_NAMES && window.PLAYER_NAMES[playerIdx]) || `P${playerIdx+1}`;
+    showToast(`❄️ ${pName} โดน Freeze! action ไม่มีผล`);
+    // Flash score card สีฟ้า
     const sc = document.getElementById(`sc-${playerIdx}`);
     if (sc) {
-      sc.style.filter = 'hue-rotate(180deg) brightness(1.5)';
-      setTimeout(() => sc.style.filter = '', 1500);
+      sc.style.transition = 'all .2s';
+      sc.style.background = 'rgba(100,200,255,0.4)';
+      sc.style.boxShadow = '0 0 20px #88eeff';
+      // แสดง ❄️ ลอยบน score card
+      const rect = sc.getBoundingClientRect();
+      const ice = document.createElement('div');
+      ice.style.cssText = `position:fixed;left:${rect.left+rect.width/2}px;top:${rect.top}px;font-size:2.5rem;pointer-events:none;z-index:1200;transform:translate(-50%,-50%);animation:cellEmojiPop 1s ease-out forwards;`;
+      ice.textContent = '❄️';
+      document.body.appendChild(ice);
+      setTimeout(() => { sc.style.background=''; sc.style.boxShadow=''; ice.remove(); }, 1500);
+    }
+    // ถ้าเราเป็นคนโดน Freeze - แสดง overlay แจ้งเตือน
+    if (playerIdx === mySlot) {
+      showToast('❄️ คุณโดน Freeze! action ไม่มีผลในเทิร์นนี้');
     }
   });
 
