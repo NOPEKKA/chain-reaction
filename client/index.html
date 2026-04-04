@@ -2121,16 +2121,17 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
     case 'u10':{
       spawnCellEmoji(r,c,'🎁',{size:'2rem'});flashCell(r,c,'#44ff8888');
       spawnFloatingNumber(r,c,2,{color:'#88ffaa'});
-      // boosted[0] = ช่องตัวเอง (+2), boosted[1,2] = ช่องศัตรู (+1)
+      // boosted[0]=ช่องตัวเอง(+2), boosted[1,2]=ช่องศัตรู(+1)
       const u10b=vfxData.boosted||[];
       u10b.slice(1).forEach(([er,ec],i)=>{
+        // ยิงลูกศรจากช่องเราไปช่องศัตรู
+        spawnArrow(r,c,er,ec,'🎁',{delay:i*0.15+0.1,size:'1rem'});
         setTimeout(()=>{
-          spawnCellEmoji(er,ec,'🎁',{size:'1.2rem',dur:0.5});
           flashCell(er,ec,'#ffaa4488');
           spawnFloatingNumber(er,ec,1,{color:'#ffcc44',size:'0.9rem'});
-        },150+i*100);
+        },i*150+500);
       });
-      await delay(700);
+      await delay(800);
     }break;
 
 
@@ -2558,10 +2559,10 @@ async function executeCard(cardDef,playerIdx,cardIdx,targets){
       const nr5=r2!==undefined?r2:null;const nc5=c2!==undefined?c2:null;
       const isNb=nr5!==null&&nbs5.some(([a,b])=>a===nr5&&b===nc5);
       if(isNb&&STATE.cells[r][c].count>0){
-        const ow=STATE.cells[r][c].owner;
-        STATE.cells[r][c].count--;if(STATE.cells[r][c].count<=0)STATE.cells[r][c].owner=-1;
-        STATE.cells[nr5][nc5].count++;STATE.cells[nr5][nc5].owner=ow;
-        vfxData={moves:[{from:[r,c],to:[nr5,nc5]}]};resultText='ย้ายลูกบอลไปข้างๆ!';
+        const ow=STATE.cells[r][c].owner;const moved=STATE.cells[r][c].count;
+        STATE.cells[r][c].count=0;STATE.cells[r][c].owner=-1;
+        STATE.cells[nr5][nc5].count+=moved;STATE.cells[nr5][nc5].owner=ow;
+        vfxData={moves:[{from:[r,c],to:[nr5,nc5]}]};resultText='Spin!';
       }}break;
     case 'c6':{const pulled=[];neighbors(r,c,size,STATE.cols).forEach(([nr,nc])=>{if(STATE.cells[nr][nc].count>0&&STATE.cells[nr][nc].owner===cur){STATE.cells[nr][nc].count--;if(STATE.cells[nr][nc].count<=0)STATE.cells[nr][nc].owner=-1;STATE.cells[r][c].count++;STATE.cells[r][c].owner=cur;pulled.push([nr,nc]);}});vfxData={pulled,to:[r,c]};resultText='ดึงลูกบอลรอบข้างมา!';}break;
     case 'c7':if(STATE.cells[r][c].owner!==cur){STATE.cells[r][c].count++;resultText='ศัตรู +1 (ใกล้ระเบิด!)';}break;
