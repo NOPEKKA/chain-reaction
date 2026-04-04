@@ -883,7 +883,16 @@ function closeCardFilter() {
 function renderCardFilter() {
   const list = document.getElementById('card-filter-list');
   if (!list) return;
-  const cards = window.CARD_DEFS || [];
+
+  // ดึง CARD_DEFS จาก gameLogic ที่โหลดใน index.html
+  const cards = (typeof CARD_DEFS !== 'undefined' ? CARD_DEFS : null)
+    || window.CARD_DEFS || [];
+
+  if (!cards.length) {
+    list.innerHTML = '<div style="text-align:center;opacity:.5;padding:20px;">โหลดข้อมูลการ์ดไม่สำเร็จ</div>';
+    return;
+  }
+
   const groups = {};
   RARITY_ORDER.forEach(r => groups[r] = []);
   cards.forEach(c => { if (groups[c.rarity]) groups[c.rarity].push(c); });
@@ -892,12 +901,36 @@ function renderCardFilter() {
   RARITY_ORDER.forEach(rarity => {
     const group = groups[rarity];
     if (!group.length) return;
+
     const groupDiv = document.createElement('div');
     groupDiv.className = 'card-filter-group';
-    const label = document.createElement('div');
-    label.className = 'card-filter-group-label';
-    label.textContent = RARITY_LABELS[rarity];
-    groupDiv.appendChild(label);
+
+    // Header ของกลุ่ม + toggle ทั้งกลุ่ม
+    const headerDiv = document.createElement('div');
+    headerDiv.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;';
+    const labelEl = document.createElement('div');
+    labelEl.className = 'card-filter-group-label';
+    labelEl.textContent = RARITY_LABELS[rarity];
+    const allOnBtn = document.createElement('button');
+    allOnBtn.textContent = 'เปิดทั้งกลุ่ม';
+    allOnBtn.style.cssText = 'font-size:.6rem;padding:2px 8px;border-radius:999px;border:none;background:rgba(255,255,255,0.15);color:#fff;cursor:pointer;';
+    allOnBtn.onclick = () => {
+      group.forEach(c => disabledCards.delete(c.id));
+      renderCardFilter(); updateCardFilterSummary(); emitCardFilter();
+    };
+    const allOffBtn = document.createElement('button');
+    allOffBtn.textContent = 'ปิดทั้งกลุ่ม';
+    allOffBtn.style.cssText = 'font-size:.6rem;padding:2px 8px;border-radius:999px;border:none;background:rgba(255,255,255,0.15);color:#fff;cursor:pointer;margin-left:4px;';
+    allOffBtn.onclick = () => {
+      group.forEach(c => disabledCards.add(c.id));
+      renderCardFilter(); updateCardFilterSummary(); emitCardFilter();
+    };
+    headerDiv.appendChild(labelEl);
+    const btnWrap = document.createElement('div');
+    btnWrap.appendChild(allOnBtn); btnWrap.appendChild(allOffBtn);
+    headerDiv.appendChild(btnWrap);
+    groupDiv.appendChild(headerDiv);
+
     group.forEach(card => {
       const row = document.createElement('label');
       row.className = 'card-filter-row';
@@ -916,6 +949,7 @@ function renderCardFilter() {
       });
       groupDiv.appendChild(row);
     });
+
     list.appendChild(groupDiv);
   });
 }
