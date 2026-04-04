@@ -1983,7 +1983,33 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
     case 'r1':(vfxData.area||[]).forEach(([ro,co],i)=>{spawnCellEmoji(ro,co,'🌋',{size:'1.5rem',delay:i*0.04,dur:0.6});flashCell(ro,co,'#ff884488',i*40);spawnFloatingNumber(ro,co,1,{delay:i*0.04+0.1,size:'1rem'});});await delay(700);break;
 
     // ── r3 Freeze ──
-    case 'r3':{const el=document.createElement('div');el.className='freeze-vfx';el.style.cssText=`left:${cx}px;top:${cy}px;width:90px;height:90px;background:rgba(100,200,255,0.35);border:4px solid #88eeff;border-radius:50%;`;document.body.appendChild(el);spawnCellEmoji(r||0,c||0,'🧊',{size:'2.5rem'});await delay(900);el.remove();}break;
+    case 'r3':{
+      // แสดง VFX บนผู้เล่นที่ถูก Freeze
+      const frozenPi = vfxData.frozenPlayer ?? -1;
+      spawnCellEmoji(r||0,c||0,'🧊',{size:'2.5rem'});
+      flashScreen('#88eeff33', 600);
+      // Flash score card ของผู้เล่นที่โดน
+      if (frozenPi >= 0) {
+        const sc = document.getElementById(`sc-${frozenPi}`);
+        if (sc) {
+          sc.style.transition = 'all .3s';
+          sc.style.background = 'rgba(100,200,255,0.4)';
+          sc.style.boxShadow = '0 0 20px #88eeff';
+          setTimeout(() => { sc.style.background=''; sc.style.boxShadow=''; }, 1200);
+        }
+        // แสดง emoji น้ำแข็งลอยบน scoreboard ตำแหน่งผู้เล่น
+        const scEl = document.getElementById(`sc-${frozenPi}`);
+        if (scEl) {
+          const rect = scEl.getBoundingClientRect();
+          const ice = document.createElement('div');
+          ice.style.cssText = `position:fixed;left:${rect.left+rect.width/2}px;top:${rect.top}px;font-size:2rem;pointer-events:none;z-index:1000;transform:translate(-50%,-50%);animation:cellEmojiPop .8s ease-out forwards;`;
+          ice.textContent = '❄️';
+          document.body.appendChild(ice);
+          setTimeout(() => ice.remove(), 900);
+        }
+      }
+      await delay(900);
+    }break;
 
     // ── r4 Chain Strike: flash ทุกช่องศัตรู ──
     case 'r4':{
