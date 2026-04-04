@@ -614,6 +614,19 @@ function initSocket() {
     }
   });
 
+  // ── Frozen skip notification ──
+  socket.on('frozen_skip', ({ playerIdx, playerName }) => {
+    if (!onlineMode) return;
+    SFX.frozen && SFX.frozen();
+    showToast(`❄️ ${playerName} ถูก Freeze! ข้ามเทิร์น`);
+    // Flash frozen player's score card
+    const sc = document.getElementById(`sc-${playerIdx}`);
+    if (sc) {
+      sc.style.filter = 'hue-rotate(180deg) brightness(1.5)';
+      setTimeout(() => sc.style.filter = '', 1500);
+    }
+  });
+
   socket.on('place_vfx', ({ r, c, playerIdx, isFirstPlace }) => {
     if (!onlineMode) return;
     if (isFirstPlace) SFX.firstPlace && SFX.firstPlace();
