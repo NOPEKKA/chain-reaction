@@ -1534,11 +1534,11 @@ function renderGridHighlight(){
         if(aCard.rebirthOnly){
           valid=(cellOwner===-1);
           type='own';
-        } else if(aCard.ownOnly){
+        } else if(aCard.ownOnly||aCard.id==='c5'){
           valid=(cellOwner===pi&&cellCount>0);
           type='own';
         } else if(aCard.targetSelf){
-          const emptyOk=['c2','c4','c5','c6','c8','u7','r1','r2','e1','e2','u2'].includes(aCard.id);
+          const emptyOk=['c2','c4','c6','c8','u7','r1','r2','e1','e2','u2'].includes(aCard.id);
           valid=emptyOk?(cellOwner===pi||cellOwner===-1):(cellOwner===pi&&cellCount>0);
           type='own';
         } else {
@@ -1832,6 +1832,8 @@ document.getElementById('cancel-target-btn').addEventListener('click',()=>{targe
 function isValidTarget(cardDef,r,c,playerIdx){
   const cell=STATE.cells[r][c];
   if(cardDef.rebirthOnly)return cell.owner===-1;
+  if(cardDef.ownOnly)return cell.owner===playerIdx&&cell.count>0;
+  if(cardDef.id==='c5')return cell.owner===playerIdx&&cell.count>0; // Spin ต้องมีบอล
   if(cardDef.targetSelf)return cell.owner===playerIdx||cell.owner===-1;
   return cell.owner!==playerIdx&&cell.owner!==-1&&cell.count>0;
 }
@@ -2627,7 +2629,7 @@ async function executeCard(cardDef,playerIdx,cardIdx,targets){
     case 'c13':{const vals=[-2,-1,0,1,2];const v=vals[Math.floor(Math.random()*vals.length)];STATE.cells[r][c].count=Math.max(0,STATE.cells[r][c].count+v);if(STATE.cells[r][c].count>0)STATE.cells[r][c].owner=cur;vfxData={value:v};resultText=`Gamble: ${v>=0?'+':''}${v}!`;}break;
     case 'c14':{STATE.cells[r][c].count++;STATE.cells[r][c].owner=cur;const boosted=[[r,c]];neighbors(r,c,size,STATE.cols).forEach(([nr,nc])=>{if(STATE.cells[nr][nc].owner===cur){STATE.cells[nr][nc].count++;boosted.push([nr,nc]);}});vfxData={boosted};resultText='Boost!';}break;
     case 'u9':{if(STATE.cells[r][c].owner!==cur&&STATE.cells[r][c].owner!==-1){if(!STATE.pinned)STATE.pinned={};STATE.pinned[`${r},${c}`]=1;resultText='Pin!';}else{resultText='❌ เลือกช่องศัตรูที่มีบอล';}break;}
-    case 'u10':{STATE.cells[r][c].count+=2;STATE.cells[r][c].owner=cur;const others=STATE.alive.filter(i=>i!==cur);let enemyCell=null;if(others.length){const t=others[Math.floor(Math.random()*others.length)];const tcells=[];for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===t)tcells.push([ro,co]);if(tcells.length){const[ro,co]=tcells[Math.floor(Math.random()*tcells.length)];STATE.cells[ro][co].count++;enemyCell=[ro,co];}}vfxData={enemyCell};resultText='Gift!';}break;
+    case 'u10':{STATE.cells[r][c].count+=2;STATE.cells[r][c].owner=cur;const boosted_u10=[[r,c]];const others_u10=STATE.alive.filter(i=>i!==cur);if(others_u10.length){const t_u10=others_u10[Math.floor(Math.random()*others_u10.length)];const tcells_u10=[];for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===t_u10)tcells_u10.push([ro,co]);tcells_u10.sort(()=>Math.random()-.5);tcells_u10.slice(0,2).forEach(([ro,co])=>{STATE.cells[ro][co].count++;boosted_u10.push([ro,co]);});}vfxData={boosted:boosted_u10};resultText='Gift!';}break;
     case 'r7':{if(!STATE.voidCells)STATE.voidCells={};if(!STATE.voidSnapshot)STATE.voidSnapshot={};STATE.voidCells[`${r},${c}`]=2;STATE.voidSnapshot[`${r},${c}`]={count:STATE.cells[r][c].count,owner:STATE.cells[r][c].owner};STATE.cells[r][c].count=0;STATE.cells[r][c].owner=-1;resultText='Void!';}break;
     case 'r8':{// Rewind: คำนวณ diff ก่อน แล้วค่อย apply
     if(STATE._snapshot){
