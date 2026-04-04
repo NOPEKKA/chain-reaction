@@ -650,6 +650,11 @@ function initSocket() {
 
 function syncStateFromServer(serverState) {
   if (!serverState) return;
+  // Reset any visual fades from card VFX
+  document.querySelectorAll('.cell[style*="opacity"]').forEach(el => {
+    el.style.transition = '';
+    el.style.opacity = '';
+  });
   cfg.mapSize = serverState.rows || serverState.size || 8;
   cfg.mapCols = serverState.cols || cfg.mapSize;
   cfg.players = serverState.players;
