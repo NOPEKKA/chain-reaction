@@ -412,15 +412,15 @@ function applyCard(state, playerIdx, cardDef, targets) {
       resultText = 'Exchange!'; break;
     }
     case 'c5': {
-      // r,c = ช่องต้นทาง  r2,c2 = ช่องปลายทาง (ต้องอยู่ติดกัน)
       const nbs = neighbors(r, c, rows, cols);
       const nr = r2 !== undefined ? r2 : r;
       const nc = c2 !== undefined ? c2 : c;
       const isNeighbor = nbs.some(([a,b]) => a===nr && b===nc);
       if (isNeighbor && cells[r][c].count > 0) {
         const ow = cells[r][c].owner;
-        cells[r][c].count--; if (!cells[r][c].count) cells[r][c].owner = -1;
-        cells[nr][nc].count++; cells[nr][nc].owner = ow;
+        const moved = cells[r][c].count;
+        cells[r][c].count = 0; cells[r][c].owner = -1;
+        cells[nr][nc].count += moved; cells[nr][nc].owner = ow;
         vfxData = { moves: [{from:[r,c],to:[nr,nc]}] };
       }
       resultText = 'Spin!'; break;
