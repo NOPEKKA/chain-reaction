@@ -225,6 +225,25 @@ function processTurnEnd(room) {
 
   nextTurn(state);
 
+  // ถ้าผู้เล่นคนใหม่ถูก Freeze ให้ข้ามเทิร์นอัตโนมัติ
+  if (state.frozen[state.current] > 0) {
+    state.phase = 'playing';
+    broadcastRoom(room); // แจ้งว่าเป็นตา frozen player
+    sendAllHands(room);
+    // รอแล้วข้ามเทิร์น
+    setTimeout(() => {
+      if (!room?.state || room.state.current !== state.current) return;
+      if (room.phase !== 'playing') return;
+      io.to(room.code).emit('frozen_skip', {
+        playerIdx: state.current,
+        playerName: PLAYER_NAMES[state.current],
+      });
+      state.moved[state.current] = true;
+      processTurnEnd(room);
+    }, 2000); // รอ 2 วิให้เห็น VFX ก่อน
+    return;
+  }
+
   if (shouldTriggerGroupPick(room)) {
     startGroupPick(room);
   } else {
