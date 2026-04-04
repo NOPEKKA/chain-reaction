@@ -1553,8 +1553,8 @@ function renderGridHighlight(){
           div.classList.remove('target-own','target-enemy','target-inactive');
           div.classList.add('first-picked');
         }
-        // c5 Spin second pick: เฉพาะ neighbors ของช่องแรก
-        if(isTwoTargetFirst&&aCard&&aCard.id==='c5'&&targetData.r1Done){
+        // c5 Spin: second pick เฉพาะ neighbors ของช่องแรก
+        if(aCard&&aCard.id==='c5'&&targetData.r1Done){
           const nbs5=[];const r1=targetData.r1,c1=targetData.c1;
           if(r1>0)nbs5.push([r1-1,c1]);if(r1<STATE.size-1)nbs5.push([r1+1,c1]);
           if(c1>0)nbs5.push([r1,c1-1]);if(c1<(STATE.cols||STATE.size)-1)nbs5.push([r1,c1+1]);
@@ -2551,7 +2551,16 @@ async function executeCard(cardDef,playerIdx,cardIdx,targets){
     case 'c2':{const area=neighbors(r,c,size,STATE.cols).filter(([nr,nc])=>STATE.cells[nr][nc].owner===cur||STATE.cells[nr][nc].owner===-1);vfxData={area};resultText='ช่องรอบข้าง +1!';}break;
     case 'c3':if(STATE.cells[r][c].owner!==cur&&STATE.cells[r][c].count>0&&STATE.shielded[r][c]<=0){vfxData={target:[r,c]};resultText='ลบ -1 ลูกบอลศัตรู!';}else if(STATE.shielded[r][c]>0)resultText='❌ ช่องนั้นมีเกราะ!';break;
     case 'c4':{STATE.cells[r][c].count+=2;STATE.cells[r][c].owner=cur;const enemies=[];for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner!==cur&&STATE.cells[ro][co].owner!==-1)enemies.push([ro,co]);let enemyCell=null;if(enemies.length){const[er,ec]=enemies[Math.floor(Math.random()*enemies.length)];enemyCell=[er,ec];}vfxData={enemyCell};resultText='Exchange! +2 / สุ่มศัตรู -2!';}break;
-    case 'c5':{const nbs=neighbors(r,c,size,STATE.cols);if(nbs.length&&STATE.cells[r][c].count>0){const[nr,nc]=nbs[Math.floor(Math.random()*nbs.length)];const ow=STATE.cells[r][c].owner;STATE.cells[r][c].count--;if(STATE.cells[r][c].count<=0)STATE.cells[r][c].owner=-1;STATE.cells[nr][nc].count++;STATE.cells[nr][nc].owner=ow;vfxData={moves:[{from:[r,c],to:[nr,nc]}]};resultText='ย้ายลูกบอลไปข้างๆ!';}}break;
+    case 'c5':{
+      const nbs5=neighbors(r,c,size,STATE.cols);
+      const nr5=r2!==undefined?r2:null;const nc5=c2!==undefined?c2:null;
+      const isNb=nr5!==null&&nbs5.some(([a,b])=>a===nr5&&b===nc5);
+      if(isNb&&STATE.cells[r][c].count>0){
+        const ow=STATE.cells[r][c].owner;
+        STATE.cells[r][c].count--;if(STATE.cells[r][c].count<=0)STATE.cells[r][c].owner=-1;
+        STATE.cells[nr5][nc5].count++;STATE.cells[nr5][nc5].owner=ow;
+        vfxData={moves:[{from:[r,c],to:[nr5,nc5]}]};resultText='ย้ายลูกบอลไปข้างๆ!';
+      }}break;
     case 'c6':{const pulled=[];neighbors(r,c,size,STATE.cols).forEach(([nr,nc])=>{if(STATE.cells[nr][nc].count>0&&STATE.cells[nr][nc].owner===cur){STATE.cells[nr][nc].count--;if(STATE.cells[nr][nc].count<=0)STATE.cells[nr][nc].owner=-1;STATE.cells[r][c].count++;STATE.cells[r][c].owner=cur;pulled.push([nr,nc]);}});vfxData={pulled,to:[r,c]};resultText='ดึงลูกบอลรอบข้างมา!';}break;
     case 'c7':if(STATE.cells[r][c].owner!==cur){STATE.cells[r][c].count++;resultText='ศัตรู +1 (ใกล้ระเบิด!)';}break;
     case 'c8':STATE.shielded[r][c]=1;STATE.shieldOwner[r][c]=cur;resultText='ป้องกัน 1 เทิร์น!';break;
