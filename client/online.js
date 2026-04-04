@@ -869,31 +869,35 @@ const RARITY_LABELS = {
   super_rare:'🟧 Super Rare', epic:'🟥 Epic', legendary:'🟨 Legendary', mythical:'🌟 Mythical'
 };
 
-let disabledCards = new Set(); // card ids ที่ปิดอยู่
+let disabledCards = new Set();
+
+function openCardFilter() {
+  renderCardFilter();
+  document.getElementById('card-filter-overlay').style.display = 'flex';
+}
+
+function closeCardFilter() {
+  document.getElementById('card-filter-overlay').style.display = 'none';
+}
 
 function renderCardFilter() {
   const list = document.getElementById('card-filter-list');
   if (!list) return;
   const cards = window.CARD_DEFS || [];
-  
-  // Group by rarity
   const groups = {};
   RARITY_ORDER.forEach(r => groups[r] = []);
   cards.forEach(c => { if (groups[c.rarity]) groups[c.rarity].push(c); });
-  
+
   list.innerHTML = '';
   RARITY_ORDER.forEach(rarity => {
     const group = groups[rarity];
     if (!group.length) return;
-    
     const groupDiv = document.createElement('div');
     groupDiv.className = 'card-filter-group';
-    
     const label = document.createElement('div');
     label.className = 'card-filter-group-label';
     label.textContent = RARITY_LABELS[rarity];
     groupDiv.appendChild(label);
-    
     group.forEach(card => {
       const row = document.createElement('label');
       row.className = 'card-filter-row';
@@ -907,28 +911,35 @@ function renderCardFilter() {
       row.querySelector('input').addEventListener('change', (e) => {
         if (e.target.checked) disabledCards.delete(card.id);
         else disabledCards.add(card.id);
+        updateCardFilterSummary();
         emitCardFilter();
       });
       groupDiv.appendChild(row);
     });
-    
     list.appendChild(groupDiv);
   });
 }
 
+function updateCardFilterSummary() {
+  const el = document.getElementById('card-filter-summary');
+  if (!el) return;
+  const total = (window.CARD_DEFS || []).length;
+  const disabled = disabledCards.size;
+  if (disabled === 0) el.textContent = `การ์ดทั้งหมด (เปิดทั้งหมด)`;
+  else if (disabled === total) el.textContent = `ไม่มีการ์ด (ปิดทั้งหมด)`;
+  else el.textContent = `เปิด ${total - disabled}/${total} ใบ`;
+}
+
 function setAllCards(enable) {
   if (enable) disabledCards.clear();
-  else {
-    const cards = window.CARD_DEFS || [];
-    cards.forEach(c => disabledCards.add(c.id));
-  }
+  else { (window.CARD_DEFS || []).forEach(c => disabledCards.add(c.id)); }
   renderCardFilter();
+  updateCardFilterSummary();
   emitCardFilter();
 }
 
 function emitCardFilter() {
-  const disabled = [...disabledCards];
-  socket.emit('update_cfg', { cfg: { disabledCards: disabled } });
+  socket.emit('update_cfg', { cfg: { disabledCards: [...disabledCards] } });
 }
 
 function setupRoomPills() {
@@ -1047,6 +1058,9 @@ document.getElementById('winner-menu').addEventListener('click', () => {
 // renderHandBar handled in index.html directly
 
 window._onlineCellClick    = onlineCellClick;
+window.openCardFilter      = openCardFilter;
+window.closeCardFilter     = closeCardFilter;
+window.setAllCards         = setAllCards;
 window._getRoomMembers     = () => currentRoom?.members || [];
 window._onlineActivateCard = onlineActivateCard;
 window._getOnlineMode      = () => onlineMode;
