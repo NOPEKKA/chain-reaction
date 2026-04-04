@@ -533,6 +533,11 @@ function initSocket() {
         roomCfg.mapSize = room.cfg.mapSize || 8;
         roomCfg.mapCols = room.cfg.mapCols || room.cfg.mapSize || 8;
         roomCfg.cardInterval = room.cfg.cardInterval ?? 2;
+        // Sync disabled cards (for non-host to see)
+        if (isHost && room.cfg.disabledCards) {
+          disabledCards = new Set(room.cfg.disabledCards);
+          renderCardFilter();
+        }
       }
       renderRoomScreen(room);
     }
@@ -857,6 +862,75 @@ function renderRoomScreen(room) {
   }
 }
 
+// ── Card Filter ──
+const RARITY_ORDER = ['common','uncommon','rare','super_rare','epic','legendary','mythical'];
+const RARITY_LABELS = {
+  common:'⬜ Common', uncommon:'🟦 Uncommon', rare:'🟩 Rare',
+  super_rare:'🟧 Super Rare', epic:'🟥 Epic', legendary:'🟨 Legendary', mythical:'🌟 Mythical'
+};
+
+let disabledCards = new Set(); // card ids ที่ปิดอยู่
+
+function renderCardFilter() {
+  const list = document.getElementById('card-filter-list');
+  if (!list) return;
+  const cards = window.CARD_DEFS || [];
+  
+  // Group by rarity
+  const groups = {};
+  RARITY_ORDER.forEach(r => groups[r] = []);
+  cards.forEach(c => { if (groups[c.rarity]) groups[c.rarity].push(c); });
+  
+  list.innerHTML = '';
+  RARITY_ORDER.forEach(rarity => {
+    const group = groups[rarity];
+    if (!group.length) return;
+    
+    const groupDiv = document.createElement('div');
+    groupDiv.className = 'card-filter-group';
+    
+    const label = document.createElement('div');
+    label.className = 'card-filter-group-label';
+    label.textContent = RARITY_LABELS[rarity];
+    groupDiv.appendChild(label);
+    
+    group.forEach(card => {
+      const row = document.createElement('label');
+      row.className = 'card-filter-row';
+      const enabled = !disabledCards.has(card.id);
+      row.innerHTML = `
+        <input type="checkbox" ${enabled ? 'checked' : ''} data-card="${card.id}">
+        <span class="card-filter-emoji">${card.emoji}</span>
+        <span class="card-filter-name">${card.name}</span>
+        <span class="card-filter-desc">${card.desc}</span>
+      `;
+      row.querySelector('input').addEventListener('change', (e) => {
+        if (e.target.checked) disabledCards.delete(card.id);
+        else disabledCards.add(card.id);
+        emitCardFilter();
+      });
+      groupDiv.appendChild(row);
+    });
+    
+    list.appendChild(groupDiv);
+  });
+}
+
+function setAllCards(enable) {
+  if (enable) disabledCards.clear();
+  else {
+    const cards = window.CARD_DEFS || [];
+    cards.forEach(c => disabledCards.add(c.id));
+  }
+  renderCardFilter();
+  emitCardFilter();
+}
+
+function emitCardFilter() {
+  const disabled = [...disabledCards];
+  socket.emit('update_cfg', { cfg: { disabledCards: disabled } });
+}
+
 function setupRoomPills() {
   document.getElementById('room-map-pills')?.querySelectorAll('.pill').forEach(p => {
     p.addEventListener('click', () => {
@@ -910,6 +984,7 @@ document.getElementById('btn-create-room').addEventListener('click', () => {
     document.getElementById('online-screen').classList.remove('active');
     showScreen('room-screen');
     setupRoomPills();
+    renderCardFilter();
   });
 });
 
