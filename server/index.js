@@ -424,15 +424,8 @@ io.on('connection', (socket) => {
     if (state.moved[member.slot]) return cb?.({ ok: false, msg: 'ใช้ action ไปแล้ว' });
     const cardDef = state.hands[member.slot]?.find(d => d.id === cardId);
     if (!cardDef) return cb?.({ ok: false, msg: 'ไม่มีการ์ดนี้ในมือ' });
-    let result;
-    try { result = applyCard(state, member.slot, cardDef, targets||{}); }
-    catch(err) {
-      console.error('[applyCard CRASH]', cardId, err.message, err.stack);
-      return cb?.({ ok: false, msg: 'การ์ดเกิด error: ' + err.message });
-    }
-    if (!result.ok) return cb?.({ ok: false, msg: result.msg });
 
-    // ถ้าถูก Freeze: ยอมรับการ์ดแต่ไม่มีผล
+    // ถ้าถูก Freeze: ยอมรับแต่ไม่ใช้การ์ด (ก่อน applyCard)
     if (state.frozen[member.slot] > 0) {
       cb?.({ ok: true, vfxData: {}, resultText: '' });
       io.to(room.code).emit('frozen_cancel', { playerIdx: member.slot, action: 'card', cardId });
@@ -440,6 +433,14 @@ io.on('connection', (socket) => {
       processTurnEnd(room);
       return;
     }
+
+    let result;
+    try { result = applyCard(state, member.slot, cardDef, targets||{}); }
+    catch(err) {
+      console.error('[applyCard CRASH]', cardId, err.message, err.stack);
+      return cb?.({ ok: false, msg: 'การ์ดเกิด error: ' + err.message });
+    }
+    if (!result.ok) return cb?.({ ok: false, msg: result.msg });
     cb?.({ ok: true, vfxData: result.vfxData, resultText: result.resultText });
     io.to(room.code).emit('card_vfx', { cardId, targets: targets||{}, playerIdx: member.slot, vfxData: result.vfxData||{} });
     // บันทึกการ์ดล่าสุดใน state เพื่อให้ room_update รู้ว่ามี VFX
