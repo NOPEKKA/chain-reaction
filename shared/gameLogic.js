@@ -68,10 +68,12 @@ function neighbors(r, c, rows, cols) {
   return nb;
 }
 
-function drawRandomCard(keyActive = 0) {
+function drawRandomCard(keyActive = 0, disabledCards = []) {
+  const disabled = new Set(disabledCards);
   const pool = [];
   const forceRare = keyActive > 0;
   CARD_DEFS.forEach(def => {
+    if (disabled.has(def.id)) return; // ข้ามการ์ดที่ปิดไว้
     if (forceRare) {
       if (['rare','super_rare','epic','legendary','mythical'].includes(def.rarity)) pool.push(def);
     } else {
@@ -79,13 +81,14 @@ function drawRandomCard(keyActive = 0) {
       for (let i = 0; i < w; i++) pool.push(def);
     }
   });
+  if (!pool.length) return CARD_DEFS[0]; // fallback
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
-function draw3UniqueCards(keyActive = 0) {
+function draw3UniqueCards(keyActive = 0, disabledCards = []) {
   const chosen = [];
   for (let i = 0; i < 40 && chosen.length < 3; i++) {
-    const card = drawRandomCard(keyActive);
+    const card = drawRandomCard(keyActive, disabledCards);
     if (!chosen.find(x => x.id === card.id)) chosen.push(card);
   }
   return chosen;
@@ -428,7 +431,7 @@ function applyCard(state, playerIdx, cardDef, targets) {
         vfxData = { target:[r,c], bonusCell }; resultText = 'Drain!';
       } break;
     }
-    case 'c10': { state.hands[playerIdx] = []; const nc2 = drawRandomCard(state.keyActive); state.hands[playerIdx].push({...nc2}); resultText = `จั่ว ${nc2.name}!`; break; }
+    case 'c10': { state.hands[playerIdx] = []; const nc2 = drawRandomCard(state.keyActive, state.disabledCards || []); state.hands[playerIdx].push({...nc2}); resultText = `จั่ว ${nc2.name}!`; break; }
     case 'c11': {
       const own=[]; for(let ro=0;ro<rows;ro++) for(let co=0;co<cols;co++) if(cells[ro][co].owner===cur) own.push([ro,co]);
       const picked = own.sort(()=>Math.random()-.5).slice(0,2); picked.forEach(([ro,co])=>cells[ro][co].count++);
