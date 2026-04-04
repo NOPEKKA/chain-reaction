@@ -479,12 +479,23 @@ function initSocket() {
             _animFinishTime = Date.now() + totalWaves * 520 + 200;
             _pendingExplosionWaves = totalWaves;
             _waveAnimating = true;
-            // เล่น wave animation (ใช้ STATE.cells ปัจจุบัน + apply ทีละ wave)
+
+            // การ์ดที่ดูดบอลทั้งหมดก่อน (m1,l1,l2): sync cells ก่อนเล่น waves
+            // เพื่อให้เห็น state ที่ถูกต้อง (หลัง absorb แต่ก่อน explosion)
+            const absorbCards = ['m1','l1','l2'];
+            const lastCard = room.state.lastCardId;
+            if (lastCard && absorbCards.includes(lastCard)) {
+              // sync เฉพาะ cells ไม่ sync ทั้งหมด (เพื่อให้ wave apply ได้)
+              // แต่ pre-wave cells จาก waves[0] ก็ไม่มี → ใช้ final state แทน
+              // เพราะ m1 explosion มักแค่ 1-2 waves จาก center เท่านั้น
+              syncStateFromServer(room.state);
+              renderGrid(false);
+            }
+
             playExplosionWavesIncremental(waves, room.state).then(() => {
               _pendingExplosionWaves = 0;
               _animFinishTime = 0;
               _waveAnimating = false;
-              // sync state สุดท้ายจาก server
               syncStateFromServer(room.state);
               renderGrid(true);
               renderHandBar();
