@@ -497,7 +497,25 @@ function initSocket() {
         };
 
         // รอ card VFX เสร็จก่อน (เหมือน offline waitMs = vfxFinishTime - now + 200)
-        const waitMs = Math.max(0, _vfxFinishTime - Date.now() + 200);
+        // รอ card VFX เสร็จก่อน
+        let waitMs = Math.max(0, _vfxFinishTime - Date.now() + 200);
+        if (waitMs < 50 && room.state.lastCardId) {
+          // room_update มาก่อน card_vfx - คำนวณ wait จาก vfxDur table
+          const _vfxDurTable = {
+            c1:600,c2:1400,c3:1100,c4:1400,c5:700,c6:900,c7:500,c8:700,c9:1300,
+            c10:500,c11:700,c13:800,c14:1300,
+            u1:400,u2:700,u3:700,u4:700,u5:500,u6:1100,u7:600,u8:700,u9:600,u10:1100,
+            r1:700,r2:900,r3:900,r4:1500,r5:1300,r6:700,r7:700,r8:1400,
+            sr1:600,sr2:900,sr3:500,
+            ep3:1000,ep4:600,ep5:1400,ep6:1200,e1:500,e2:800,e3:500,e4:800,
+            l1:1400,l2:1800,l3:1800,l4:1400,l5:1300,m1:1800,m2:1500,
+          };
+          const _cid = room.state.lastCardId;
+          const _vd = room.state.lastCardVfxData || {};
+          const _base = _vd.dur || _vd.novaDur || _vfxDurTable[_cid] || 500;
+          const _extra = _cid === 'l3' ? (_vd.maxDist || 0) * 55 + 900 : 0;
+          waitMs = _base + _extra + 200;
+        }
         if (waitMs > 50) {
           setTimeout(doRender, waitMs);
         } else {
