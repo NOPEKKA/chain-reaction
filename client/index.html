@@ -145,6 +145,14 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);min-height:100vh;displ
 .cell.voided::after{content:'⬛';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:1.2rem;pointer-events:none;}
 .cell.card-fx{animation:cardFx .6s ease-out;}
 @keyframes cardFx{0%{box-shadow:0 0 0 4px rgba(255,255,100,0.9),0 0 16px rgba(255,220,0,0.6);}100%{box-shadow:0 4px 0 rgba(0,0,0,0.12);}}
+.card-filter-group{margin-bottom:10px;}
+.card-filter-group-label{font-size:.65rem;font-weight:800;text-transform:uppercase;letter-spacing:1px;opacity:.6;margin-bottom:5px;}
+.card-filter-row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:10px;cursor:pointer;transition:background .15s;}
+.card-filter-row:hover{background:rgba(255,255,255,0.08);}
+.card-filter-row input{accent-color:#aaa;width:14px;height:14px;cursor:pointer;flex-shrink:0;}
+.card-filter-emoji{font-size:1.1rem;flex-shrink:0;}
+.card-filter-name{font-size:.82rem;font-weight:700;flex:1;}
+.card-filter-desc{font-size:.65rem;opacity:.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px;}
 @keyframes floatNumber{0%{opacity:0;transform:translate(-50%,-120%);}20%{opacity:1;}80%{opacity:1;}100%{opacity:0;transform:translate(-50%,-220%);}}
 @keyframes cellEmojiPop{0%{opacity:0;transform:translate(-50%,-50%) scale(0.1);filter:blur(4px);}20%{opacity:1;filter:blur(0);transform:translate(-50%,-50%) scale(1.5);}50%{transform:translate(-50%,-80%) scale(1.1);}80%{opacity:1;transform:translate(-50%,-130%) scale(1.0);}100%{opacity:0;transform:translate(-50%,-170%) scale(0.6);}}
 @keyframes arrowFly{0%{opacity:0;transform:translate(-50%,-50%) rotate(var(--rot,0deg)) scale(0.5);}20%{opacity:1;}80%{opacity:1;transform:translate(calc(-50% + var(--tx)),calc(-50% + var(--ty))) rotate(var(--rot,0deg)) scale(1);}100%{opacity:0;transform:translate(calc(-50% + var(--tx)),calc(-50% + var(--ty))) rotate(var(--rot,0deg)) scale(0.6);}}
@@ -433,6 +441,19 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);min-height:100vh;displ
       </div>
     </div>
   </div>
+
+  <!-- Card Filter Panel -->
+  <div class="play-section" id="room-card-filter-panel" style="width:min(400px,92vw);max-height:320px;overflow-y:auto;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <div class="section-label" style="margin-bottom:0;">🃏 การ์ดที่ใช้ในเกม</div>
+      <div style="display:flex;gap:6px;">
+        <button onclick="setAllCards(true)" style="font-size:.65rem;padding:3px 10px;border-radius:999px;border:none;background:rgba(255,255,255,0.2);color:#fff;cursor:pointer;">เลือกทั้งหมด</button>
+        <button onclick="setAllCards(false)" style="font-size:.65rem;padding:3px 10px;border-radius:999px;border:none;background:rgba(255,255,255,0.2);color:#fff;cursor:pointer;">ยกเลิกทั้งหมด</button>
+      </div>
+    </div>
+    <div id="card-filter-list"></div>
+  </div>
+
   <button class="main-btn primary" id="btn-start-online" style="display:none;width:min(300px,88vw);justify-content:center;margin-top:6px;"><span class="main-btn-icon">🚀</span><span class="main-btn-title">เริ่มเกม!</span></button>
   <div id="waiting-msg" style="color:rgba(255,255,255,0.6);font-family:'Fredoka One',cursive;font-size:.9rem;margin-top:6px;display:none;">รอ host เริ่มเกม...</div>
 </div>
