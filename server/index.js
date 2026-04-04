@@ -62,6 +62,7 @@ function broadcastRoom(room) {
 
 function sanitizeState(state) {
   const s = JSON.parse(JSON.stringify(state));
+  s.disabledCards = state.disabledCards || [];
   s.handsCount = s.hands.map(h => h.length);
   delete s.hands;
   // ส่ง all waves data พร้อม state
@@ -102,7 +103,7 @@ function startGroupPick(room) {
 
   const choices = {};
   eligible.forEach(slot => {
-    choices[slot] = draw3UniqueCards(state.keyActive);
+    choices[slot] = draw3UniqueCards(state.keyActive, state.disabledCards || []);
   });
 
   room.groupPick = {
@@ -294,6 +295,7 @@ io.on('connection', (socket) => {
         players: 2, mapSize: cfg?.mapSize||8,
         mapCols: cfg?.mapCols||cfg?.mapSize||8,
         cardInterval: cfg?.cardInterval??2, bots: [],
+        disabledCards: [],
       },
       members: [{ socketId: socket.id, name: name||'ผู้เล่น', slot: 0, connected: true }],
       state: null, phase: 'lobby', groupPick: null,
@@ -346,6 +348,9 @@ io.on('connection', (socket) => {
     room.cfg.players = room.members.length;
     console.log(`[start_game] cfg:`, JSON.stringify(room.cfg));
     room.state = createInitialState(room.cfg);
+    if (room.cfg.disabledCards?.length) {
+      room.state.disabledCards = room.cfg.disabledCards;
+    }
     console.log(`[start_game] state rows=${room.state.rows} cols=${room.state.cols}`);
     room.phase = 'playing'; room.groupPick = null;
     cb?.({ ok: true });
