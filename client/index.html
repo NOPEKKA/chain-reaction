@@ -440,13 +440,12 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);min-height:100vh;displ
         <div class="pill" data-val="1">1</div><div class="pill active" data-val="2">2</div><div class="pill" data-val="3">3</div><div class="pill" data-val="4">4</div><div class="pill" data-val="6">6</div><div class="pill" data-val="8">8</div><div class="pill" data-val="0">ปิด</div>
       </div>
     </div>
-  </div>
-
-  <!-- Card Filter Button -->
-  <div class="play-section" style="width:min(400px,92vw);padding:10px 14px;">
-    <button onclick="openCardFilter()" style="width:100%;padding:10px;border-radius:14px;border:none;background:rgba(255,255,255,0.15);color:#fff;font-family:'Fredoka One',cursive;font-size:.95rem;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">
-      🃏 <span id="card-filter-summary">การ์ดทั้งหมด (เปิดทั้งหมด)</span>
-    </button>
+    <!-- Card Filter - host only -->
+    <div class="play-section" style="padding:10px 14px;">
+      <button onclick="openCardFilter()" style="width:100%;padding:10px;border-radius:14px;border:none;background:rgba(255,255,255,0.15);color:#fff;font-family:'Fredoka One',cursive;font-size:.95rem;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">
+        🃏 <span id="card-filter-summary">การ์ดทั้งหมด (เปิดทั้งหมด)</span>
+      </button>
+    </div>
   </div>
 
   <button class="main-btn primary" id="btn-start-online" style="display:none;width:min(300px,88vw);justify-content:center;margin-top:6px;"><span class="main-btn-icon">🚀</span><span class="main-btn-title">เริ่มเกม!</span></button>
@@ -1474,7 +1473,10 @@ function startGame(){
 function renderScoreboard(){
   const sb=document.getElementById('scoreboard');sb.innerHTML='';
   for(let i=0;i<STATE.players;i++){
-    const isActive=i===STATE.current,isElim=!STATE.alive.includes(i),handSize=STATE.hands[i].length,isFull=handSize>=HAND_LIMIT;
+    const isActive=i===STATE.current,isElim=!STATE.alive.includes(i);
+    const _online=window._getOnlineMode&&window._getOnlineMode();
+    const handSize=(_online&&STATE.handsCount)?STATE.handsCount[i]:(STATE.hands[i]?.length||0);
+    const isFull=handSize>=HAND_LIMIT;
     const card=document.createElement('div');
     card.className='score-card'+(isActive?' active-turn':'')+(isElim?' eliminated':'')+(isFull?' hand-full':'');
     card.id=`sc-${i}`;
