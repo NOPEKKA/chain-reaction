@@ -229,25 +229,6 @@ function processTurnEnd(room) {
 
   nextTurn(state);
 
-  // ถ้าผู้เล่นคนใหม่ถูก Freeze ให้ข้ามเทิร์นอัตโนมัติ
-  if (state.frozen[state.current] > 0) {
-    state.phase = 'playing';
-    broadcastRoom(room); // แจ้งว่าเป็นตา frozen player
-    sendAllHands(room);
-    // รอแล้วข้ามเทิร์น
-    setTimeout(() => {
-      if (!room?.state || room.state.current !== state.current) return;
-      if (room.phase !== 'playing') return;
-      io.to(room.code).emit('frozen_skip', {
-        playerIdx: state.current,
-        playerName: PLAYER_NAMES[state.current],
-      });
-      state.moved[state.current] = true;
-      processTurnEnd(room);
-    }, 2000); // รอ 2 วิให้เห็น VFX ก่อน
-    return;
-  }
-
   if (shouldTriggerGroupPick(room)) {
     startGroupPick(room);
   } else {
@@ -397,6 +378,15 @@ io.on('connection', (socket) => {
       console.log(`[place] OUT OF BOUNDS r=${r} c=${c} rows=${state.rows} cols=${state.cols}`);
       return cb?.({ ok: false, msg: 'ช่องอยู่นอกกระดาน' });
     }
+    // ถ้าถูก Freeze: ยอมรับ action แต่ไม่มีผล แล้วข้ามเทิร์น
+    if (state.frozen[member.slot] > 0) {
+      console.log(`[place] slot=${member.slot} frozen - cancelling`);
+      cb?.({ ok: true, isFirstPlace: false });
+      io.to(room.code).emit('frozen_cancel', { playerIdx: member.slot, action: 'place' });
+      state.moved[member.slot] = true;
+      processTurnEnd(room);
+      return;
+    }
     const result = applyPlace(state, member.slot, r, c);
     if (!result.ok) {
       console.log(`[place] FAILED: ${result.msg}`);
@@ -437,6 +427,15 @@ io.on('connection', (socket) => {
       return cb?.({ ok: false, msg: 'การ์ดเกิด error: ' + err.message });
     }
     if (!result.ok) return cb?.({ ok: false, msg: result.msg });
+
+    // ถ้าถูก Freeze: ยอมรับการ์ดแต่ไม่มีผล
+    if (state.frozen[member.slot] > 0) {
+      cb?.({ ok: true, vfxData: {}, resultText: '' });
+      io.to(room.code).emit('frozen_cancel', { playerIdx: member.slot, action: 'card', cardId });
+      state.moved[member.slot] = true;
+      processTurnEnd(room);
+      return;
+    }
     cb?.({ ok: true, vfxData: result.vfxData, resultText: result.resultText });
     io.to(room.code).emit('card_vfx', { cardId, targets: targets||{}, playerIdx: member.slot, vfxData: result.vfxData||{} });
     // บันทึกการ์ดล่าสุดใน state เพื่อให้ room_update รู้ว่ามี VFX
