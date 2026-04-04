@@ -121,17 +121,21 @@ function startGroupPick(room) {
 
   broadcastRoom(room);
 
-  // ส่งการ์ดให้แต่ละคน
-  eligible.forEach(slot => {
-    const m = room.members.find(m => m.slot === slot && m.connected);
-    if (m) {
-      io.to(m.socketId).emit('group_pick_start', {
-        cards:    choices[slot],
-        handSize: state.hands[slot].length,
-        timeLimit: TIMEOUT / 1000,
-      });
-    }
-  });
+  // ส่งการ์ดให้แต่ละคน - delay เล็กน้อยเพื่อให้ client process room_update และ wave animation ก่อน
+  const waveCount = (state._allWaves || []).length;
+  const waveDelay = waveCount > 0 ? waveCount * 520 + 500 : 300;
+  setTimeout(() => {
+    eligible.forEach(slot => {
+      const m = room.members.find(m => m.slot === slot && m.connected);
+      if (m) {
+        io.to(m.socketId).emit('group_pick_start', {
+          cards:    choices[slot],
+          handSize: state.hands[slot].length,
+          timeLimit: TIMEOUT / 1000,
+        });
+      }
+    });
+  }, waveDelay);
 
   // timeout → finalize
   room.groupPick.timeout = setTimeout(() => {
