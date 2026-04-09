@@ -775,7 +775,7 @@ const CARD_DEFS=[
   {id:'u2',emoji:'🔁',name:'Swap',rarity:'uncommon',cat:'strategy',desc:'สลับตำแหน่ง 2 ช่องบนกระดาน',needTarget:true,targetSelf:true,twoTarget:true},
   {id:'u3',emoji:'💥',name:'Double Shot',rarity:'uncommon',cat:'burst',desc:'+1 สองช่องของตัวเองที่เลือก',needTarget:true,targetSelf:true,twoTarget:true,ownOnly:true},
   {id:'u4',anyTarget:true,emoji:'🧱',name:'Wall',rarity:'uncommon',cat:'defense',desc:'ป้องกัน 3 ช่องของตัวเอง 1 เทิร์น',needTarget:false},
-  {id:'u5',emoji:'⏳',name:'Time Bomb',rarity:'rare',cat:'chaos',desc:'อีก 2 เทิร์น ช่องนั้นระเบิดเอง',needTarget:true,targetSelf:false},
+  {id:'u5',emoji:'⏳',name:'Time Bomb',rarity:'super_rare',cat:'chaos',desc:'อีก 2 เทิร์น ช่องนั้นระเบิดเอง',needTarget:true,targetSelf:false},
   {id:'u6',emoji:'⚔️',name:'Raid',rarity:'uncommon',cat:'attack',desc:'ลบลูกบอลศัตรู -2',needTarget:true,targetSelf:false},
   {id:'u7',emoji:'🎪',name:'Shuffle Zone',rarity:'uncommon',cat:'chaos',desc:'สุ่มตำแหน่งช่องใน 3×3 แต่รวมบอลแต่ละฝ่ายเท่าเดิม',needTarget:true,targetSelf:true},
   {id:'u9',emoji:'📌',name:'Pin',rarity:'uncommon',cat:'defense',desc:'ช่องศัตรูที่เลือกระเบิดออกไม่ได้ 1 เทิร์น',needTarget:true,targetSelf:false},
@@ -783,11 +783,11 @@ const CARD_DEFS=[
   {id:'r1',emoji:'🌋',name:'Mega Burst',rarity:'rare',cat:'burst',desc:'เพิ่มลูกบอล +1 พื้นที่ 3×3',needTarget:true,targetSelf:true},
   {id:'r2',emoji:'🕳️',name:'Black Hole',rarity:'rare',cat:'chaos',desc:'ดูดลูกบอลรอบๆ ทั้งหมดมารวม',needTarget:true,targetSelf:true},
   {id:'r3',anyTarget:true,emoji:'🧊',name:'Freeze',rarity:'rare',cat:'defense',desc:'คู่ต่อสู้สุ่มข้ามเทิร์นถัดไป',needTarget:false},
-  {id:'r4',anyTarget:true,emoji:'🏹',name:'Barrage',rarity:'super_rare',cat:'attack',desc:'ทุกช่องของศัตรูสุ่ม -1',needTarget:false},
+  {id:'r4',anyTarget:true,emoji:'🏹',name:'Barrage',rarity:'epic',cat:'attack',desc:'ทุกช่องของศัตรูสุ่ม -1',needTarget:false},
   {id:'r5',anyTarget:true,emoji:'🌪️',name:'Tornado',rarity:'rare',cat:'chaos',desc:'สุ่มย้ายลูกบอล 20% ของแผนที่',needTarget:false},
-  {id:'r6',anyTarget:true,emoji:'🪞',name:'Reflect',rarity:'rare',cat:'defense',desc:'ป้องกันทุกช่องของตัวเอง 1 เทิร์น',needTarget:false},
+  {id:'r6',anyTarget:true,emoji:'🪞',name:'Reflect',rarity:'super_rare',cat:'defense',desc:'ป้องกันทุกช่องของตัวเอง 1 เทิร์น',needTarget:false},
   {id:'e1',emoji:'☄️',name:'Meteor',rarity:'epic',cat:'burst',desc:'ช่องนั้นระเบิด 2 รอบ',needTarget:true,targetSelf:true},
-  {id:'e2',emoji:'🌊',name:'Tsunami',rarity:'epic',cat:'chaos',desc:'ทุกช่องใน row เดียวกัน +1',needTarget:true,targetSelf:true},
+  {id:'e2',emoji:'🌊',name:'Tsunami',rarity:'super_rare',cat:'chaos',desc:'ทุกช่องใน row เดียวกัน +1',needTarget:true,targetSelf:true},
   {id:'e3',emoji:'🎭',name:'Steal',rarity:'epic',cat:'attack',desc:'ขโมยช่องศัตรู 1 ช่อง',needTarget:true,targetSelf:false},
   // ── การ์ดใหม่ ──
   // COMMON
@@ -799,7 +799,7 @@ const CARD_DEFS=[
   {id:'r7',emoji:'⬛',name:'Void',rarity:'rare',cat:'chaos',desc:'ช่องที่เลือกหายไปจากกระดาน 2 เทิร์น ไม่มีใครวางได้',needTarget:true,targetSelf:true},
   {id:'r8',anyTarget:true,emoji:'🔙',name:'Rewind',rarity:'epic',cat:'strategy',desc:'ย้อนกลับกระดานไปสภาพก่อนหน้า 1 เทิร์น',needTarget:false},
   // SUPER RARE
-  {id:'sr1',emoji:'🪓',name:'Sever',rarity:'super_rare',cat:'defense',desc:'เลือก 2 ช่อง ระเบิดออกไปข้างๆ ไม่ได้ 4 เทิร์น',needTarget:true,targetSelf:true,twoTarget:true},
+  {id:'sr1',emoji:'🪓',name:'Sever',rarity:'rare',cat:'defense',desc:'เลือก 2 ช่อง ระเบิดออกไปข้างๆ ไม่ได้ 4 เทิร์น',needTarget:true,targetSelf:true,twoTarget:true},
   {id:'sr2',anyTarget:true,emoji:'🌑',name:'Eclipse',rarity:'super_rare',cat:'chaos',desc:'ทุกคนมองไม่เห็นจำนวนลูกบอลของกันและกัน 2 เทิร์น',needTarget:false},
   {id:'sr3',anyTarget:true,emoji:'🔑',name:'Key',rarity:'rare',cat:'strategy',desc:'การ์ดถัดไปที่จั่วได้จะเป็น rare ขึ้นไปแน่นอน',needTarget:false},
   // EPIC
@@ -816,7 +816,7 @@ const CARD_DEFS=[
   {id:'m1',emoji:'🪐',name:'Singularity',rarity:'legendary',cat:'mythical',desc:'ดูด 50% ของลูกบอลทุกช่องบนกระดานมารวมที่ช่องที่เลือก (2ครั้ง/เกม)',needTarget:true,targetSelf:true},
   {id:'m2',anyTarget:true,emoji:'🌌',name:'Big Bang',rarity:'mythical',cat:'mythical',desc:'ทุกช่องตัวเองระเบิดพร้อมกัน แล้วทุกช่องที่ระเบิดได้ +2 คืนมา (1ครั้ง/เกม)',needTarget:false},
   {id:'l5',emoji:'🔮',name:'Rebirth',rarity:'legendary',cat:'legendary',desc:'คืนชีพ! เลือกช่องแล้ววางบอล 3 ลูก ใช้ได้เมื่อตายแล้วเท่านั้น (2ครั้ง/เกม)',needTarget:true,targetSelf:true,rebirthOnly:true},
-  {id:'e4',anyTarget:true,emoji:'🏛️',name:'Pillar',rarity:'epic',cat:'chaos',desc:'เพิ่ม +1 ทุกช่องในแนวตั้ง (column) เดียวกัน กดช่องไหนก็ได้',needTarget:false},
+  {id:'e4',anyTarget:true,emoji:'🏛️',name:'Pillar',rarity:'super_rare',cat:'chaos',desc:'เพิ่ม +1 ทุกช่องในแนวตั้ง (column) เดียวกัน กดช่องไหนก็ได้',needTarget:false},
 ];
 window.CARD_DEFS=CARD_DEFS;
 const RARITY_WEIGHTS={common:50,uncommon:25,rare:12,super_rare:7,epic:4,legendary:1.5,mythical:0.5};
