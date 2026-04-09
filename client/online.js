@@ -750,7 +750,11 @@ function onlineCellClick(r, c) {
 
   if (selectedHandCard) {
     const { playerIdx, cardIdx } = selectedHandCard;
-    const cardDef = STATE.hands[playerIdx]?.[cardIdx];
+    // ใช้ cardIdx ก่อน แต่ fallback ไป find by id ถ้า index เปลี่ยน
+    let cardDef = STATE.hands[playerIdx]?.[cardIdx];
+    if (!cardDef && selectedHandCard.cardId) {
+      cardDef = STATE.hands[playerIdx]?.find(d => d.id === selectedHandCard.cardId);
+    }
     if (cardDef) {
       if (cardDef.twoTarget && !targetData.r1Done) {
         targetData = { r1: r, c1: c, r1Done: true, playerIdx, cardIdx, cardDef };
