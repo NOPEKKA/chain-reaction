@@ -118,6 +118,8 @@ function startGroupPick(room) {
     timeout:   null,
   };
   state.phase = 'group_pick';
+  state._allWaves = null; // clear waves หลัง broadcast ไปแล้ว
+  state._lastExplosions = null;
 
   broadcastRoom(room);
 
@@ -162,6 +164,8 @@ function finalizeGroupPick(room) {
 
   room.groupPick = null;
   state.phase = 'playing';
+  state._allWaves = null; // ไม่ replay waves หลังเลือกการ์ด
+  state._lastExplosions = null;
   broadcastRoom(room);
   sendAllHands(room);
 }
