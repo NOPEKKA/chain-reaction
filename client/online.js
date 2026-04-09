@@ -801,7 +801,8 @@ function onlineActivateCard(pi, ci, cardDef) {
   if (!onlineMode || !socket) return false;
   if (pi !== mySlot) { showToast('❌ ไม่ใช่การ์ดของคุณ'); return true; }
   if (STATE.current !== mySlot) { showToast('⏳ ยังไม่ถึงตาของคุณ'); return true; }
-  if (!cardDef.needTarget && !cardDef.anyTarget && !cardDef.rebirthOnly) {
+  // anyTarget และ !needTarget → ใช้ทันที ไม่ต้องรอ click
+  if (!cardDef.needTarget || cardDef.anyTarget) {
     selectedHandCard = null;
     clearAllTimers();
     socket.emit('use_card', { cardId: cardDef.id, targets: {} }, res => {
