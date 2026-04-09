@@ -1749,7 +1749,7 @@ function activateCard(pi,ci,cardDef){
   if(animating)return;
   if(window._getOnlineMode&&window._getOnlineMode()){if(window._onlineActivateCard(pi,ci,cardDef))return;}
   if(cardDef.anyTarget||cardDef.rebirthOnly){
-    selectedHandCard={playerIdx:pi,cardIdx:ci};
+    selectedHandCard={playerIdx:pi,cardIdx:ci,cardId:cardDef.id};
     document.getElementById('target-text').textContent=`${cardDef.emoji} ${cardDef.name} — กดช่องใดก็ได้บนกระดาน`;
     document.getElementById('target-banner').classList.add('show');
     updateHandHighlight();renderGridHighlight();return;
@@ -1759,7 +1759,7 @@ function activateCard(pi,ci,cardDef){
     executeCard(cardDef,pi,ci,{});return;
   }
   // needTarget:true — แสดง banner และ highlight
-  selectedHandCard={playerIdx:pi,cardIdx:ci};
+  selectedHandCard={playerIdx:pi,cardIdx:ci,cardId:cardDef.id};
   const targType=cardDef.targetSelf?'ช่องตัวเอง':'ช่องศัตรู';
   document.getElementById('target-text').textContent=`${cardDef.emoji} ${cardDef.name} — เลือก${targType}`;
   document.getElementById('target-banner').classList.add('show');
@@ -2608,11 +2608,15 @@ async function executeCard(cardDef,playerIdx,cardIdx,targets){
       });
       vfxData={zone};resultText='สลับตำแหน่ง บอลรวมเท่าเดิม!';}break;
     case 'u9':{
-      // Pin: ลง pinned ที่ช่องศัตรู
-      const pk=`${r},${c}`;
-      if(!STATE.pinned)STATE.pinned={};
-      STATE.pinned[pk]=2; // 2 เพื่อกัน tick ลด 1 แล้วเหลือ 1 เทิร์น
-      resultText='Pin! ระเบิดไม่ได้ 1 เทิร์น';
+      spawnCellEmoji(r,c,'📌',{size:'2rem'});
+      flashCell(r,c,'#ff88ffbb');
+      flashCell(r,c,'rgba(255,100,255,0.3)',200,400);
+      if(!_onlineMode){
+        const pk=`${r},${c}`;
+        if(!STATE.pinned)STATE.pinned={};
+        STATE.pinned[pk]=2;
+      }
+      await delay(700);
     }break;
     case 'u9':spawnCellEmoji(r,c,'📌',{size:'2.5rem'});flashCell(r,c,'#ff4400bb');await delay(500);break;
     case 'u8':if(STATE.cells[r][c].owner!==cur&&STATE.cells[r][c].count>0){let bd=999,br=-1,bc=-1;for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===cur){const d=Math.abs(ro-r)+Math.abs(co-c);if(d<bd){bd=d;br=ro;bc=co;}}if(br>=0){STATE.cells[br][bc].count=STATE.cells[r][c].count;vfxData={moves:[{from:[r,c],to:[br,bc]}]};resultText='คัดลอกลูกบอล!';}}break;
