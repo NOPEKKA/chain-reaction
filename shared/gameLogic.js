@@ -460,7 +460,7 @@ function applyCard(state, playerIdx, cardDef, targets) {
     case 'u4': { const own=[]; for(let ro=0;ro<rows;ro++) for(let co=0;co<cols;co++) if(cells[ro][co].owner===cur) own.push([ro,co]); const sh3=own.sort(()=>Math.random()-.5).slice(0,3); sh3.forEach(([ro,co])=>{state.shielded[ro][co]=1;state.shieldOwner[ro][co]=cur;}); vfxData={shielded:sh3}; resultText='Wall!'; break; }
     case 'u5': state.timeBombs.push({r,c,turnsLeft:2,owner:cur}); resultText='Time Bomb!'; break;
     case 'u6': if(cells[r][c].owner!==cur&&state.shielded[r][c]<=0){cells[r][c].count=Math.max(0,cells[r][c].count-2);if(!cells[r][c].count)cells[r][c].owner=-1;vfxData={target:[r,c]};resultText='-2!';}; break;
-    case 'u9': { if(!state.pinned) state.pinned={}; state.pinned[`${r},${c}`]=1; resultText='Pin!'; break; }
+    case 'u9': { if(!state.pinned) state.pinned={}; state.pinned[`${r},${c}`]=1; vfxData={target:[r,c]}; resultText='Pin!'; break; }
     case 'u10': {
       cells[r][c].count += 2; cells[r][c].owner = cur;
       const others = state.alive.filter(i => i !== cur);
