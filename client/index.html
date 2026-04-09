@@ -2608,13 +2608,21 @@ async function executeCard(cardDef,playerIdx,cardIdx,targets){
       });
       vfxData={zone};resultText='สลับตำแหน่ง บอลรวมเท่าเดิม!';}break;
     case 'u9':{
-      spawnCellEmoji(r,c,'📌',{size:'2rem'});
-      flashCell(r,c,'#ff88ffbb');
-      flashCell(r,c,'rgba(255,100,255,0.3)',200,400);
-      if(!_onlineMode){
-        const pk=`${r},${c}`;
+      const u9r=vfxData.target?vfxData.target[0]:r;
+      const u9c=vfxData.target?vfxData.target[1]:c;
+      spawnCellEmoji(u9r,u9c,'📌',{size:'2rem'});
+      flashCell(u9r,u9c,'#ff88ffbb');
+      flashCell(u9r,u9c,'rgba(255,100,255,0.3)',200,400);
+      if(_onlineMode){
+        // แสดง 📌 ทันทีโดยเพิ่ม class ก่อน room_update มา
+        const pinEl=document.querySelector(`.cell[data-r="${u9r}"][data-c="${u9c}"]`);
+        if(pinEl)pinEl.classList.add('pinned');
+      } else {
+        const pk=`${u9r},${u9c}`;
         if(!STATE.pinned)STATE.pinned={};
         STATE.pinned[pk]=2;
+        const pinEl2=document.querySelector(`.cell[data-r="${u9r}"][data-c="${u9c}"]`);
+        if(pinEl2)pinEl2.classList.add('pinned');
       }
       await delay(700);
     }break;
