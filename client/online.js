@@ -688,12 +688,25 @@ function initSocket() {
     clearAllTimers();
     closeGroupPickOverlay();
     if (STATE) STATE.scores = scores;
-    document.getElementById('winner-title').textContent = `${winnerName} ชนะ! 🎉`;
-    document.getElementById('winner-title').style.color = PLAYER_COLORS_O[winner] || '#fff';
-    const scoreStr = scores.map((s, i) => `P${i+1}:${s}`).join('  ');
-    document.getElementById('winner-sub').textContent = `คะแนน: ${scoreStr}`;
-    document.getElementById('winner-overlay').classList.add('show');
-    SFX.win && SFX.win();
+
+    const showWinner = () => {
+      document.getElementById('winner-title').textContent = `${winnerName} ชนะ! 🎉`;
+      document.getElementById('winner-title').style.color = PLAYER_COLORS_O[winner] || '#fff';
+      const scoreStr = scores.map((s, i) => `P${i+1}:${s}`).join('  ');
+      document.getElementById('winner-sub').textContent = `คะแนน: ${scoreStr}`;
+      document.getElementById('winner-overlay').classList.add('show');
+      SFX.win && SFX.win();
+    };
+
+    // รอ VFX และ wave animation เสร็จก่อนขึ้น winner screen
+    const vfxWait = Math.max(0, _vfxFinishTime - Date.now());
+    const waveWait = Math.max(0, _animFinishTime - Date.now());
+    const totalWait = Math.max(vfxWait, waveWait);
+    if (totalWait > 50) {
+      setTimeout(showWinner, totalWait + 300);
+    } else {
+      showWinner();
+    }
   });
 
   socket.on('you_are_host', () => {
@@ -750,20 +763,28 @@ function onlineCellClick(r, c) {
 
   if (selectedHandCard) {
     const { playerIdx, cardIdx } = selectedHandCard;
-    // ใช้ cardIdx ก่อน แต่ fallback ไป find by id ถ้า index เปลี่ยน
-    let cardDef = STATE.hands[playerIdx]?.[cardIdx];
-    if (!cardDef && selectedHandCard.cardId) {
-      cardDef = STATE.hands[playerIdx]?.find(d => d.id === selectedHandCard.cardId);
-    }
+    // find by id (reliable) หรือ index เป็น fallback
+    let cardDef = (selectedHandCard.cardId
+      ? STATE.hands[playerIdx]?.find(d => d.id === selectedHandCard.cardId)
+      : null) || STATE.hands[playerIdx]?.[cardIdx];
+    // อัปเดต cardIdx ให้ตรงกับ index จริงปัจจุบัน
+    const realIdx = cardDef ? STATE.hands[playerIdx].indexOf(cardDef) : cardIdx;
     if (cardDef) {
       if (cardDef.twoTarget && !targetData.r1Done) {
-        targetData = { r1: r, c1: c, r1Done: true, playerIdx, cardIdx, cardDef };
+        targetData = { r1: r, c1: c, r1Done: true, playerIdx, cardIdx: realIdx, cardDef };
         document.getElementById('target-text').textContent = `✅ ช่อง 1 แล้ว — เลือกช่องที่ 2`;
         renderGridHighlight();
         return true;
       }
       if (cardDef.twoTarget && targetData.r1Done) {
         if (r === targetData.r1 && c === targetData.c1) { showToast('เลือกช่องคนละช่อง'); return true; }
+        // c5 Spin: ช่องที่ 2 ต้องอยู่ติดกับช่องที่ 1
+        if (cardDef.id === 'c5') {
+          const size = STATE.size, cols = STATE.cols || STATE.size;
+          const r1 = targetData.r1, c1 = targetData.c1;
+          const isNb = (Math.abs(r-r1)===1&&c===c1) || (Math.abs(c-c1)===1&&r===r1);
+          if (!isNb) { showToast('❌ ต้องเลือกช่องที่ติดกัน'); return true; }
+        }
         selectedHandCard = null;
         document.getElementById('target-banner').classList.remove('show');
         clearAllTimers();
