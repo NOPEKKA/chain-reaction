@@ -17,71 +17,146 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);min-height:100vh;displ
 
 /* ── Main Menu ── */
 #main-menu{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100svh;gap:0;padding:max(20px,env(safe-area-inset-top)) 20px max(20px,env(safe-area-inset-bottom));}
-.menu-logo{font-family:'Fredoka One',cursive;font-size:3rem;color:#fff;text-shadow:0 4px 0 rgba(0,0,0,0.25),0 0 40px rgba(255,255,255,0.15);text-align:center;margin-bottom:6px;animation:popIn .6s cubic-bezier(.34,1.56,.64,1);}
-.menu-tagline{color:rgba(255,255,255,0.7);font-size:.88rem;text-align:center;margin-bottom:36px;animation:popIn .6s .1s cubic-bezier(.34,1.56,.64,1) both;}
-.main-menu-btns{display:flex;flex-direction:column;gap:14px;width:min(300px,88vw);animation:popIn .5s .2s cubic-bezier(.34,1.56,.64,1) both;}
-.main-btn{border:none;border-radius:20px;padding:18px 24px;font-family:'Fredoka One',cursive;font-size:1.15rem;cursor:pointer;transition:all .22s cubic-bezier(.34,1.56,.64,1);display:flex;align-items:center;gap:12px;text-align:left;box-shadow:0 6px 0 rgba(0,0,0,0.18),0 8px 20px rgba(0,0,0,0.15);}
-.main-btn:active{transform:scale(0.96) translateY(3px);}
-.main-btn.primary,.main-btn.secondary{background:rgba(255,255,255,0.18);color:#fff;border:2px solid rgba(255,255,255,0.25);}
-@media(hover:hover){.main-btn:hover{background:#fff;color:var(--bg);transform:translateY(-4px) scale(1.03);box-shadow:0 10px 0 rgba(0,0,0,0.18),0 14px 28px rgba(0,0,0,0.22);}
-.main-btn:hover .main-btn-sub{color:var(--bg);opacity:0.6;}}
-.main-btn-icon{font-size:1.5rem;flex-shrink:0;}
-.main-btn-text{display:flex;flex-direction:column;gap:1px;}
-.main-btn-title{font-family:'Fredoka One',cursive;font-size:1.1rem;line-height:1;}
-.main-btn-sub{font-size:.68rem;opacity:0.6;font-family:'Nunito',sans-serif;font-weight:600;}
+.menu-logo{
+  font-family:'Fredoka One',cursive;
+  font-size:2.6rem;letter-spacing:-1px;
+  color:#fff;text-align:center;
+  text-shadow:0 2px 30px rgba(255,255,255,0.2);
+  animation:menuFadeUp .5s cubic-bezier(.22,1,.36,1) both;
+}
+.menu-logo span{
+  background:linear-gradient(135deg,#fff 0%,rgba(255,255,255,0.6) 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+.menu-tagline{
+  color:rgba(255,255,255,0.45);font-size:.78rem;letter-spacing:2px;
+  text-transform:uppercase;text-align:center;margin-bottom:48px;
+  animation:menuFadeUp .5s .08s cubic-bezier(.22,1,.36,1) both;
+}
+.main-menu-btns{
+  display:flex;flex-direction:column;gap:10px;
+  width:min(320px,88vw);
+  animation:menuFadeUp .5s .15s cubic-bezier(.22,1,.36,1) both;
+}
+@keyframes menuFadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
 
-/* ── Sub Screens ── */
-.sub-screen{display:none;flex-direction:column;align-items:center;justify-content:center;min-height:100svh;padding:16px;padding-top:max(16px,env(safe-area-inset-top));padding-bottom:max(16px,env(safe-area-inset-bottom));gap:0;overflow-y:auto;}
-.sub-screen.active{display:flex;animation:slideLeft .3s cubic-bezier(.34,1.3,.64,1);}
-.sub-header{display:flex;align-items:center;gap:10px;width:min(500px,96vw);margin-bottom:18px;}
-.back-btn{background:rgba(255,255,255,0.18);border:none;border-radius:999px;color:#fff;font-family:'Fredoka One',cursive;font-size:.9rem;padding:8px 16px;cursor:pointer;transition:all .18s;flex-shrink:0;}
-.back-btn:hover{background:rgba(255,255,255,0.3);}
-.sub-title{font-family:'Fredoka One',cursive;font-size:1.4rem;color:#fff;}
+.main-btn{
+  border:none;border-radius:16px;
+  padding:15px 20px;
+  font-family:'Fredoka One',cursive;font-size:1rem;
+  cursor:pointer;
+  transition:transform .18s cubic-bezier(.34,1.56,.64,1),box-shadow .18s;
+  display:flex;align-items:center;gap:14px;text-align:left;
+  position:relative;overflow:hidden;
+}
+.main-btn::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(135deg,rgba(255,255,255,0.12) 0%,rgba(255,255,255,0) 60%);
+  pointer-events:none;
+}
+.main-btn:hover{transform:translateY(-2px);box-shadow:0 12px 32px rgba(0,0,0,0.25);}
+.main-btn:active{transform:scale(0.97) translateY(1px);}
+
+.main-btn.primary{
+  background:rgba(255,255,255,0.95);
+  color:var(--bg);
+  box-shadow:0 4px 20px rgba(0,0,0,0.15);
+}
+.main-btn.secondary{
+  background:rgba(255,255,255,0.1);
+  color:#fff;
+  border:1px solid rgba(255,255,255,0.12);
+  box-shadow:0 2px 8px rgba(0,0,0,0.1);
+}
+.main-btn.testmode-btn{
+  background:transparent;
+  color:rgba(255,255,255,0.4);
+  border:1px dashed rgba(255,255,255,0.2);
+  box-shadow:none;
+  font-size:.85rem;padding:11px 20px;
+}
+.main-btn.testmode-btn:hover{color:rgba(255,255,255,0.6);border-color:rgba(255,255,255,0.35);}
+.main-btn-icon{font-size:1.4rem;flex-shrink:0;width:32px;text-align:center;}
+.main-btn-text{display:flex;flex-direction:column;gap:1px;}
+.main-btn-title{font-size:1rem;font-weight:700;line-height:1.2;}
+.main-btn-sub{font-size:.7rem;opacity:.55;font-family:inherit;font-weight:400;}
+.main-btn.primary .main-btn-sub{opacity:.5;color:var(--bg);}
+
+.sub-screen{display:none;flex-direction:column;align-items:center;min-height:100svh;padding:16px;padding-top:max(56px,env(safe-area-inset-top));padding-bottom:max(24px,env(safe-area-inset-bottom));gap:0;overflow-y:auto;}
+.sub-screen.active{display:flex;animation:menuFadeUp .3s cubic-bezier(.22,1,.36,1);}
+
+/* ── Header ── */
+.sub-header{display:flex;align-items:center;gap:10px;width:min(460px,96vw);margin-bottom:28px;position:sticky;top:0;z-index:10;}
+.back-btn{background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);border-radius:999px;color:#fff;font-family:'Fredoka One',cursive;font-size:.82rem;padding:7px 14px;cursor:pointer;transition:all .15s;flex-shrink:0;backdrop-filter:blur(8px);}
+.back-btn:hover{background:rgba(255,255,255,0.2);}
+.sub-title{font-family:'Fredoka One',cursive;font-size:1.25rem;color:#fff;opacity:.9;}
 
 /* ── Mode Select ── */
 .mode-cards{display:flex;flex-direction:column;gap:12px;width:min(360px,90vw);}
-.mode-card{background:rgba(255,255,255,0.15);border:2px solid rgba(255,255,255,0.2);border-radius:22px;padding:18px 20px;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:14px;backdrop-filter:blur(4px);}
-.mode-card:hover{background:rgba(255,255,255,0.25);transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,0.2);}
+.mode-card{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);border-radius:16px;padding:16px 18px;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:14px;}
+.mode-card:hover{background:rgba(255,255,255,0.14);transform:translateY(-2px);}
 .mode-card:active{transform:scale(0.97);}
-.mode-card.selected{background:rgba(255,255,255,0.92);border-color:#fff;}
+.mode-card.selected{background:rgba(255,255,255,0.9);border-color:transparent;}
 .mode-card.selected .mode-card-title{color:var(--bg);}
-.mode-card.selected .mode-card-desc{color:rgba(0,0,0,0.5);}
-.mode-card-icon{font-size:2rem;flex-shrink:0;}
-.mode-card-title{font-family:'Fredoka One',cursive;font-size:1.05rem;color:#fff;}
-.mode-card-desc{font-size:.72rem;color:rgba(255,255,255,0.6);margin-top:2px;}
+.mode-card.selected .mode-card-desc{color:rgba(0,0,0,0.45);}
+.mode-card-icon{font-size:1.8rem;flex-shrink:0;}
+.mode-card-title{font-family:'Fredoka One',cursive;font-size:1rem;color:#fff;}
+.mode-card-desc{font-size:.7rem;color:rgba(255,255,255,0.55);margin-top:2px;}
 
-/* ── Players & Bots (in-game screen) ── */
-.play-section{background:rgba(255,255,255,0.12);border-radius:18px;padding:16px 18px;width:min(500px,96vw);margin-bottom:12px;}
-.section-label{font-weight:800;font-size:.72rem;text-transform:uppercase;letter-spacing:1.5px;color:rgba(255,255,255,0.7);margin-bottom:8px;}
+/* ── Sections ── */
+.play-section{
+  background:rgba(255,255,255,0.06);
+  border:1px solid rgba(255,255,255,0.1);
+  border-radius:16px;padding:16px 18px;
+  width:min(460px,96vw);margin-bottom:10px;
+}
+.section-label{
+  font-weight:800;font-size:.65rem;text-transform:uppercase;
+  letter-spacing:2px;color:rgba(255,255,255,0.4);
+  margin-bottom:10px;display:flex;align-items:center;gap:6px;
+}
 .section{margin-bottom:16px;}
 
 /* ── Settings ── */
-.settings-panel{background:rgba(255,255,255,0.12);border-radius:22px;padding:18px 18px;width:min(500px,96vw);backdrop-filter:blur(6px);overflow-y:auto;max-height:70svh;}
+.settings-panel{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:18px 18px;width:min(460px,96vw);overflow-y:auto;max-height:70svh;}
 .settings-panel::-webkit-scrollbar{width:3px;}
-.settings-panel::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.3);border-radius:3px;}
-.settings-group{margin-bottom:18px;}
+.settings-panel::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.2);border-radius:3px;}
+.settings-group{margin-bottom:20px;}
 .settings-group:last-child{margin-bottom:0;}
 
-#action-btn{width:min(300px,88vw);padding:16px;border-radius:999px;border:none;background:#fff;color:var(--bg);font-family:'Fredoka One',cursive;font-size:1.2rem;cursor:pointer;transition:all .2s;box-shadow:0 6px 20px rgba(0,0,0,0.2);margin-top:14px;flex-shrink:0;}
-#action-btn:hover{transform:translateY(-3px) scale(1.02);box-shadow:0 10px 28px rgba(0,0,0,0.25);}
+#action-btn{width:min(300px,88vw);padding:16px;border-radius:999px;border:none;background:#fff;color:var(--bg);font-family:'Fredoka One',cursive;font-size:1.1rem;cursor:pointer;transition:all .2s;box-shadow:0 4px 20px rgba(0,0,0,0.15);margin-top:14px;flex-shrink:0;}
+#action-btn:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(0,0,0,0.2);}
 #action-btn:active{transform:scale(0.97);}
-/* compat */
 #setup-screen{display:none;}
 #start-btn{display:none;}
-.pill-group{display:flex;gap:7px;flex-wrap:wrap;}
-.pill{background:rgba(255,255,255,0.2);border:2px solid rgba(255,255,255,0.3);color:#fff;border-radius:999px;padding:6px 15px;font-family:'Fredoka One',cursive;font-size:.9rem;cursor:pointer;transition:all .2s;user-select:none;}
-@media(hover:hover){.pill:hover{background:rgba(255,255,255,0.35);transform:scale(1.05);}}
-.pill.active{background:#fff;color:var(--bg);border-color:#fff;transform:scale(1.06);box-shadow:0 4px 14px rgba(0,0,0,0.2);}
+
+/* ── Pills ── */
+.pill-group{display:flex;gap:6px;flex-wrap:wrap;}
+.pill{
+  background:rgba(255,255,255,0.08);
+  border:1px solid rgba(255,255,255,0.12);
+  color:rgba(255,255,255,0.7);
+  border-radius:10px;padding:6px 14px;
+  font-family:'Fredoka One',cursive;font-size:.85rem;
+  cursor:pointer;transition:all .15s;user-select:none;
+}
+@media(hover:hover){.pill:hover{background:rgba(255,255,255,0.15);color:#fff;}}
+.pill.active{
+  background:rgba(255,255,255,0.95);
+  color:var(--bg);border-color:transparent;
+  box-shadow:0 2px 10px rgba(0,0,0,0.15);
+}
 .bot-slots{display:flex;gap:6px;flex-wrap:wrap;}
-.bot-slot{display:flex;align-items:center;gap:5px;background:rgba(255,255,255,0.12);border:2px solid rgba(255,255,255,0.25);border-radius:999px;padding:5px 12px;cursor:pointer;transition:all .2s;}
-.bot-slot:hover{background:rgba(255,255,255,0.22);}
-.bot-slot .bs-dot{width:12px;height:12px;border-radius:50%;}
-.bot-slot .bs-label{font-family:'Fredoka One',cursive;font-size:.8rem;color:#fff;}
-.bot-slot .bs-toggle{font-size:.7rem;color:rgba(255,255,255,0.6);}
-.bot-slot.is-bot{background:rgba(0,0,0,0.25);border-color:rgba(255,255,255,0.5);}
+.bot-slot{display:flex;align-items:center;gap:5px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:6px 12px;cursor:pointer;transition:all .15s;}
+.bot-slot:hover{background:rgba(255,255,255,0.15);}
+.bot-slot .bs-dot{width:10px;height:10px;border-radius:50%;}
+.bot-slot .bs-label{font-family:'Fredoka One',cursive;font-size:.78rem;color:rgba(255,255,255,0.75);}
+.bot-slot .bs-toggle{font-size:.68rem;color:rgba(255,255,255,0.45);margin-left:2px;}
+.bot-slot.is-bot{background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.25);}
+.bot-slot.is-bot .bs-label{color:#fff;}
 .bot-slot.is-bot .bs-toggle{color:#ffdd88;}
 .swatch-group{display:flex;gap:8px;flex-wrap:wrap;max-width:100%;}
-.swatch{width:36px;height:36px;border-radius:50%;cursor:pointer;border:3px solid transparent;transition:all .2s;position:relative;}
+.swatch{width:32px;height:32px;border-radius:8px;cursor:pointer;border:2px solid transparent;transition:all .15s;position:relative;}
 @media(hover:hover){.swatch:hover{transform:scale(1.15);}}
 .swatch.active{border-color:#fff;transform:scale(1.2);box-shadow:0 0 0 3px rgba(255,255,255,0.5);}
 .swatch::after{content:'✓';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:1rem;color:#fff;opacity:0;transition:opacity .2s;font-weight:900;}
@@ -457,8 +532,8 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);min-height:100vh;displ
 
 <!-- ══ MAIN MENU ══ -->
 <div id="main-menu">
-  <div class="menu-logo">Chain Reaction</div>
-  <div class="menu-tagline">วางลูกบอล • ระเบิดลูกโซ่ • ใช้การ์ด • ครองแผนที่</div>
+  <div class="menu-logo"><span>Chain Reaction</span></div>
+  <div class="menu-tagline">วางบอล • ระเบิดลูกโซ่ • ใช้การ์ด</div>
   <div class="main-menu-btns">
     <button class="main-btn primary" id="btn-solo">
       <span class="main-btn-icon">🎮</span>
@@ -474,6 +549,13 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);min-height:100vh;displ
         <span class="main-btn-sub">หลายคน • เครื่องเดียวกัน</span>
       </div>
     </button>
+    <button class="main-btn secondary" id="btn-online">
+      <span class="main-btn-icon">🌐</span>
+      <div class="main-btn-text">
+        <span class="main-btn-title">ออนไลน์</span>
+        <span class="main-btn-sub">เล่นกับเพื่อนต่างเครื่อง</span>
+      </div>
+    </button>
     <button class="main-btn secondary" id="btn-settings">
       <span class="main-btn-icon">⚙️</span>
       <div class="main-btn-text">
@@ -481,15 +563,10 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);min-height:100vh;displ
         <span class="main-btn-sub">ธีม • เสียง</span>
       </div>
     </button>
-    <button class="main-btn secondary" id="btn-online">
-      <span class="main-btn-icon">🌐</span>
-      <div class="main-btn-text"><span class="main-btn-title">ออนไลน์</span><span class="main-btn-sub">เล่นกับเพื่อนต่างเครื่อง</span></div>
-    </button>
-    <button class="main-btn secondary" id="btn-testmode" style="border:2px dashed rgba(255,200,0,0.5);opacity:0.75;">
-      <span class="main-btn-icon">🧪</span>
+    <button class="main-btn testmode-btn" id="btn-testmode">
+      <span class="main-btn-icon" style="font-size:1rem">🧪</span>
       <div class="main-btn-text">
-        <span class="main-btn-title">โหมดทดสอบ</span>
-        <span class="main-btn-sub">ทดสอบการ์ด • ชั่วคราว</span>
+        <span class="main-btn-title" style="font-size:.85rem">โหมดทดสอบ</span>
       </div>
     </button>
   </div>
@@ -541,7 +618,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);min-height:100vh;displ
       <div class="pill" data-val="8">8</div><div class="pill" data-val="0">ปิด</div>
     </div>
   </div>
-  <button class="main-btn primary" id="solo-start-btn" style="width:min(300px,88vw);justify-content:center;margin-top:6px;">
+  <button class="main-btn primary" id="solo-start-btn" style="width:min(460px,96vw);justify-content:center;margin-top:4px;">
     <span class="main-btn-icon">🚀</span>
     <span class="main-btn-title">เริ่มเกม!</span>
   </button>
@@ -594,7 +671,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);min-height:100vh;displ
       <div class="pill" data-val="8">8</div><div class="pill" data-val="0">ปิด</div>
     </div>
   </div>
-  <button class="main-btn primary" id="multi-start-btn" style="width:min(300px,88vw);justify-content:center;margin-top:6px;">
+  <button class="main-btn primary" id="multi-start-btn" style="width:min(460px,96vw);justify-content:center;margin-top:4px;">
     <span class="main-btn-icon">🚀</span>
     <span class="main-btn-title">เริ่มเกม!</span>
   </button>
