@@ -12,7 +12,7 @@
 // ถ้ายังไม่ใส่ (ยังเป็น YOUR_...) เกมจะเล่นออฟไลน์กับบอทตามปกติ
 // ============================================================
 export const firebaseConfig = {
-  databaseURL: 'https://YOUR_PROJECT-default-rtdb.asia-southeast1.firebasedatabase.app',
+  databaseURL: 'https://fishball-e7248-default-rtdb.asia-southeast1.firebasedatabase.app',
   // apiKey:    'YOUR_API_KEY',       // ไม่จำเป็นสำหรับ Realtime Database
   // projectId: 'YOUR_PROJECT',
 };
