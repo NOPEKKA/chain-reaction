@@ -9,7 +9,7 @@ COPY server/package*.json ./
 RUN npm install
 
 # Copy source
-COPY server/server.js .
+COPY server/index.js .
 
 # Expose port
 EXPOSE 8080
