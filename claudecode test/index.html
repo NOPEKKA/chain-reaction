@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flopfish FC 🐟⚽</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; width: 100%; overflow: hidden; background: #0b132b; font-family: system-ui, sans-serif; }
+    #app { position: fixed; inset: 0; width: 100vw; height: 100vh; }
+    canvas { display: block; width: 100% !important; height: 100% !important; }
+
+    /* ---------- HUD ---------- */
+    #hud {
+      position: fixed; top: 0; left: 0; right: 0;
+      display: flex; justify-content: space-between; align-items: flex-start;
+      padding: 16px 20px; pointer-events: none; z-index: 10;
+      color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.6);
+      opacity: 0; transition: opacity .3s ease;
+    }
+    #hud.show { opacity: 1; }
+    #scoreWrap { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+    #score { font-size: 42px; font-weight: 800; letter-spacing: 2px; }
+    #scoreLabel { font-size: 13px; font-weight: 700; opacity: .8; letter-spacing: 1px; }
+    #timer { font-size: 28px; font-weight: 700; opacity: .9; }
+
+    /* Fullscreen toggle — always available */
+    #fsBtn {
+      position: fixed; top: 14px; right: 16px; z-index: 30; pointer-events: auto; cursor: pointer;
+      width: 42px; height: 42px; border-radius: 12px; border: 1px solid rgba(255,255,255,.25);
+      background: rgba(0,0,0,.35); color: #fff; font-size: 20px; line-height: 1;
+      display: flex; align-items: center; justify-content: center; transition: background .2s ease;
+    }
+    #fsBtn:hover { background: rgba(0,0,0,.6); }
+
+    /* ---------- Screens (overlays) ---------- */
+    .screen {
+      position: fixed; inset: 0; z-index: 20; display: flex;
+      align-items: center; justify-content: center; flex-direction: column;
+      gap: 16px; text-align: center; color: #fff; padding: 28px 24px;
+      background: radial-gradient(ellipse at center, rgba(11,19,43,.5), rgba(11,19,43,.92));
+      visibility: visible; overflow-y: auto;
+      transition: opacity .35s ease, visibility .35s ease;
+    }
+    /* visibility:hidden also disables hit-testing on children that set
+       pointer-events:auto (buttons), fixing the "invisible menu still
+       clickable" bug. */
+    .screen.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+    .screen h1 { font-size: clamp(36px, 7.5vw, 72px); font-weight: 900; letter-spacing: 1px;
+      text-shadow: 0 4px 20px rgba(0,0,0,.5); }
+    .screen h2 { font-size: clamp(22px, 5vw, 34px); font-weight: 800; }
+    .screen p { font-size: clamp(13px, 3vw, 18px); opacity: .92; max-width: 540px; line-height: 1.6; }
+    .tag { font-size: 13px; letter-spacing: 3px; text-transform: uppercase; opacity: .7; font-weight: 700; }
+
+    .btn {
+      pointer-events: auto; cursor: pointer; border: none; border-radius: 14px;
+      padding: 16px 28px; font-size: 19px; font-weight: 800; letter-spacing: .5px;
+      transition: transform .1s ease, box-shadow .2s ease; font-family: inherit;
+    }
+    .btn:active { transform: scale(.96); }
+    .btn-primary { background: #ffd166; color: #0b132b; box-shadow: 0 8px 24px rgba(255,209,102,.35); }
+    .btn-ghost { background: rgba(255,255,255,.1); color: #fff; border: 1px solid rgba(255,255,255,.25); }
+    .btn-sm { padding: 11px 20px; font-size: 15px; border-radius: 11px; }
+    .btn-big { padding: 18px 52px; font-size: 26px; letter-spacing: 2px; border-radius: 16px; }
+
+    /* Title splash with the FISHBALL artwork */
+    .title-screen {
+      justify-content: flex-end; padding-bottom: 9vh; gap: 20px;
+      background: #1b7fd0 url('./assets/menu-bg.png') center / cover no-repeat;
+    }
+    .title-btns { display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; }
+    .btn-big.btn-ghost { background: rgba(0,0,0,.45); border-color: rgba(255,255,255,.55); }
+
+    /* Volume slider */
+    .vol-slider {
+      -webkit-appearance: none; appearance: none; width: 100%; height: 10px;
+      border-radius: 999px; background: rgba(255,255,255,.2); outline: none; cursor: pointer;
+    }
+    .vol-slider::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none; width: 26px; height: 26px; border-radius: 50%;
+      background: #ffd166; border: 2px solid #0b132b; cursor: pointer;
+    }
+    .vol-slider::-moz-range-thumb {
+      width: 26px; height: 26px; border-radius: 50%; background: #ffd166; border: 2px solid #0b132b; cursor: pointer;
+    }
+    #volVal { color: #ffd166; font-weight: 800; }
+
+    .name-row { display: flex; gap: 8px; width: 300px; max-width: 82vw; }
+    .name-row input, .code-input {
+      flex: 1; padding: 13px 16px; border-radius: 12px; font-size: 17px; font-family: inherit;
+      border: 1px solid rgba(255,255,255,.25); background: rgba(0,0,0,.28); color: #fff; text-align: center;
+    }
+    .code-input { letter-spacing: 6px; font-weight: 800; font-size: 26px; }
+    .name-row input::placeholder, .code-input::placeholder { letter-spacing: normal; font-weight: 400; opacity: .45; }
+    .home-btns { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
+
+    /* Create-room settings */
+    .setting-group { width: 380px; max-width: 88vw; display: flex; flex-direction: column; gap: 8px; }
+    .setting-label { font-size: 14px; font-weight: 700; opacity: .85; text-align: left; }
+    .seg { display: flex; gap: 6px; background: rgba(0,0,0,.25); padding: 5px; border-radius: 14px; }
+    .seg-btn {
+      flex: 1; pointer-events: auto; cursor: pointer; font-family: inherit;
+      border: none; background: transparent; color: rgba(255,255,255,.7);
+      padding: 10px 6px; border-radius: 10px; font-size: 14px; font-weight: 700;
+      transition: background .15s ease, color .15s ease;
+    }
+    .seg-btn.active { background: #ffd166; color: #0b132b; }
+
+    .code-box {
+      display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.2); border-radius: 14px; padding: 12px 18px;
+    }
+    .code-box .lbl { font-size: 13px; opacity: .75; }
+    .code-box .code { font-size: 30px; font-weight: 900; letter-spacing: 6px; color: #ffd166; }
+    .code-box button {
+      pointer-events: auto; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 700;
+      border: 1px solid rgba(255,255,255,.3); background: rgba(255,255,255,.08); color: #fff;
+      border-radius: 9px; padding: 7px 12px;
+    }
+
+    .skins { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+    .skin-chip {
+      pointer-events: auto; cursor: pointer; font-family: inherit;
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      background: rgba(255,255,255,.08); border: 2px solid rgba(255,255,255,.18);
+      border-radius: 12px; padding: 8px 10px; color: #fff; font-size: 12px; font-weight: 700;
+      transition: transform .1s ease, border-color .2s ease, background .2s ease;
+    }
+    .skin-chip:hover { transform: translateY(-2px); background: rgba(255,255,255,.14); }
+    .skin-chip.active { border-color: #ffd166; background: rgba(255,209,102,.18); }
+    .skin-chip.loading { opacity: .5; }
+    .skin-emoji { font-size: 24px; }
+
+    /* Lobby slot grid */
+    .lobby-body { display: flex; gap: 26px; justify-content: center; flex-wrap: wrap; }
+    .team-col { display: flex; flex-direction: column; gap: 10px; min-width: 180px; }
+    .team-head { font-size: 16px; font-weight: 800; padding: 6px 0; border-radius: 8px; }
+    .team-head.red { color: #ff6b7a; }
+    .team-head.blue { color: #6ba7ff; }
+    .team-head.fish { color: #5fe07a; }
+    .slot {
+      display: flex; align-items: center; gap: 8px; justify-content: space-between;
+      padding: 8px 8px 8px 14px; border-radius: 12px; font-size: 15px; font-weight: 700; color: #fff;
+      border: 2px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06);
+      transition: border-color .2s ease, background .2s ease;
+    }
+    .slot.mine { border-color: #ffd166; background: rgba(255,209,102,.2); }
+    .slot.bot { opacity: .82; }
+    .slot.taken { border-color: #39d353; background: rgba(57,211,83,.16); }
+    .slot.empty { opacity: .5; border-style: dashed; }
+    .slot-info {
+      pointer-events: auto; cursor: pointer; font-family: inherit;
+      display: flex; align-items: center; gap: 8px; flex: 1; color: inherit;
+      background: none; border: none; font-size: inherit; font-weight: inherit;
+    }
+    .slot-info:hover { color: #ffd166; }
+    .slot .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+    .slot.red .dot { background: #ff4a5c; }
+    .slot.blue .dot { background: #4a90ff; }
+    .slot.fish .dot { background: #39d353; }
+    .slot.empty .dot { background: rgba(255,255,255,.3); }
+    .slot-toggle {
+      pointer-events: auto; cursor: pointer; font-family: inherit;
+      width: 28px; height: 28px; border-radius: 8px; flex: none;
+      border: 1px solid rgba(255,255,255,.25); background: rgba(0,0,0,.25); color: #fff;
+      font-size: 15px; font-weight: 800; line-height: 1;
+    }
+    .slot-toggle:hover { background: rgba(0,0,0,.5); }
+
+    .row-btns { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin-top: 6px; }
+    .note { font-size: 12.5px; opacity: .6; max-width: 320px; }
+    .toast {
+      position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,.82); color: #fff; padding: 12px 20px; border-radius: 12px;
+      font-size: 15px; z-index: 40; opacity: 0; transition: opacity .3s ease; pointer-events: none;
+      max-width: 90vw;
+    }
+    .toast.show { opacity: 1; }
+
+    #hint {
+      position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+      color: rgba(255,255,255,.7); font-size: 13px; z-index: 10; pointer-events: none;
+      text-shadow: 0 1px 4px rgba(0,0,0,.6); opacity: 0; transition: opacity .3s ease;
+    }
+    #hint.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <button id="fsBtn" title="เต็มจอ">⛶</button>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div id="scoreWrap">
+      <div id="score">0 : 0</div>
+      <div id="scoreLabel">คุณ : คู่แข่ง</div>
+    </div>
+    <div id="timer">02:00</div>
+  </div>
+
+  <!-- Screen: Title (FISHBALL splash) -->
+  <div id="title" class="screen title-screen">
+    <div class="title-btns">
+      <button id="startBtn" class="btn btn-primary btn-big">START</button>
+      <button id="settingBtn" class="btn btn-ghost btn-big">SETTING</button>
+    </div>
+  </div>
+
+  <!-- Screen: Settings (volume only) -->
+  <div id="settings" class="screen hidden">
+    <div class="tag">ตั้งค่า</div>
+    <h2>🔊 เสียง</h2>
+    <div class="setting-group">
+      <div class="setting-label">ความดังเสียง <span id="volVal">70%</span></div>
+      <input id="volSlider" class="vol-slider" type="range" min="0" max="100" value="70" />
+    </div>
+    <button id="settingsBack" class="btn btn-ghost btn-sm">← กลับ</button>
+  </div>
+
+  <!-- Screen: Home (name + create/join) -->
+  <div id="home" class="screen hidden">
+    <div class="tag">🐟 Beached Football</div>
+    <h1>Flopfish FC</h1>
+    <div class="name-row">
+      <input id="playerName" maxlength="12" placeholder="ตั้งชื่อผู้เล่น" />
+    </div>
+    <div class="home-btns">
+      <button id="toCreate" class="btn btn-primary">➕ สร้างห้อง</button>
+      <button id="toJoin" class="btn btn-ghost">🔑 เข้าห้อง</button>
+    </div>
+  </div>
+
+  <!-- Screen: Create room -->
+  <div id="create" class="screen hidden">
+    <div class="tag">สร้างห้อง</div>
+    <div class="code-box">
+      <span class="lbl">เลขห้อง</span>
+      <span class="code" id="roomCodeText">----</span>
+      <button id="copyCodeBtn">คัดลอก</button>
+    </div>
+
+    <div class="setting-group">
+      <div class="setting-label">โหมดเกม</div>
+      <div class="seg" id="modeSeg">
+        <button class="seg-btn active" data-mode="versus">⚔️ แข่งกันเอง</button>
+        <button class="seg-btn" data-mode="coop">🤝 ร่วมมือกัน</button>
+      </div>
+    </div>
+
+    <div class="setting-group">
+      <div class="setting-label">เวลาแข่ง</div>
+      <div class="seg" id="timeSeg">
+        <button class="seg-btn" data-sec="60">1 นาที</button>
+        <button class="seg-btn active" data-sec="120">2 นาที</button>
+        <button class="seg-btn" data-sec="180">3 นาที</button>
+      </div>
+    </div>
+
+    <div class="setting-group" id="diffGroup" style="display:none">
+      <div class="setting-label">ความเก่ง Ronaldo</div>
+      <div class="seg" id="diffSeg">
+        <button class="seg-btn" data-diff="easy">ง่าย</button>
+        <button class="seg-btn active" data-diff="normal">กลาง</button>
+        <button class="seg-btn" data-diff="hard">ยาก</button>
+      </div>
+    </div>
+
+    <div class="setting-group">
+      <div class="setting-label">🐟 เลือกสกินปลา</div>
+      <div id="skinPicker" class="skins"></div>
+    </div>
+
+    <div class="row-btns">
+      <button id="startGameBtn" class="btn btn-primary">▶️ เริ่มเกม</button>
+      <button id="createBack" class="btn btn-ghost btn-sm">← กลับ</button>
+    </div>
+    <div class="note">* เล่นคนเดียวได้เลย เพื่อนเข้าห้องด้วยเลขนี้ได้เมื่อเปิดออนไลน์ (Stage 2)</div>
+  </div>
+
+  <!-- Screen: Join room -->
+  <div id="join" class="screen hidden">
+    <div class="tag">เข้าห้อง</div>
+    <h2>ใส่เลขห้อง</h2>
+    <div class="name-row">
+      <input id="joinCode" class="code-input" maxlength="4" inputmode="numeric" placeholder="0000" />
+    </div>
+    <div class="row-btns">
+      <button id="joinGoBtn" class="btn btn-primary">เข้าห้อง</button>
+      <button id="joinBack" class="btn btn-ghost btn-sm">← กลับ</button>
+    </div>
+    <div class="note">* ออนไลน์ยังไม่เปิด (Stage 2) — ตอนนี้ให้ "สร้างห้อง" เล่นคนเดียวไปก่อน</div>
+  </div>
+
+  <!-- Screen: Lobby (pick your slot / side) -->
+  <div id="lobby" class="screen hidden">
+    <div class="tag" id="lobbyTag">ล็อบบี้</div>
+    <div class="code-box">
+      <span class="lbl">เลขห้อง</span>
+      <span class="code" id="lobbyCode">----</span>
+    </div>
+    <h2 id="lobbyTitle">เลือกช่องของคุณ</h2>
+    <div id="lobbyBody" class="lobby-body"></div>
+    <div class="row-btns">
+      <button id="lobbyStart" class="btn btn-primary">▶️ เริ่มเกม</button>
+      <button id="lobbyBack" class="btn btn-ghost btn-sm">← กลับ</button>
+    </div>
+    <div class="note" id="lobbyNote"></div>
+  </div>
+
+  <!-- Screen: Game over -->
+  <div id="gameover" class="screen hidden">
+    <h1 id="goTitle">จบเกม</h1>
+    <p id="goScore"></p>
+    <div class="row-btns">
+      <button id="againBtn" class="btn btn-primary">เล่นอีกรอบ</button>
+      <button id="menuBtn" class="btn btn-ghost">เมนูหลัก</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <div id="hint">Space = ดิ้น · A/D = หัน · Esc = เมนู</div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+      "firebase/app": "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js",
+      "firebase/database": "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js"
+    }
+  }
+  </script>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
