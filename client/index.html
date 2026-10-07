@@ -601,6 +601,30 @@ body.fx-min .cell[data-fx]{animation:none!important;}
 
 /* ── ตั้งค่าเอฟเฟกต์ ── */
 .fx-note{font-size:.68rem;color:rgba(255,255,255,.5);margin-top:7px;line-height:1.5;}
+
+/* ══════════ เสียง: แถบควบคุม (หน้าตั้งค่า + แผงมุมจอ) ══════════ */
+.au-box{display:flex;flex-direction:column;gap:10px;}
+.au-row{display:grid;grid-template-columns:44px 68px 1fr 34px;align-items:center;gap:8px;}
+.au-tgl{width:44px;height:44px;border-radius:12px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.1);color:#fff;font-size:1.15rem;cursor:pointer;transition:transform .12s,background .15s;}
+.au-tgl:active{transform:scale(.92);}
+.au-row.off .au-tgl{background:rgba(255,255,255,.04);opacity:.75;}
+.au-lbl{font-family:'Fredoka One',cursive;font-size:.88rem;color:#fff;}
+.au-val{font-family:'Fredoka One',cursive;font-size:.78rem;color:rgba(255,255,255,.65);text-align:right;font-variant-numeric:tabular-nums;}
+.au-rng{-webkit-appearance:none;appearance:none;width:100%;height:28px;background:transparent;cursor:pointer;--v:50%;margin:0;}
+.au-rng::-webkit-slider-runnable-track{height:8px;border-radius:999px;background:linear-gradient(90deg,#fff 0,#fff var(--v),rgba(255,255,255,.18) var(--v));}
+.au-rng::-moz-range-track{height:8px;border-radius:999px;background:rgba(255,255,255,.18);}
+.au-rng::-moz-range-progress{height:8px;border-radius:999px;background:#fff;}
+.au-rng::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;margin-top:-8px;border-radius:50%;background:#fff;border:none;box-shadow:0 2px 8px rgba(0,0,0,.35);}
+.au-rng::-moz-range-thumb{width:24px;height:24px;border-radius:50%;background:#fff;border:none;box-shadow:0 2px 8px rgba(0,0,0,.35);}
+.au-rng:focus-visible{outline:2px solid #fff;outline-offset:3px;border-radius:999px;}
+.au-row.off .au-rng{opacity:.4;}
+.au-mute{min-height:44px;border-radius:12px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.08);color:#fff;font-family:'Fredoka One',cursive;font-size:.86rem;cursor:pointer;transition:background .15s,transform .12s;}
+.au-mute:active{transform:scale(.97);}
+.au-mute.on{background:rgba(255,120,120,.22);border-color:rgba(255,140,140,.5);}
+#audio-pop{position:fixed;top:56px;right:10px;z-index:710;width:min(300px,calc(100vw - 20px));padding:14px;border-radius:18px;background:rgba(22,15,44,.94);border:1px solid rgba(255,255,255,.16);box-shadow:0 18px 44px rgba(0,0,0,.5);backdrop-filter:blur(10px);display:none;transform-origin:100% 0;}
+#audio-pop.show{display:flex;animation:auPop .18s cubic-bezier(.3,1.4,.5,1);}
+@keyframes auPop{from{transform:scale(.86);opacity:0;}to{transform:scale(1);opacity:1;}}
+@media (prefers-reduced-motion: reduce){#audio-pop.show{animation:none;}}
 </style>
 <script src="/socket.io/socket.io.js"></script>
 </head>
@@ -842,12 +866,15 @@ body.fx-min .cell[data-fx]{animation:none!important;}
       </div>
     </div>
     <div class="settings-group">
-      <div class="section-label">🔊 สไตล์เสียง</div>
+      <div class="section-label">🔊 เสียง</div>
+      <div id="audio-controls"></div>
+    </div>
+    <div class="settings-group">
+      <div class="section-label">🎹 สไตล์เสียงเอฟเฟกต์</div>
       <div class="pill-group" id="sfx-pills">
         <div class="pill active" data-val="retro">🎮 8-Bit</div>
         <div class="pill" data-val="dark">🎹 Synth</div>
         <div class="pill" data-val="soft">🎵 Soft</div>
-        <div class="pill" data-val="off">🔇 ปิด</div>
       </div>
     </div>
     <div class="settings-group">
@@ -1334,6 +1361,9 @@ const FX=(()=>{
   function place(r,c,owner,first){
     const col=PC(owner),el=cell(r,c);
     if(el)tok([el],first?'first':'placed',first?720:480);
+    // เสียงเตือน: วางแล้วช่องนี้เหลืออีกลูกเดียวจะระเบิด
+    const ce=STATE.cells&&STATE.cells[r]&&STATE.cells[r][c];
+    if(ce&&!first&&ce.count===((STATE.catalyzed&&STATE.catalyzed[`${r},${c}`])?2:(ce.cap||4))-1)SFX.critTick(owner);
     const g=G();if(!g||tier()===0)return;const p=center(r,c);
     ring(p.x,p.y,g.cs,col,first?2.5:1.75,first?640:430,0,2,Math.max(2,Math.round(g.cs*.07)),.14);
     if(first){
@@ -1642,286 +1672,451 @@ function paintCell(div,r,c,cellSize){
 }
 
 let sfxStyle='retro';
+// ══════════ AUDIO ENGINE (v2) — WebAudio สังเคราะห์ล้วน ไม่มีไฟล์เสียง/ไลบรารี ══════════
+//  voice ─┬─► bus.dry ─────────────┐
+//         └─► bus.send ─► reverb ──┴─► compressor ─► soft-clip ─► master ─► ลำโพง
+// AudioContext ถูกสร้างหลังผู้ใช้แตะ/กดครั้งแรกเท่านั้น (ข้อจำกัด autoplay ของเบราว์เซอร์/มือถือ)
 const SFX=(()=>{
-  let ctx=null;
-  function getCtx(){
-    if(!ctx)ctx=new(window.AudioContext||window.webkitAudioContext)();
-    if(ctx.state==='suspended')ctx.resume();
-    return ctx;
-  }
+  const LS='cr.audio';
+  const P={music:.5,sfx:.8,musicOn:true,sfxOn:true,mute:false,style:'retro'};
+  try{const s=JSON.parse(localStorage.getItem(LS)||'null');if(s&&typeof s==='object'){
+    ['music','sfx'].forEach(k=>{if(typeof s[k]==='number'&&s[k]>=0&&s[k]<=1)P[k]=s[k];});
+    ['musicOn','sfxOn','mute'].forEach(k=>{if(typeof s[k]==='boolean')P[k]=s[k];});
+    if(['retro','dark','soft'].includes(s.style))P.style=s.style;}}catch(e){}
+  sfxStyle=P.style;
+  const listeners=[];
+  function save(){try{localStorage.setItem(LS,JSON.stringify(P));}catch(e){}}
+  function changed(){save();applyVolumes();listeners.forEach(fn=>{try{fn(P);}catch(e){}});}
 
-  // ── master gain ──
-  function masterGain(ac){
-    if(!ac._masterGain){
-      const g=ac.createGain();g.gain.value=0.85;g.connect(ac.destination);ac._masterGain=g;
-    }
-    return ac._masterGain;
+  let ac=null,bus=null,noiseBuf=null,analyser=null,unlocked=false;
+  const curve=v=>Math.pow(v,1.7); // สไลเดอร์ → gain แบบที่หูรู้สึกว่าไล่เท่าๆ กัน
+  function sfxLevel(){return(P.mute||!P.sfxOn)?0:curve(P.sfx);}
+  function musicLevel(){return(P.mute||!P.musicOn)?0:curve(P.music)*.9;}
+  function applyVolumes(){
+    if(!ac)return;const t=ac.currentTime,s=sfxLevel(),m=musicLevel()*M.duck;
+    bus.sfx.dry.gain.setTargetAtTime(s,t,.03);bus.sfx.send.gain.setTargetAtTime(s,t,.03);
+    bus.music.dry.gain.setTargetAtTime(m,t,.12);bus.music.send.gain.setTargetAtTime(m,t,.12);
   }
+  function boot(){
+    if(ac)return ac;
+    const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return null;
+    try{ac=new AC();}catch(e){ac=null;return null;}
+    // master: compressor (รวบเสียงตอน chain ยาว) → soft clip (กันยอดคลื่นเกิน 0 dBFS) → master
+    const comp=ac.createDynamicsCompressor();comp.threshold.value=-18;comp.knee.value=10;comp.ratio.value=10;comp.attack.value=.003;comp.release.value=.22;
+    const clip=ac.createWaveShaper();const n=1024,cv=new Float32Array(n);for(let i=0;i<n;i++){const x=i/(n-1)*2-1;cv[i]=Math.tanh(x*1.25)/Math.tanh(1.25);}clip.curve=cv;
+    const master=ac.createGain();master.gain.value=.86;
+    comp.connect(clip);clip.connect(master);master.connect(ac.destination);
+    // reverb สั้น: impulse สังเคราะห์ (noise ที่ค่อยๆ จาง)
+    const conv=ac.createConvolver(),len=Math.floor(ac.sampleRate*1.25),ir=ac.createBuffer(2,len,ac.sampleRate);
+    for(let ch=0;ch<2;ch++){const d=ir.getChannelData(ch);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.8);}
+    conv.buffer=ir;const wet=ac.createGain();wet.gain.value=.55;conv.connect(wet);wet.connect(comp);
+    const mk=()=>{const dry=ac.createGain(),send=ac.createGain();dry.connect(comp);send.connect(conv);return{dry,send};};
+    bus={sfx:mk(),music:mk(),master,comp};
+    // noise buffer เดียวใช้ร่วมกันทุกเสียง (ของเดิมสร้าง buffer ใหม่ทุกครั้งที่เล่น)
+    noiseBuf=ac.createBuffer(1,ac.sampleRate*2,ac.sampleRate);const nd=noiseBuf.getChannelData(0);for(let i=0;i<nd.length;i++)nd[i]=Math.random()*2-1;
+    bus.sfx.dry.gain.value=sfxLevel();bus.sfx.send.gain.value=sfxLevel();bus.music.dry.gain.value=0;bus.music.send.gain.value=0;
+    return ac;
+  }
+  function unlock(){
+    if(!boot())return;
+    if(ac.state==='suspended'&&!document.hidden)ac.resume().catch(()=>{});
+    if(!unlocked){unlocked=true;applyVolumes();music.start();}
+  }
+  ['pointerdown','keydown','touchend'].forEach(ev=>window.addEventListener(ev,unlock,{capture:true,passive:true}));
+  document.addEventListener('visibilitychange',()=>{
+    if(!ac)return;
+    if(document.hidden){music.pause();ac.suspend().catch(()=>{});}
+    else if(unlocked){ac.resume().catch(()=>{});music.start();}
+  });
+  const ready=()=>!!ac&&unlocked&&ac.state==='running';
 
-  // ── core tone ──
+  // ── voice limit: จำเวลาจบของแต่ละเสียง แล้วนับเฉพาะที่ยังดังอยู่ ──
+  // เอฟเฟกต์กับเพลงมีโควตาแยกกัน (เพลงมี pad เสียงยาวค้างอยู่ตลอด จะได้ไม่แย่งที่ของเสียงระเบิด)
+  // prio 2 = สำคัญ (stinger การ์ด, ตาเรา) · 1 = ปกติ · 0 = ประกอบ (ตัดทิ้งก่อนเมื่อเสียงเยอะ)
+  const MAXV=26,MAXM=22;let ends=[],endsM=[];
+  function claim(prio,end,isMusic){
+    const now=ac.currentTime,cap=isMusic?MAXM:MAXV;let list=isMusic?endsM:ends;
+    let n=0;for(let i=0;i<list.length;i++)if(list[i]>now)n++;
+    if(list.length>n+24||n>=cap-10){list=list.filter(t=>t>now);if(isMusic)endsM=list;else ends=list;}
+    if(n>=(prio>=2?cap+10:prio===1?cap:cap-10))return false;
+    list.push(end);return true;
+  }
+  const out=(node,p)=>{const b=p.music?bus.music:bus.sfx;node.connect(b.dry);if(p.rev){const g=ac.createGain();g.gain.value=p.rev;node.connect(g);g.connect(b.send);}};
+
+  // ── core tone ──  p.at = วินาทีนับจากตอนนี้ (ตั้งเวลาด้วยนาฬิกาของ AudioContext ไม่ใช้ setTimeout)
   function tone(p={}){
-    if(sfxStyle==='off')return;
+    if(!ready())return;if(!p.music&&sfxLevel()===0)return;
     try{
-      const ac=getCtx(),now=ac.currentTime,dst=masterGain(ac);
-      let waveType=p.type||'square';
-      let vol=(p.vol||0.15);
-      let decay=p.decay||0.12;
-      let attack=p.attack||0.005;
-      if(sfxStyle==='soft'){waveType='sine';vol*=0.7;decay*=1.5;attack=Math.max(attack,0.015);}
-      if(sfxStyle==='dark'){waveType=waveType==='square'?'sawtooth':waveType==='triangle'?'sawtooth':waveType;vol*=1.1;}
-      const osc=ac.createOscillator(),g=ac.createGain();
-      osc.connect(g);g.connect(dst);
-      osc.type=waveType;
-      osc.frequency.setValueAtTime(p.freq||440,now);
-      if(p.freq2)osc.frequency.linearRampToValueAtTime(p.freq2,now+(p.dur||0.15));
-      if(p.vibrato){const lfo=ac.createOscillator(),lg=ac.createGain();lfo.frequency.value=p.vibrato;lg.gain.value=p.vibratoDepth||8;lfo.connect(lg);lg.connect(osc.frequency);lfo.start(now);lfo.stop(now+(p.dur||0.2)+0.1);}
-      g.gain.setValueAtTime(0,now);
-      g.gain.linearRampToValueAtTime(vol,now+attack);
-      g.gain.exponentialRampToValueAtTime(0.001,now+attack+decay);
-      osc.start(now);osc.stop(now+attack+decay+0.05);
+      const t=ac.currentTime+(p.at||0);
+      let type=p.type||'square',vol=p.vol||.15,decay=p.decay||.12,attack=p.attack||.005;
+      if(!p.raw){
+        if(sfxStyle==='soft'){type='sine';vol*=.7;decay*=1.5;attack=Math.max(attack,.015);}
+        if(sfxStyle==='dark'){type=(type==='square'||type==='triangle')?'sawtooth':type;vol*=1.1;}
+      }
+      const hold=p.hold||0,end=t+attack+hold+decay;
+      if(!claim(p.prio===undefined?1:p.prio,end,!!p.music))return;
+      const o=ac.createOscillator(),g=ac.createGain();
+      o.type=type;o.frequency.setValueAtTime(p.freq||440,t);
+      if(p.freq2)o.frequency.exponentialRampToValueAtTime(Math.max(1,p.freq2),t+(p.dur||attack+decay));
+      if(p.detune)o.detune.value=p.detune;
+      if(p.vibrato){const l=ac.createOscillator(),lg=ac.createGain();l.frequency.value=p.vibrato;lg.gain.value=p.vibratoDepth||8;l.connect(lg);lg.connect(o.frequency);l.start(t);l.stop(end+.06);}
+      g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(vol,t+attack);
+      if(hold)g.gain.setValueAtTime(vol,t+attack+hold);
+      g.gain.exponentialRampToValueAtTime(.0006,end);
+      o.connect(g);let last=g;
+      if(p.lp){const f=ac.createBiquadFilter();f.type='lowpass';f.frequency.setValueAtTime(p.lp,t);if(p.lp2)f.frequency.exponentialRampToValueAtTime(p.lp2,end);g.connect(f);last=f;}
+      out(last,p);o.start(t);o.stop(end+.05);
     }catch(e){}
   }
-
-  // ── noise ──
-  function noise(vol=0.1,dur=0.08,freq=400,q=0.8,delay=0){
-    if(sfxStyle==='off')return;
+  // ── noise ──  รับ argument แบบเดิม (vol,dur,freq,q,delay) หรือ object
+  function noise(vol=.1,dur=.08,freq=400,q=.8,delay=0,o={}){
+    if(typeof vol==='object'){o=vol;vol=o.vol||.1;dur=o.dur||.08;freq=o.freq||400;q=o.q||.8;delay=o.at||0;}
+    if(!ready()||sfxLevel()===0)return;
     try{
-      const ac=getCtx(),now=ac.currentTime+delay,dst=masterGain(ac);
-      const buf=ac.createBuffer(1,Math.floor(ac.sampleRate*dur),ac.sampleRate);
-      const data=buf.getChannelData(0);for(let i=0;i<data.length;i++)data[i]=(Math.random()*2-1);
-      const src=ac.createBufferSource(),filt=ac.createBiquadFilter(),g=ac.createGain();
-      filt.type='bandpass';filt.frequency.value=freq;filt.Q.value=q;
-      src.buffer=buf;src.connect(filt);filt.connect(g);g.connect(dst);
-      g.gain.setValueAtTime(vol*(sfxStyle==='dark'?1.2:sfxStyle==='soft'?0.6:1),now);
-      g.gain.exponentialRampToValueAtTime(0.001,now+dur);
-      src.start(now);src.stop(now+dur+0.05);
+      const t=ac.currentTime+delay;if(!claim(o.prio===undefined?1:o.prio,t+dur))return;
+      const src=ac.createBufferSource(),f=ac.createBiquadFilter(),g=ac.createGain();
+      src.buffer=noiseBuf;src.loop=true;f.type=o.type||'bandpass';f.frequency.setValueAtTime(freq,t);f.Q.value=q;
+      if(o.freq2)f.frequency.exponentialRampToValueAtTime(o.freq2,t+dur);
+      const v=vol*(sfxStyle==='dark'?1.15:sfxStyle==='soft'?.6:1);
+      if(o.swell){g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(v,t+dur*.92);g.gain.exponentialRampToValueAtTime(.0006,t+dur);}
+      else{g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.0006,t+dur);}
+      src.connect(f);f.connect(g);out(g,o);src.start(t,Math.random()*1.5);src.stop(t+dur+.05);
     }catch(e){}
   }
+  const chord=(freqs,p={})=>freqs.forEach((f,i)=>tone({...p,freq:f,at:(p.at||0)+i*(p.stagger||0)/1000}));
+  const seq=(notes,o={})=>notes.forEach(([f,ms])=>tone({...o,freq:f,at:(o.at||0)+ms/1000}));
+  const wv=()=>sfxStyle==='soft'?'sine':sfxStyle==='dark'?'sawtooth':'square';
+  const st=n=>Math.pow(2,n/12);
+  // เสียงประจำตัวผู้เล่น 6 คน: C D E G A C (pentatonic) — ฟังออกว่าใครเล่น และไม่มีคู่ไหนกัดกัน
+  const PNOTE=[261.63,293.66,329.63,392.00,440.00,523.25];
+  const pn=i=>PNOTE[((i|0)%6+6)%6];
+  let lastAt={};
+  const throttle=(k,ms)=>{const n=performance.now();if(n-(lastAt[k]||0)<ms)return true;lastAt[k]=n;return false;};
 
-  function chord(freqs,p={}){freqs.forEach((f,i)=>setTimeout(()=>tone({freq:f,...p}),i*(p.stagger||0)));}
-  function seq(notes,opts={}){notes.forEach(([f,t])=>setTimeout(()=>tone({freq:f,...opts}),t));}
-
-  // ── ชุดเสียงที่แก้ใหม่ ──
-
-  // วางบอลปกติ — เสียง "pop" กลมๆ
-  function place(){
-    tone({freq:280,freq2:420,type:'triangle',dur:0.09,vol:0.13,decay:0.08});
-    noise(0.04,0.04,600,1.2);
+  // ── วางบอล: โน้ตตามสีผู้เล่น ──
+  function place(owner=0){
+    const f=pn(owner);
+    tone({freq:f,freq2:f*1.5,type:'triangle',dur:.09,vol:.15,decay:.1,rev:.12});
+    tone({freq:f*2,type:'sine',vol:.05,decay:.07,raw:true,at:.01});
+    noise(.035,.04,900,1.2);
+  }
+  // ช่องแรกที่ยึด: arpeggio บนโน้ตของผู้เล่น
+  function firstPlace(owner=0){
+    const f=pn(owner);
+    tone({freq:f,freq2:f*1.26,type:'square',dur:.08,vol:.15,decay:.08});
+    tone({freq:f*1.5,type:'triangle',vol:.16,decay:.12,at:.075,rev:.25});
+    tone({freq:f*2,type:'sine',vol:.15,decay:.3,attack:.01,at:.155,rev:.4,raw:true});
+    tone({freq:f*3,type:'sine',vol:.05,decay:.24,at:.2,rev:.5,raw:true});
+    noise({vol:.06,dur:.06,freq:1800,q:1.4,at:.075});
+    tone({freq:f/2,freq2:f/4,type:'sine',vol:.2,decay:.14,raw:true});
+  }
+  // ใกล้ระเบิด: tick ไต่ขึ้น 2 จังหวะ ตอนวางแล้วช่องเหลืออีกลูกเดียว
+  function critTick(owner=0){
+    if(throttle('crit',90))return;const f=pn(owner)*2;
+    tone({freq:f,type:'square',vol:.055,decay:.035,attack:.002,at:.05,raw:true,prio:0});
+    tone({freq:f*st(1),type:'square',vol:.07,decay:.05,attack:.002,at:.13,raw:true,prio:0});
   }
 
-  // วางครั้งแรก — เสียงดัง + chord สั้น
-  function firstPlace(){
-    tone({freq:330,freq2:520,type:'square',dur:0.08,vol:0.16,decay:0.06});
-    setTimeout(()=>{
-      tone({freq:520,freq2:660,type:'triangle',dur:0.1,vol:0.18,decay:0.09});
-      noise(0.06,0.05,800,1.5);
-    },70);
-    setTimeout(()=>tone({freq:660,freq2:880,type:'sine',dur:0.14,vol:0.14,decay:0.14,attack:0.01}),150);
+  // ── ระเบิด: pitch ไล่ขึ้นตามลำดับ wave (คอมโบ) + sub-bass thump + noise burst + reverb ──
+  const COMBO=[0,2,4,7,9,12,14,16,19,21,24,26,28,31,33,36];
+  const comboFreq=d=>196*st(COMBO[Math.min(Math.max(d,1),COMBO.length)-1]);
+  function explodeWave(depth=1,count=1,owner=0){
+    if(throttle('wave',45))return;
+    if(count>=4&&!throttle('big',400)){bigChain(depth,owner,count);return;}
+    const d=Math.min(depth,16),k=Math.min(1,(d-1)/9),c=Math.min(count,6),f=comboFreq(d);
+    // sub-bass thump
+    tone({freq:150+20*k,freq2:42,type:'sine',dur:.16,vol:Math.min(.42,.2+.03*c+.1*k),decay:.17+.06*k,attack:.002,raw:true});
+    // noise burst กวาดจากสูงลงต่ำ
+    noise({vol:Math.min(.24,.08+.02*c+.08*k),dur:.11+.07*k,freq:1400+900*k,freq2:260,q:.7,type:'lowpass',rev:.25+.2*k});
+    // โน้ตคอมโบ
+    tone({freq:f,type:'triangle',vol:.1+.05*k,decay:.16+.08*k,attack:.003,rev:.3+.25*k});
+    tone({freq:f*2,type:'sine',vol:.035+.035*k,decay:.18,at:.02,rev:.45,raw:true,prio:0});
+    if(d>=4)tone({freq:f*1.5,type:'sine',vol:.03+.03*k,decay:.2,at:.045,rev:.5,raw:true,prio:0});
+    if(d>=8)noise({vol:.05,dur:.2,freq:5200,q:.6,type:'highpass',at:.01,rev:.5,prio:0});
   }
-
-  // ระเบิด — ปรับตาม chain level
-  function explode(chain=1){
-    const intensity=Math.min(chain,8);
-    const baseFreq=120+intensity*35;
-    // thud
-    tone({freq:baseFreq,freq2:baseFreq*0.4,type:'sawtooth',dur:0.18,vol:Math.min(0.28,0.1+intensity*0.025),decay:0.16,attack:0.003});
-    // crack noise
-    noise(Math.min(0.22,0.07+intensity*0.02),0.12,300+intensity*30,0.7);
-    // overtone shimmer (ยิ่ง chain สูงยิ่งมี)
-    if(chain>=3){
-      setTimeout(()=>tone({freq:baseFreq*3,freq2:baseFreq*1.5,type:'sine',dur:0.1,vol:0.08,decay:0.1}),40);
-    }
-    if(chain>=5){
-      setTimeout(()=>{
-        tone({freq:baseFreq*5,freq2:baseFreq*2,type:'sine',dur:0.12,vol:0.07,decay:0.12});
-        noise(0.1,0.08,600,0.5);
-      },80);
-    }
-  }
-
-  // big chain (4+ ระเบิดพร้อมกัน)
-  function bigChain(){
-    const notes=sfxStyle==='soft'
-      ?[[80,0],[120,50],[160,100],[220,160],[300,230],[400,310]]
-      :sfxStyle==='dark'
-      ?[[60,0],[90,40],[130,85],[180,140],[250,210],[350,290]]
-      :[[100,0],[150,45],[210,95],[280,155],[380,225],[500,305]];
+  // ของเดิม: explode(n) = จำนวนช่องที่ระเบิดพร้อมกัน — ยังเรียกได้
+  function explode(chain=1){explodeWave(chain,1,0);}
+  // big chain: หลายช่องระเบิดพร้อมกัน — ต้องรู้สึกว่าใหญ่จริง
+  function bigChain(depth=1,owner=0,count=4){
+    if(!ready())return;
+    const d=Math.min(Math.max(depth,1),16),k=Math.min(1,(d-1)/9),big=Math.min(1,(count-4)/12),f=comboFreq(d);
+    // sub drop สองชั้น
+    tone({freq:92,freq2:27,type:'sine',dur:.55,vol:.5,decay:.6+.2*big,attack:.004,raw:true,prio:2});
+    tone({freq:61,freq2:30,type:'triangle',dur:.4,vol:.22,decay:.42,attack:.004,raw:true,lp:400});
+    // crash: noise กวาดลง + หางยาวใน reverb
+    noise({vol:.26+.08*big,dur:.5+.25*big,freq:5200,freq2:320,q:.5,type:'lowpass',rev:.65,prio:2});
+    noise({vol:.1,dur:.09,freq:2600,q:1.2,rev:.3});
+    // stab คอร์ดเสียงหนา (saw 3 ตัว ดีจูน) บนโน้ตคอมโบ
+    [[1,-9],[1.5,6],[2,0]].forEach(([m,det])=>tone({freq:f/2*m,type:'sawtooth',detune:det,vol:.075,decay:.5,attack:.006,lp:2200,lp2:500,rev:.4,raw:true}));
+    // arpeggio ไต่ขึ้น
     const wt=sfxStyle==='retro'?'square':sfxStyle==='dark'?'sawtooth':'triangle';
-    notes.forEach(([f,t])=>setTimeout(()=>{
-      tone({freq:f,freq2:f*1.6,type:wt,dur:0.22,vol:0.18,decay:0.18,attack:0.005});
-      noise(0.1,0.07,f*1.2,0.8);
-    },t));
-    // finale boom
-    setTimeout(()=>{
-      tone({freq:55,freq2:30,type:'sawtooth',dur:0.35,vol:0.25,decay:0.3,attack:0.01});
-      noise(0.2,0.18,200,0.5);
-    },400);
+    [0,4,7,12,16,19].forEach((s,i)=>tone({freq:f*st(s),type:wt,vol:.075,decay:.16,at:.03+i*.045,rev:.45,raw:true,lp:3600}));
+    // boom ปิดท้าย
+    tone({freq:55,freq2:26,type:'sine',dur:.4,vol:.34+.1*big,decay:.46,attack:.008,at:.33,raw:true,prio:2});
+    noise({vol:.16,dur:.24,freq:240,q:.5,type:'lowpass',at:.33,rev:.5});
+    if(k>.5)tone({freq:f*4,type:'sine',vol:.05,decay:.5,at:.3,rev:.7,raw:true,prio:0});
   }
 
-  // การ์ด — แยกตาม rarity ชัดขึ้นมาก
+  // ── การ์ด: stinger แยกตาม rarity ไล่ระดับ common → mythical ──
   function card(rarity='common'){
-    if(sfxStyle==='off')return;
-    const wt=sfxStyle==='retro'?'square':sfxStyle==='soft'?'sine':sfxStyle==='dark'?'sawtooth':'triangle';
+    if(!ready()||sfxLevel()===0)return;
+    const wt=wv();
     switch(rarity){
       case 'common':
-        tone({freq:440,freq2:550,type:wt,dur:0.1,vol:0.13,decay:0.09});
+        tone({freq:523,freq2:622,type:wt,dur:.08,vol:.1,decay:.09});
         break;
       case 'uncommon':
-        tone({freq:440,type:wt,dur:0.08,vol:0.13,decay:0.07});
-        setTimeout(()=>tone({freq:660,type:wt,dur:0.1,vol:0.15,decay:0.1}),75);
+        seq([[523,0],[784,75]],{type:wt,vol:.12,decay:.11,rev:.15});
         break;
       case 'rare':
-        tone({freq:330,type:wt,dur:0.07,vol:0.13,decay:0.06});
-        setTimeout(()=>tone({freq:550,type:wt,dur:0.08,vol:0.15,decay:0.08}),60);
-        setTimeout(()=>tone({freq:880,type:wt,dur:0.12,vol:0.17,decay:0.12,vibrato:6,vibratoDepth:6}),130);
-        noise(0.07,0.08,700,1.2,0.13);
+        seq([[523,0],[659,65],[784,130]],{type:wt,vol:.13,decay:.13,rev:.3});
+        tone({freq:1568,type:'sine',vol:.05,decay:.3,at:.13,rev:.5,raw:true});
+        noise({vol:.05,dur:.1,freq:5200,q:.8,type:'highpass',at:.13,rev:.3});
         break;
       case 'super_rare':
-        seq([[330,0],[440,55],[660,115],[880,185]],{type:wt,vol:0.16,decay:0.1});
-        noise(0.1,0.1,600,1,0.2);
+        seq([[523,0],[659,60],[784,120],[1047,185]],{type:wt,vol:.14,decay:.14,rev:.4});
+        seq([[2093,230],[2637,290]],{type:'sine',vol:.06,decay:.28,rev:.6,raw:true});
+        tone({freq:131,freq2:65,type:'sine',vol:.22,decay:.2,raw:true});
+        noise({vol:.07,dur:.16,freq:4200,q:.7,type:'highpass',at:.185,rev:.4});
         break;
       case 'epic':
-        seq([[220,0],[330,50],[550,105],[770,165],[1100,240]],{type:wt,vol:0.17,decay:0.12});
-        noise(0.12,0.12,500,0.9,0.05);
-        setTimeout(()=>noise(0.08,0.08,1000,0.7),250);
+        noise({vol:.16,dur:.28,freq:400,freq2:3200,q:1.4,swell:true,rev:.3});
+        tone({freq:98,freq2:45,type:'sine',vol:.34,decay:.3,at:.28,raw:true,prio:2});
+        [[1,-8],[1.5,5],[2,0],[3,7]].forEach(([m,det])=>tone({freq:196*m,type:'sawtooth',detune:det,vol:.07,decay:.55,attack:.006,at:.28,lp:2600,lp2:600,rev:.45,raw:true,prio:2}));
+        seq([[392,300],[494,350],[587,400],[784,455],[988,515]],{type:wt,vol:.11,decay:.14,rev:.45});
+        noise({vol:.18,dur:.4,freq:6000,freq2:500,q:.5,type:'lowpass',at:.28,rev:.6});
         break;
       case 'legendary':
-        // arpeggio ขึ้นอย่างยิ่งใหญ่
-        [[110,0],[165,60],[220,125],[330,195],[440,270],[660,355],[880,450],[1100,555]].forEach(([f,t])=>{
-          setTimeout(()=>{
-            tone({freq:f,type:wt,dur:0.22,vol:0.18,decay:0.2,attack:0.008});
-            if(t>200)noise(0.08,0.06,f*1.5,0.8);
-          },t);
-        });
-        setTimeout(()=>{
-          chord([440,550,660],{type:'sine',vol:0.14,decay:0.5,attack:0.02,dur:0.5});
-          noise(0.15,0.2,400,0.6);
-        },650);
+        // กลองทิมปานี 2 ที → แตรชุดไต่ขึ้น → คอร์ดเมเจอร์ค้าง + ประกายเสียงสูง
+        tone({freq:98,freq2:62,type:'sine',vol:.34,decay:.24,raw:true,prio:2});
+        tone({freq:98,freq2:62,type:'sine',vol:.38,decay:.3,at:.16,raw:true,prio:2});
+        [[392,300],[523,400],[659,500],[784,600]].forEach(([fq,ms])=>[[-7,1],[7,1],[0,.5]].forEach(([det,m])=>tone({freq:fq*m,type:'sawtooth',detune:det,vol:.06,decay:.2,attack:.012,at:ms/1000,lp:2400,rev:.4,raw:true,prio:2})));
+        noise({vol:.14,dur:.42,freq:500,freq2:4200,q:1.2,swell:true,at:.3,rev:.3});
+        [261.63,329.63,392,523.25,783.99].forEach((fq,i)=>[[-8],[8]].forEach(([det])=>tone({freq:fq,type:'sawtooth',detune:det,vol:.05,attack:.02,hold:.35,decay:.85,at:.74,lp:2800,lp2:700,vibrato:5,vibratoDepth:3,rev:.6,raw:true,prio:2})));
+        tone({freq:65.4,freq2:36,type:'sine',vol:.44,decay:.6,at:.74,raw:true,prio:2});
+        noise({vol:.22,dur:.7,freq:7000,freq2:600,q:.5,type:'lowpass',at:.74,rev:.7,prio:2});
+        seq([[1047,820],[1319,890],[1568,960],[2093,1040],[2637,1130]],{type:'sine',vol:.07,decay:.35,rev:.7,raw:true});
         break;
       case 'mythical':
-        // เสียงจากอวกาศ
-        [[55,0],[82,55],[110,115],[165,180],[220,250],[330,330],[440,420],[660,520],[880,630],[1100,750]].forEach(([f,t])=>{
-          setTimeout(()=>{
-            tone({freq:f,freq2:f*1.5,type:sfxStyle==='dark'?'sawtooth':'sine',dur:0.28,vol:0.2,decay:0.25,attack:0.01,vibrato:t>400?4:0,vibratoDepth:5});
-            noise(0.09,0.07,f*2,0.6);
-          },t);
-        });
-        setTimeout(()=>{
-          chord([220,330,440,550,660],{type:'sine',vol:0.16,decay:0.6,attack:0.03,dur:0.6});
-          noise(0.18,0.25,300,0.5);
-          noise(0.12,0.2,900,0.5,0.1);
-        },850);
+        // sub ดิ่งลง + เสียงดูดย้อนกลับ → คอร์ดซ้อนคู่ห้าแบบประสานเสียง → ประกายร่วงเป็นสาย
+        tone({freq:170,freq2:28,type:'sine',dur:.9,vol:.44,decay:.95,attack:.01,raw:true,prio:2});
+        noise({vol:.2,dur:.62,freq:260,freq2:6500,q:1.6,swell:true,rev:.4,prio:2});
+        seq([[147,0],[220,90],[330,180],[494,270],[740,360],[1109,450]],{type:'sine',vol:.08,decay:.3,rev:.6,raw:true});
+        [146.83,220,329.63,493.88,739.99].forEach((fq,i)=>[[-10],[10],[0]].forEach(([det])=>tone({freq:fq,type:det?'sine':'triangle',detune:det,vol:.058,attack:.07,hold:.55,decay:1.5,at:.62,vibrato:4.5,vibratoDepth:4,rev:.75,raw:true,prio:2})));
+        tone({freq:36.7,type:'sine',vol:.5,attack:.02,hold:.2,decay:1.2,at:.62,raw:true,prio:2});
+        noise({vol:.26,dur:1.1,freq:9000,freq2:400,q:.4,type:'lowpass',at:.62,rev:.8,prio:2});
+        [3520,2960,2637,2349,1976,1760,1480,1319,1175,988].forEach((fq,i)=>tone({freq:fq,type:'sine',vol:.06,decay:.42,at:.74+i*.058,rev:.8,raw:true}));
+        noise({vol:.1,dur:.5,freq:6000,q:.6,type:'highpass',at:1.5,rev:.7});
         break;
     }
   }
-
-  // turn เปลี่ยน — "ding" สั้นกระชับ แต่ชัด
-  function turnChange(){
-    if(sfxStyle==='off')return;
-    try{
-      const ac=getCtx(),now=ac.currentTime;
-      // 8-bit style: square wave, ความถี่ต่ำ ไม่แหลม
-      const f1=sfxStyle==='dark'?165:sfxStyle==='soft'?220:196; // G3 / A3 / G3
-      const f2=sfxStyle==='dark'?196:sfxStyle==='soft'?277:247; // G3 / C#4 / B3
-      function blip(freq,t){
-        const o=ac.createOscillator(),g=ac.createGain();
-        o.type='square';o.frequency.value=freq;
-        o.connect(g);g.connect(ac.destination);
-        g.gain.setValueAtTime(0.012,now+t);
-        g.gain.setValueAtTime(0.012,now+t+0.06);
-        g.gain.linearRampToValueAtTime(0,now+t+0.1);
-        o.start(now+t);o.stop(now+t+0.12);
-      }
-      blip(f1,0);blip(f2,0.1);
-    }catch(e){}
+  // เปิดการ์ดในหน้าเลือกการ์ด: เสียงสั้นๆ ตามใบที่หายากที่สุด
+  const RANK={common:0,uncommon:1,rare:2,super_rare:3,epic:4,legendary:5,mythical:6};
+  function reveal(rarities){
+    const top=Math.max(0,...(rarities||[]).map(r=>RANK[r]||0));
+    seq([[392,0],[494,70],[587,140]],{type:'triangle',vol:.07,decay:.09});
+    if(top>=2)seq([[1175,230],[1568,300]],{type:'sine',vol:.06,decay:.25,rev:.5,raw:true});
+    if(top>=4)noise({vol:.08,dur:.3,freq:6000,q:.6,type:'highpass',at:.28,rev:.6});
+    if(top>=5){[523.25,659.25,783.99,1046.5].forEach((fq,i)=>tone({freq:fq,type:'sawtooth',detune:i%2?7:-7,vol:.045,attack:.02,hold:.2,decay:.7,at:.36,lp:2600,rev:.6,raw:true,prio:2}));tone({freq:65.4,freq2:36,type:'sine',vol:.3,decay:.5,at:.36,raw:true});}
+    if(top>=6)[3520,2637,2093,1568,1319].forEach((fq,i)=>tone({freq:fq,type:'sine',vol:.05,decay:.4,at:.5+i*.07,rev:.8,raw:true}));
   }
 
-  // win — fanfare เต็มๆ
+  // ── เทิร์น: ของคนอื่น = เบาและต่ำ · ตาเรา = ระฆังสว่างไต่ขึ้น ──
+  function turnChange(owner){
+    if(throttle('turn',120))return;
+    const f=(owner===undefined?196:pn(owner)/2)*(sfxStyle==='soft'?1.12:1);
+    tone({freq:f,type:'triangle',vol:.045,decay:.07,attack:.004,raw:true,prio:0});
+    tone({freq:f*1.26,type:'triangle',vol:.04,decay:.09,attack:.004,at:.09,raw:true,prio:0});
+  }
+  function myTurn(owner){
+    if(throttle('turn',120))return;
+    const f=owner===undefined?523.25:pn(owner)*2;
+    tone({freq:f,type:'sine',vol:.2,decay:.3,attack:.006,rev:.4,raw:true,prio:2});
+    tone({freq:f*1.5,type:'sine',vol:.22,decay:.42,attack:.006,at:.11,rev:.5,raw:true,prio:2});
+    tone({freq:f*3,type:'sine',vol:.06,decay:.5,at:.13,rev:.7,raw:true});
+    tone({freq:f/2,type:'triangle',vol:.1,decay:.16,raw:true});
+  }
+  // นับถอยหลัง 5 วินาทีสุดท้าย (ออนไลน์)
+  function tick(left=5){
+    const f=left<=2?1320:988;
+    tone({freq:f,type:'square',vol:.06,decay:.045,attack:.002,raw:true});
+    if(left<=2)tone({freq:f,type:'square',vol:.05,decay:.04,attack:.002,at:.12,raw:true});
+  }
+
+  // win — fanfare (ตั้งเวลาด้วยนาฬิกาเสียง) + เพลงหรี่ลงให้
   function win(){
-    const wt=sfxStyle==='retro'?'square':sfxStyle==='soft'?'sine':sfxStyle==='dark'?'sawtooth':'triangle';
-    // intro fanfare
-    const fanfare=[
-      [523,0],[523,90],[523,180],[415,270],[523,380],
-      [659,480],[784,600],[1047,750]
-    ];
-    fanfare.forEach(([f,t])=>{
-      setTimeout(()=>{
-        tone({freq:f,type:wt,dur:t<600?0.18:0.35,vol:0.2,decay:t<600?0.15:0.3,attack:0.008});
-        if(t>=480)noise(0.08,0.08,f*1.5,1);
-      },t);
+    const wt=wv();music.duck(.25,5);
+    [[523,0],[523,90],[523,180],[415,270],[523,380],[659,480],[784,600],[1047,750]].forEach(([f,t])=>{
+      tone({freq:f,type:wt,vol:.19,decay:t<600?.15:.32,attack:.008,at:t/1000,rev:.3,prio:2});
+      if(t>=480)noise({vol:.07,dur:.08,freq:f*1.5,q:1,at:t/1000});
     });
-    // chord finale
-    setTimeout(()=>{
-      chord([523,659,784,1047],{type:'sine',vol:0.18,decay:0.8,attack:0.02,dur:0.8});
-      noise(0.18,0.3,500,0.5);
-      noise(0.1,0.25,1200,0.4,0.15);
-    },1000);
-    // sparkle trail
-    [1200,1350,1500,1650,1800].forEach((t,i)=>{
-      setTimeout(()=>tone({
-        freq:1047+i*200,type:'sine',dur:0.12,vol:0.1-i*0.015,decay:0.12,attack:0.005
-      }),t);
-    });
+    tone({freq:65.4,freq2:36,type:'sine',vol:.4,decay:.7,at:1,raw:true,prio:2});
+    chord([523,659,784,1047],{type:'sine',vol:.17,decay:.9,attack:.02,at:1,rev:.6,raw:true,prio:2});
+    noise({vol:.18,dur:.5,freq:6000,freq2:500,q:.5,type:'lowpass',at:1,rev:.7});
+    [0,1,2,3,4].forEach(i=>tone({freq:1047+i*200,type:'sine',vol:.1-i*.015,decay:.16,attack:.005,at:1.2+i*.15,rev:.6,raw:true}));
   }
-
-  // select (เมนู)
-  function select(){
-    tone({freq:440,freq2:550,type:sfxStyle==='dark'?'sawtooth':'triangle',dur:0.07,vol:0.1,decay:0.06});
-  }
-
-  // frozen
+  function select(){if(throttle('sel',45))return;tone({freq:440,freq2:550,type:sfxStyle==='dark'?'sawtooth':'triangle',dur:.07,vol:.1,decay:.06});}
+  function hover(){if(throttle('hov',55))return;tone({freq:880,type:'sine',vol:.025,decay:.03,attack:.002,raw:true,prio:0});}
   function frozen(){
-    seq([[880,0],[660,70],[440,145],[330,230]],{type:'sine',vol:0.13,decay:0.18});
-    noise(0.06,0.12,2000,2,0);
+    seq([[880,0],[660,70],[440,145],[330,230]],{type:'sine',vol:.13,decay:.18,rev:.5,raw:true});
+    noise({vol:.07,dur:.3,freq:5200,q:2,type:'highpass',rev:.6});
+    seq([[2637,60],[3136,140],[3520,220]],{type:'sine',vol:.04,decay:.2,rev:.7,raw:true});
   }
-
-  // shield
   function shield(){
-    tone({freq:330,freq2:440,type:'triangle',dur:0.08,vol:0.12,decay:0.08});
-    setTimeout(()=>{
-      tone({freq:550,freq2:660,type:'sine',dur:0.14,vol:0.13,decay:0.16,attack:0.01});
-      noise(0.05,0.1,1500,2);
-    },70);
+    tone({freq:330,freq2:440,type:'triangle',dur:.08,vol:.12,decay:.08});
+    tone({freq:550,freq2:660,type:'sine',dur:.14,vol:.13,decay:.18,attack:.01,at:.07,rev:.35});
+    noise(.05,.1,1500,2,.07);
   }
-
-  // time bomb tick
   function timeBomb(){
-    tone({freq:1047,type:'square',vol:0.1,decay:0.05,attack:0.003});
-    setTimeout(()=>tone({freq:1319,type:'square',vol:0.09,decay:0.04,attack:0.003}),120);
+    tone({freq:1047,type:'square',vol:.09,decay:.05,attack:.003});
+    tone({freq:1319,type:'square',vol:.08,decay:.04,attack:.003,at:.12});
   }
-
-  // pick card
   function pickCard(){
-    tone({freq:660,freq2:880,type:sfxStyle==='dark'?'sawtooth':'triangle',dur:0.1,vol:0.15,decay:0.1,attack:0.005});
-    setTimeout(()=>tone({freq:1047,type:'sine',vol:0.12,decay:0.15,attack:0.01}),90);
+    if(throttle('pick',60))return;
+    tone({freq:660,freq2:880,type:sfxStyle==='dark'?'sawtooth':'triangle',dur:.1,vol:.15,decay:.1,attack:.005});
+    tone({freq:1047,type:'sine',vol:.12,decay:.18,attack:.01,at:.09,rev:.4});
   }
-
   function cardCat(cat){
-    // ยังคงมี แต่ defer ไปที่ card() หลัก
     const simple={
-      attack:()=>{noise(0.1,0.07,300,0.7);tone({freq:280,freq2:160,type:'sawtooth',dur:0.1,vol:0.12,decay:0.09});},
-      burst: ()=>{tone({freq:440,freq2:660,type:'triangle',dur:0.09,vol:0.12,decay:0.1});setTimeout(()=>tone({freq:660,freq2:990,type:'triangle',dur:0.1,vol:0.11,decay:0.1}),55);},
-      chaos: ()=>{const f=180+Math.random()*500;tone({freq:f,freq2:f*(0.4+Math.random()*0.9),type:'sine',dur:0.14,vol:0.1,decay:0.16});},
-      defense:()=>{tone({freq:220,freq2:180,type:'square',dur:0.1,vol:0.11,decay:0.12});setTimeout(()=>tone({freq:330,freq2:270,type:'triangle',dur:0.09,vol:0.09,decay:0.14}),45);},
-      strategy:()=>{seq([[440,0],[550,65],[660,135]],{type:'triangle',vol:0.1,decay:0.12});},
-      legendary:()=>{noise(0.12,0.1);},
-      mythical:()=>{noise(0.16,0.15);},
+      attack:()=>{noise(.1,.07,300,.7);tone({freq:280,freq2:160,type:'sawtooth',dur:.1,vol:.12,decay:.09});},
+      burst: ()=>{tone({freq:440,freq2:660,type:'triangle',dur:.09,vol:.12,decay:.1});tone({freq:660,freq2:990,type:'triangle',dur:.1,vol:.11,decay:.1,at:.055});},
+      chaos: ()=>{const f=180+Math.random()*500;tone({freq:f,freq2:f*(.4+Math.random()*.9),type:'sine',dur:.14,vol:.1,decay:.16});},
+      defense:()=>{tone({freq:220,freq2:180,type:'square',dur:.1,vol:.11,decay:.12});tone({freq:330,freq2:270,type:'triangle',dur:.09,vol:.09,decay:.14,at:.045});},
+      strategy:()=>{seq([[440,0],[550,65],[660,135]],{type:'triangle',vol:.1,decay:.12});},
+      legendary:()=>{noise(.1,.1);},
+      mythical:()=>{noise(.12,.15);},
     };
     if(simple[cat])simple[cat]();
   }
-
   function cardSpecial(id){
     const overrides={
-      r5:()=>seq([[660,0],[560,75],[460,155],[360,245]],{type:'sine',vol:0.12,decay:0.14}),
-      r2:()=>seq([[600,0],[500,45],[400,95],[300,155],[200,230],[120,320]],{type:'sawtooth',vol:0.13,decay:0.16}),
-      r8:()=>seq([[880,0],[660,65],[440,135],[330,215],[220,310]],{type:'triangle',vol:0.11,decay:0.11}),
-      ep4:()=>{tone({freq:440,freq2:220,type:'sine',vol:0.11,decay:0.22});setTimeout(()=>tone({freq:220,freq2:110,type:'sine',vol:0.09,decay:0.28}),180);},
-      u5:()=>{tone({freq:1047,type:'square',vol:0.11,decay:0.05,attack:0.003});setTimeout(()=>tone({freq:1319,type:'square',vol:0.12,decay:0.06,attack:0.003}),130);},
+      r5:()=>seq([[660,0],[560,75],[460,155],[360,245]],{type:'sine',vol:.12,decay:.14}),
+      r2:()=>{seq([[600,0],[500,45],[400,95],[300,155],[200,230],[120,320]],{type:'sawtooth',vol:.12,decay:.16,rev:.4});tone({freq:140,freq2:30,type:'sine',dur:.7,vol:.34,decay:.75,raw:true});},
+      r3:()=>frozen(),
+      r8:()=>seq([[880,0],[660,65],[440,135],[330,215],[220,310]],{type:'triangle',vol:.11,decay:.11}),
+      ep4:()=>{tone({freq:440,freq2:220,type:'sine',vol:.11,decay:.22});tone({freq:220,freq2:110,type:'sine',vol:.09,decay:.28,at:.18});},
+      u5:()=>{tone({freq:1047,type:'square',vol:.11,decay:.05,attack:.003});tone({freq:1319,type:'square',vol:.12,decay:.06,attack:.003,at:.13});},
+      l2:()=>{noise({vol:.3,dur:1.2,freq:8000,freq2:120,q:.4,type:'lowpass',at:.05,rev:.8,prio:2});tone({freq:60,freq2:22,type:'sine',dur:1.1,vol:.5,decay:1.2,at:.05,raw:true,prio:2});},
+      m2:()=>{noise({vol:.2,dur:.3,freq:6000,freq2:200,q:1,swell:true,prio:2});tone({freq:50,freq2:20,type:'sine',dur:1,vol:.5,decay:1.1,at:.3,raw:true,prio:2});noise({vol:.3,dur:1,freq:9000,freq2:150,q:.4,type:'lowpass',at:.3,rev:.8,prio:2});},
+      l5:()=>{seq([[523,480],[659,560],[784,640],[1047,720],[1319,800],[1568,880]],{type:'sine',vol:.1,decay:.4,rev:.7,raw:true});tone({freq:130.8,type:'sine',vol:.22,attack:.3,hold:.3,decay:.8,at:.2,rev:.6,raw:true});},
     };
     if(overrides[id])overrides[id]();
   }
 
-  return{place,firstPlace,explode,bigChain,card,cardCat,cardSpecial,pickCard,win,select,turnChange,frozen,shield,timeBomb};
+  // ══ เพลงพื้นหลัง: ambient loop 4 ห้อง สังเคราะห์สด ══
+  // ความเข้ม (0–4) เพิ่มตามจำนวนช่องที่ใกล้ระเบิด + จำนวนเทิร์นที่ผ่านไป · tension (0–1) = จังหวะหัวใจ/tick เมื่อมีช่องใกล้ครบความจุ
+  const M={on:false,timer:0,step:0,next:0,scene:'menu',I:0,target:.6,tension:0,duck:1,duckT:0};
+  const STEP=60/92/2; // โน้ตเขบ็ต 1 ชั้นที่ 92 BPM
+  const CH=[ // Am9 – Fmaj7 – Cmaj7 – G6
+    {bass:110.00,tones:[220.00,261.63,329.63,392.00]},
+    {bass:87.31, tones:[174.61,220.00,261.63,329.63]},
+    {bass:130.81,tones:[196.00,261.63,329.63,493.88]},
+    {bass:98.00, tones:[196.00,246.94,293.66,329.63]},
+  ];
+  const mt=(p)=>tone({...p,music:true,raw:true,prio:p.prio===undefined?0:p.prio});
+  function mnoise(vol,dur,freq,type,at){
+    if(!ready()||musicLevel()===0)return;
+    try{const t=at;if(!claim(0,t+dur,true))return;const src=ac.createBufferSource(),f=ac.createBiquadFilter(),g=ac.createGain();
+      src.buffer=noiseBuf;src.loop=true;f.type=type;f.frequency.value=freq;g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.0006,t+dur);
+      src.connect(f);f.connect(g);g.connect(bus.music.dry);src.start(t,Math.random()*1.5);src.stop(t+dur+.03);}catch(e){}
+  }
+  function scheduleStep(s,t){
+    const at=t-ac.currentTime,bar=Math.floor(s/8),pos=s%8,ch=CH[bar];
+    M.I+=(M.target-M.I)*.22;const I=M.I,ten=M.tension;
+    if(pos===0){ // pad: คอร์ดค้างทั้งห้อง
+      ch.tones.forEach((f,i)=>{mt({freq:f,type:'sine',detune:-6,vol:.03,attack:.55,hold:STEP*8-1,decay:1.3,at,rev:.5,prio:1});
+        if(I>.8)mt({freq:f*2,type:'triangle',detune:7,vol:.008+.004*I,attack:.7,hold:STEP*8-1.2,decay:1.2,at,lp:900+420*I,rev:.5});});
+      mt({freq:ch.bass,type:'sine',vol:.12,attack:.02,hold:.5,decay:1.3,at,prio:1});
+    }
+    if(pos===4&&I>=1)mt({freq:ch.bass,type:'sine',vol:.075,attack:.02,decay:.7,at});
+    if(pos===6&&I>=2.6)mt({freq:ch.bass*2,type:'triangle',vol:.05,attack:.01,decay:.22,at,lp:700});
+    // arp: เบาบางในเมนู ถี่ขึ้นตามความเข้ม
+    const arpOn=I<1?(pos===2||pos===5)&&((s*7+bar)%3!==0):I<2?[0,2,3,5,6].includes(pos):true;
+    if(arpOn){const f=ch.tones[(s*3+bar)%4]*((s%5===0||I>3)?4:2);
+      mt({freq:f,type:'triangle',vol:.03+.008*I,attack:.004,decay:.24,at,lp:2000+500*I,rev:.5});}
+    if(I>=2&&(pos%2===1||I>=3.2))mnoise(.014+.004*I,.03,7500,'highpass',t);
+    if(I>=3&&(pos===0||pos===4||(I>=3.6&&pos===6)))mt({freq:118,freq2:44,type:'sine',dur:.12,vol:.17,attack:.002,decay:.15,at,prio:1});
+    // tension: หัวใจเต้น (lub-dub) + tick เมื่อมีช่องใกล้ระเบิด
+    if(ten>.02){
+      const beats=ten>.55?[0,4]:[0];
+      if(beats.includes(pos)){mt({freq:66,freq2:46,type:'sine',dur:.1,vol:.07+.13*ten,attack:.003,decay:.13,at,prio:1});
+        mt({freq:58,freq2:42,type:'sine',dur:.1,vol:.05+.09*ten,attack:.003,decay:.12,at:at+STEP*.42,prio:1});}
+      if(pos===2||pos===6||(ten>.6&&pos%2===1))mt({freq:1760,type:'square',vol:.006+.02*ten,attack:.001,decay:.025,at});
+    }
+  }
+  function pump(){
+    if(!ready()||!M.on)return;
+    if(M.duckT&&ac.currentTime>M.duckT){M.duckT=0;M.duck=1;applyVolumes();}
+    if(musicLevel()===0){M.next=0;return;} // ปิดเพลงอยู่: ไม่สร้างโน้ตเลย
+    if(!M.next||M.next<ac.currentTime-.25)M.next=ac.currentTime+.06; // แท็บถูก throttle: ข้ามไปจังหวะปัจจุบัน ไม่ไล่เล่นย้อนหลัง
+    let guard=0;
+    while(M.next<ac.currentTime+.36&&guard++<8){scheduleStep(M.step,M.next);M.next+=STEP;M.step=(M.step+1)%32;}
+  }
+  const music={
+    start(){if(M.on||!ac)return;M.on=true;M.next=0;applyVolumes();M.timer=setInterval(pump,110);pump();},
+    pause(){M.on=false;clearInterval(M.timer);M.timer=0;},
+    // เมนู = เบาๆ · ในเกม = เริ่มกลางๆ แล้วไต่ตามเกม
+    scene(name){if(M.scene===name)return;M.scene=name;if(name==='menu'){M.target=.6;M.tension=0;}else if(name==='game'){M.target=1;}},
+    game(crit,occ,turns){
+      if(M.scene!=='game')return;
+      M.target=Math.min(4,1+Math.min(1.5,(turns||0)/26)+Math.min(1.6,(crit||0)*.3));
+      M.tension=Math.min(1,(crit||0)/6);
+    },
+    duck(level,secs){if(!ac)return;M.duck=level;M.duckT=ac.currentTime+secs;applyVolumes();},
+    get intensity(){return M.I;},get tension(){return M.tension;},get scene_(){return M.scene;},
+  };
+
+  // ── ตัวควบคุมเสียง (ใช้ทั้งหน้าตั้งค่าและ popover มุมจอ) ──
+  function set(k,v){
+    if(k==='music'||k==='sfx'){P[k]=Math.max(0,Math.min(1,v));if(P[k]>0)P[k+'On']=true;}
+    else if(k==='style'){if(['retro','dark','soft'].includes(v)){P.style=v;sfxStyle=v;}}
+    else P[k]=!!v;
+    changed();
+  }
+  function meter(){ // สำหรับทดสอบ: peak ที่ปลายทาง (out) และก่อนเข้า soft clip (pre) — pre สูงเกิน ~0.7 บ่อยๆ = เริ่มเพี้ยน
+    if(!ac)return null;
+    if(!analyser){analyser={out:ac.createAnalyser(),pre:ac.createAnalyser()};analyser.out.fftSize=analyser.pre.fftSize=2048;bus.master.connect(analyser.out);bus.comp.connect(analyser.pre);}
+    const pk=a=>{const buf=new Float32Array(a.fftSize);a.getFloatTimeDomainData(buf);let m=0;for(let i=0;i<buf.length;i++){const v=Math.abs(buf[i]);if(v>m)m=v;}return m;};
+    return{out:pk(analyser.out),pre:pk(analyser.pre)};
+  }
+  function debug(){const now=ac?ac.currentTime:0;return{state:ac?ac.state:'none',unlocked,voices:ac?ends.filter(t=>t>now).length:0,musicVoices:ac?endsM.filter(t=>t>now).length:0,I:+M.I.toFixed(2),target:+M.target.toFixed(2),tension:+M.tension.toFixed(2),scene:M.scene,music:M.on};}
+
+  return{place,firstPlace,critTick,explode,explodeWave,bigChain,card,cardCat,cardSpecial,reveal,pickCard,win,select,hover,turnChange,myTurn,tick,frozen,shield,timeBomb,
+    music,prefs:P,set,unlock,meter,debug,onChange(fn){listeners.push(fn);},
+    get muted(){return P.mute||(!P.sfxOn&&!P.musicOn);}};
+})();
+
+// แถบควบคุมเสียง: ปุ่ม mute + สไลเดอร์ แยก เพลง / เอฟเฟกต์ (ค่าเก็บใน localStorage ผ่าน SFX.set)
+function buildAudioControls(root,idp){
+  root.classList.add('au-box');
+  root.innerHTML=['music','sfx'].map(k=>`<div class="au-row"><button type="button" class="au-tgl" data-k="${k}" aria-pressed="true"></button><label class="au-lbl" for="${idp}-${k}">${k==='music'?'เพลง':'เอฟเฟกต์'}</label><input class="au-rng" type="range" min="0" max="100" step="1" id="${idp}-${k}" data-k="${k}"><span class="au-val"></span></div>`).join('')
+    +`<button type="button" class="au-mute" id="${idp}-mute"></button>`;
+  const sync=()=>{
+    const p=SFX.prefs;
+    root.querySelectorAll('.au-row').forEach(row=>{
+      const k=row.querySelector('.au-rng').dataset.k,on=p[k+'On']&&!p.mute,pct=Math.round(p[k]*100);
+      const rng=row.querySelector('.au-rng');if(document.activeElement!==rng)rng.value=pct;rng.style.setProperty('--v',pct+'%');
+      row.querySelector('.au-val').textContent=on?pct:'ปิด';row.classList.toggle('off',!on);
+      const b=row.querySelector('.au-tgl');b.textContent=k==='music'?(on?'🎵':'🔇'):(on?'🔊':'🔇');b.setAttribute('aria-pressed',on?'true':'false');b.setAttribute('aria-label',(k==='music'?'เพลง':'เอฟเฟกต์')+(on?' — กดเพื่อปิด':' — กดเพื่อเปิด'));
+    });
+    const m=root.querySelector('.au-mute');m.textContent=p.mute?'🔈 เปิดเสียงทั้งหมด':'🔇 ปิดเสียงทั้งหมด';m.classList.toggle('on',p.mute);
+  };
+  root.querySelectorAll('.au-rng').forEach(r=>{
+    r.addEventListener('input',()=>{if(SFX.prefs.mute)SFX.set('mute',false);SFX.set(r.dataset.k,r.value/100);});
+    r.addEventListener('change',()=>{if(r.dataset.k==='sfx')SFX.place(Math.floor(Math.random()*6));});
+  });
+  root.querySelectorAll('.au-tgl').forEach(b=>b.addEventListener('click',()=>{const k=b.dataset.k;if(SFX.prefs.mute){SFX.set('mute',false);SFX.set(k+'On',true);}else SFX.set(k+'On',!SFX.prefs[k+'On']);if(k==='sfx')SFX.select();}));
+  root.querySelector('.au-mute').addEventListener('click',()=>{SFX.set('mute',!SFX.prefs.mute);SFX.select();});
+  SFX.onChange(sync);sync();
+}
+// เชื่อมเสียงเข้ากับ FX: เสียงระเบิดไล่ตามลำดับ wave · เพลงเข้มขึ้นตามช่องใกล้ระเบิด/จำนวนเทิร์น
+FX.setWaveSound((depth,count,owner)=>SFX.explodeWave(depth,count,owner));
+FX.onRender=s=>SFX.music.game(s.crit,s.occ,STATE.turnCount||0);
+// เสียง hover / กด ของปุ่มทั้งเกม (delegation — ปุ่มที่ถูกสร้างทีหลังก็ได้ด้วย)
+(()=>{
+  const CLICK='button,.pill,.swatch,.bot-slot,.mode-card,.card-filter-row,.test-card-row',HOVER=CLICK+',.hand-card,.pick-card';
+  document.addEventListener('click',e=>{const t=e.target.closest&&e.target.closest(CLICK);if(t)SFX.select();},true);
+  if(window.matchMedia&&window.matchMedia('(hover:hover)').matches){let last=null;document.addEventListener('mouseover',e=>{const t=e.target.closest&&e.target.closest(HOVER);if(t&&t!==last)SFX.hover();last=t||null;},true);}
 })();
 (()=>{
   const wrap=document.createElement('div');
@@ -1936,12 +2131,15 @@ const SFX=(()=>{
   const muteBtn=document.createElement('button');
   muteBtn.id='mute-btn';muteBtn.textContent='🔊';
   muteBtn.style.cssText='background:rgba(0,0,0,0.35);border:none;border-radius:999px;color:#fff;font-size:1.1rem;width:38px;height:38px;cursor:pointer;backdrop-filter:blur(4px);display:none;';
-  muteBtn.addEventListener('click',()=>{
-    sfxStyle=sfxStyle==='off'?'retro':'off';
-    muteBtn.textContent=sfxStyle==='off'?'🔇':'🔊';
-    muteBtn.style.opacity=sfxStyle==='off'?'0.5':'1';
-    document.querySelectorAll('#sfx-pills .pill').forEach(p=>p.classList.toggle('active',p.dataset.val===sfxStyle));
-  });
+  // ปุ่มลำโพง: เปิดแผงเสียง (ปิดเสียงทั้งหมด + สไลเดอร์ เพลง / เอฟเฟกต์)
+  muteBtn.setAttribute('aria-label','ตั้งค่าเสียง');
+  const pop=document.createElement('div');pop.id='audio-pop';pop.setAttribute('role','dialog');pop.setAttribute('aria-label','ตั้งค่าเสียง');
+  buildAudioControls(pop,'aup');document.body.appendChild(pop);
+  const syncIcon=()=>{muteBtn.textContent=SFX.muted?'🔇':'🔊';muteBtn.style.opacity=SFX.muted?'0.6':'1';};
+  SFX.onChange(syncIcon);syncIcon();
+  muteBtn.addEventListener('click',()=>pop.classList.toggle('show'));
+  document.addEventListener('pointerdown',e=>{if(pop.classList.contains('show')&&!pop.contains(e.target)&&e.target!==muteBtn)pop.classList.remove('show');});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')pop.classList.remove('show');});
 
   wrap.appendChild(menuBtn);wrap.appendChild(muteBtn);
   document.body.appendChild(wrap);
@@ -1951,6 +2149,7 @@ const SFX=(()=>{
     const inGame=document.getElementById('game-screen').style.display==='flex';
     menuBtn.style.display=inGame?'block':'none';
     muteBtn.style.display='block'; // เสมอ
+    SFX.music.scene(inGame?'game':'menu'); // เพลง: เมนูเบาๆ / ในเกมไต่ตามสถานการณ์
   }
   // observe game screen
   const obs=new MutationObserver(updateCornerBtns);
@@ -2169,16 +2368,14 @@ setupPills('card-interval-pills','cardInterval');
 
 applyTheme(cfg.theme);
 
-// sfx style selector
-document.getElementById('sfx-pills').querySelectorAll('.pill').forEach(p=>{
-  p.addEventListener('click',()=>{
-    document.getElementById('sfx-pills').querySelectorAll('.pill').forEach(x=>x.classList.remove('active'));
-    p.classList.add('active');sfxStyle=p.dataset.val;
-    if(sfxStyle!=='off') SFX.select();
-    const muteBtn=document.getElementById('mute-btn');
-    if(muteBtn){muteBtn.textContent=sfxStyle==='off'?'🔇':'🔊';muteBtn.style.opacity=sfxStyle==='off'?'0.5':'1';}
-  });
-});
+// เสียง: แถบควบคุม + สไตล์เสียงเอฟเฟกต์ (จำค่าไว้ใน localStorage ผ่าน SFX.set)
+buildAudioControls(document.getElementById('audio-controls'),'aus');
+(()=>{
+  const pills=document.getElementById('sfx-pills').querySelectorAll('.pill');
+  const sync=()=>pills.forEach(p=>p.classList.toggle('active',p.dataset.val===sfxStyle));
+  pills.forEach(p=>p.addEventListener('click',()=>{SFX.set('style',p.dataset.val);sync();SFX.card('rare');}));
+  sync();
+})();
 
 // ตั้งค่าเอฟเฟกต์ (FX จำค่าไว้ใน localStorage)
 [['shake-pills',v=>FX.setShake(parseFloat(v)),()=>String(FX.S.shake)],['fxq-pills',v=>FX.setQuality(v),()=>FX.S.quality]].forEach(([gid,set,get])=>{
@@ -2556,7 +2753,7 @@ function handleCellClick(){
   STATE.moved[cur]=true;
   cell.count+=isFirstPlace?3:1;
   cell.owner=cur;
-  if(isFirstPlace){showToast('🎯 วางครั้งแรก! +3 ลูกบอล');SFX.firstPlace();}else{SFX.place();}
+  if(isFirstPlace){showToast('🎯 วางครั้งแรก! +3 ลูกบอล');SFX.firstPlace(cur);}else{SFX.place(cur);}
 
   renderGrid();
   FX.chainReset();FX.place(r,c,cur,isFirstPlace);
@@ -3568,7 +3765,7 @@ function showCardPickOverlay(playerIdx,cards,rollsLeft=999){
     });
   }
   document.getElementById('card-pick-overlay').classList.add('show');
-  if(!isFull)FX.revealCards(row);
+  if(!isFull){FX.revealCards(row);SFX.reveal(cards.map(c=>c.rarity));}
 }
 function pickCard(def){if(pendingPickPlayer<0)return;STATE.hands[pendingPickPlayer].push({...def});SFX.pickCard();showToast(`✅ ${def.emoji} ${def.name} เพิ่มในมือ!`);closePick();}
 document.getElementById('reroll-btn').addEventListener('click',()=>{
@@ -3651,6 +3848,7 @@ async function doBotPlace(playerIdx,size){
   STATE.cells[r][c].count+=hasOwnCells?1:3;
   STATE.cells[r][c].owner=playerIdx;
   renderGrid();
+  if(hasOwnCells)SFX.place(playerIdx);else SFX.firstPlace(playerIdx);
   FX.chainReset();FX.place(r,c,playerIdx,!hasOwnCells);
   processExplosions(()=>{if(!tickTimeBombs()){checkEliminations();if(!checkWin())endTurn();}});
 }
@@ -3697,7 +3895,7 @@ function explodeWave(cells){
 function spawnFlyingOrbs(r,c,playerIdx,nbs){FX.flyOrbs(r,c,playerIdx,nbs);}
 function spawnRipple(r,c,playerIdx){FX.ripple(r,c,playerIdx);}
 
-function tickTimeBombs(){SFX.timeBomb();
+function tickTimeBombs(){if(STATE.timeBombs&&STATE.timeBombs.length)SFX.timeBomb();
   const cur=STATE.current; // เทิร์นที่เพิ่งเล่น (justPlayed ก่อน nextTurn)
   const explode=[];
   STATE.timeBombs.forEach(b=>{
@@ -3769,7 +3967,10 @@ function nextTurn(){
   if(STATE.catalyzed)Object.keys(STATE.catalyzed).forEach(k=>{STATE.catalyzed[k]--;if(STATE.catalyzed[k]<=0)delete STATE.catalyzed[k];});
   updateScoreboard();updateTurnLabel();
   // Online: เล่นเสียงเฉพาะตาเรา (notifyMyTurn จัดการแทน)
-  if(!(window._getOnlineMode&&window._getOnlineMode())) SFX.turnChange();
+  if(!(window._getOnlineMode&&window._getOnlineMode())){
+    // มีบอทในเกม: ตาคน = เสียง "ตาเรา" / ตาบอท = เสียงเบา · เล่นหลายคนเครื่องเดียว: โน้ตประจำตัวของคนถัดไป
+    if(cfg.bots.length&&!isBot(next))SFX.myTurn(next);else SFX.turnChange(next);
+  }
 }
 function updateTurnLabel(){
   const label=document.getElementById('turn-label'),cur=STATE.current;

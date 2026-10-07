@@ -47,6 +47,7 @@ function startCountdown(seconds, color, onEnd) {
   turnTimerInterval = setInterval(() => {
     left--;
     el.textContent = left;
+    if (left <= 5 && left > 0) SFX.tick(left);
     if (left <= 5) el.style.color = '#ff6644';
     else el.style.color = color || '#fff';
     if (left <= 0) {
@@ -141,6 +142,7 @@ function showGroupPickOverlay(cards, handSize, timeLimit, mySlotName) {
   });
   ov.appendChild(row);
   FX.revealCards(row);
+  SFX.reveal(cards.map(c => c.rarity));
 
 
 
@@ -278,28 +280,17 @@ function handleServerReset() {
 
 // ══ แจ้งเตือนถึงตาเรา ══
 let _lastNotifiedTurn = -1;
+let _lastOtherTurn = '';
 
-function notifyMyTurn() {
-  const turnKey = STATE.turnCount || 0;
+// turnKey มาจาก state ของ server (ของเดิมอ่าน STATE.turnCount ที่ไม่เคยถูก sync จึงแจ้งเตือนได้แค่ครั้งแรกของ session)
+function notifyMyTurn(turnKey) {
   if (_lastNotifiedTurn === turnKey) return;
   _lastNotifiedTurn = turnKey;
 
   const color = ['#e05c5c','#5bc4e0','#6dba6d','#e0a84a','#cc55ee','#ee8844'][mySlot] || '#fff';
 
-  // 1. เสียง 2 โน้ตขึ้นสูง
-  try {
-    const ac = new (window.AudioContext || window.webkitAudioContext)();
-    [[523,0],[784,0.12]].forEach(([freq,delay]) => {
-      const o = ac.createOscillator(), g = ac.createGain();
-      o.connect(g); g.connect(ac.destination);
-      o.type = 'sine'; o.frequency.value = freq;
-      const t = ac.currentTime + delay;
-      g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.22, t+0.01);
-      g.gain.exponentialRampToValueAtTime(0.001, t+0.35);
-      o.start(t); o.stop(t+0.4);
-    });
-  } catch(e) {}
+  // 1. เสียง "ตาเรา" — ใช้ engine เสียงกลางของเกม (ของเดิม new AudioContext ทุกครั้งที่ถึงตา)
+  SFX.myTurn(mySlot);
 
   // 2. สั่น (มือถือ) — double pulse
   if (navigator.vibrate) navigator.vibrate([60, 30, 100]);
@@ -490,11 +481,12 @@ function initSocket() {
             socket.emit('place_timeout', {}, () => {});
           });
           // แจ้งเตือนว่าถึงตาเราแล้ว
-          notifyMyTurn();
+          notifyMyTurn(room.code + ':' + (room.state.turnCount || 0));
         } else if (room.phase !== 'group_pick') {
           clearAllTimers();
-          // เสียงเปลี่ยนเทิร์นสำหรับตาคนอื่น (เบามาก)
-          SFX.turnChange && SFX.turnChange();
+          // เสียงเปลี่ยนเทิร์นสำหรับตาคนอื่น (เบา, โน้ตประจำตัวของคนนั้น) — ครั้งเดียวต่อเทิร์น
+          const otherKey = room.code + ':' + (room.state.turnCount || 0) + ':' + room.state.current;
+          if (room.phase === 'playing' && _lastOtherTurn !== otherKey) { _lastOtherTurn = otherKey; SFX.turnChange(room.state.current); }
         }
 
         // ถ้าออกจาก group_pick แล้วกลับมา playing
@@ -624,8 +616,8 @@ function initSocket() {
 
   socket.on('place_vfx', ({ r, c, playerIdx, isFirstPlace }) => {
     if (!onlineMode) return;
-    if (isFirstPlace) SFX.firstPlace && SFX.firstPlace();
-    else SFX.place && SFX.place();
+    if (isFirstPlace) SFX.firstPlace(playerIdx);
+    else SFX.place(playerIdx);
     // แสดงบอลที่เพิ่งวางทันที (state จริงจะ sync ทับจาก room_update เสมอ) แล้วเล่นเอฟเฟกต์วางบอล
     const placed = STATE.cells && STATE.cells[r] && STATE.cells[r][c];
     if (placed && !_waveAnimating) {
