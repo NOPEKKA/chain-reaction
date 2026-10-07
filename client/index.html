@@ -465,6 +465,143 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);min-height:100vh;displ
   .settings-panel{max-height:72svh;}
 }
 </style>
+<style id="fx-css">
+/* ══════════ FX v2 — แอนิเมชัน (transform / opacity เท่านั้น) ══════════ */
+/* ชั้นอนุภาคกลาง: element ทุกตัวมาจาก pool แล้ววนใช้ซ้ำ ไม่สร้าง/ลบ DOM ระหว่างเล่น */
+#fx-layer{position:fixed;inset:0;pointer-events:none;z-index:900;overflow:hidden;contain:strict;}
+.fxp{position:absolute;left:0;top:0;opacity:0;pointer-events:none;will-change:transform,opacity;}
+.fxp.t{white-space:nowrap;line-height:1;font-family:'Fredoka One',cursive;}
+
+/* ช่องบนกระดานอยู่ถาวรแล้ว (renderGrid อัปเดตเฉพาะที่เปลี่ยน) → ไม่ transition สี/เงา เพื่อไม่ให้เกิด paint บน main thread */
+.cell{transition:transform .15s;will-change:auto;}
+
+/* ── ลูกบอลในช่อง: หมุนวนรอบกัน + สั่นเมื่อใกล้ระเบิด ── */
+.orbs-wrap.orbit{display:block;position:relative;padding:0;}
+/* หมุน (rotate) กับสั่น (translate) เป็น property แยกกันบน element เดียว → 1 layer ต่อช่อง และยังรันบน compositor ทั้งคู่ */
+.orbs-wrap.orbit .orbs-spin{position:absolute;inset:0;animation:orbSpin var(--sp,4s) linear var(--ph,0s) infinite;}
+.orbs-wrap.orbit .orbs-spin.n1{animation:orbBreathe var(--sp,2.8s) ease-in-out var(--ph,0s) infinite alternate;}
+.orbs-wrap.orbit .orb{position:absolute;left:50%;top:50%;}
+.orbs-wrap.orbit .orb::after{display:none;}
+@keyframes orbSpin{to{rotate:360deg;}}
+@keyframes orbBreathe{from{scale:.92;}to{scale:1.1;}}
+@keyframes orbJitter{
+  0%{translate:0 0;}
+  20%{translate:calc(var(--j,1px)*-1.3) calc(var(--j,1px)*.9);}
+  40%{translate:calc(var(--j,1px)*1.1) calc(var(--j,1px)*-1.2);}
+  60%{translate:calc(var(--j,1px)*-.9) calc(var(--j,1px)*-.7);}
+  80%{translate:calc(var(--j,1px)*1.3) calc(var(--j,1px)*.7);}
+  100%{translate:0 0;}
+}
+.cell.warm .orbs-spin{animation:orbSpin var(--sp,4s) linear var(--ph,0s) infinite,orbJitter .52s linear infinite;}
+.cell.crit .orbs-spin{animation:orbSpin var(--sp,4s) linear var(--ph,0s) infinite,orbJitter .13s linear infinite;}
+.cell.warm .orbs-spin.n1{animation:orbBreathe var(--sp,2.8s) ease-in-out var(--ph,0s) infinite alternate,orbJitter .52s linear infinite;}
+.cell.crit .orbs-spin.n1{animation:orbBreathe var(--sp,2.8s) ease-in-out var(--ph,0s) infinite alternate,orbJitter .13s linear infinite;}
+/* ≥4 ลูก (ค้างเกินความจุเพราะโล่/หมุด) ไม่มีวงโคจร → สั่นทั้งกลุ่ม */
+.cell.crit .orbs-wrap:not(.orbit){animation:orbJitter .13s linear infinite;}
+/* เบราว์เซอร์เก่าที่ยังไม่มี rotate/translate แยก property: ยังหมุนได้ (ไม่สั่น) */
+@supports not (rotate:1deg){
+  .orbs-wrap.orbit .orbs-spin:not(.n1){animation:orbSpinT var(--sp,4s) linear var(--ph,0s) infinite!important;}
+  @keyframes orbSpinT{to{transform:rotate(360deg);}}
+}
+
+/* ชั้นแสงของช่อง (::before) ใช้ร่วมกัน: วงแหวนเตือนใกล้ระเบิด / แสงวาบตอนระเบิด / แสงตอนรับบอล · สี = --pc (สีเจ้าของช่อง) */
+.cell::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;z-index:1;}
+.cell.crit::before{box-shadow:inset 0 0 0 2px var(--pc,#fff),inset 0 0 14px var(--pc,#fff);animation:critPulse .62s ease-in-out infinite alternate;}
+@keyframes critPulse{from{opacity:.25;}to{opacity:.95;}}
+
+/* สถานะเอฟเฟกต์ชั่วคราวอยู่ใน data-fx (FX เป็นคนใส่/ถอด) — ลำดับ rule = ลำดับความสำคัญ: in < nb < placed < first < burst */
+.cell[data-fx~="nb"]::before{box-shadow:none;background:var(--pc,#fff);animation:nbFlash .3s ease-out both;}
+@keyframes nbFlash{0%{opacity:.62;}100%{opacity:0;}}
+
+/* วางบอล: spring overshoot / ช่องแรกที่ยึดเด้งแรงกว่า */
+.cell[data-fx~="placed"]{animation:orbPlace .46s cubic-bezier(.3,1.4,.5,1);z-index:3;}
+@keyframes orbPlace{0%{transform:scale(.8);}45%{transform:scale(1.13);}70%{transform:scale(.97);}100%{transform:scale(1);}}
+.cell[data-fx~="first"]{animation:orbFirst .7s cubic-bezier(.3,1.5,.5,1);z-index:4;}
+@keyframes orbFirst{0%{transform:scale(.55) rotate(-8deg);}40%{transform:scale(1.28) rotate(3deg);}62%{transform:scale(.94) rotate(-1deg);}80%{transform:scale(1.05);}100%{transform:scale(1);}}
+.cell[data-fx~="placed"]::before,.cell[data-fx~="first"]::before{box-shadow:none;background:var(--pc,#fff);animation:nbFlash .42s ease-out both;}
+.cell[data-fx~="placed"] .orb:last-child,.cell[data-fx~="first"] .orb{animation:orbPop .42s cubic-bezier(.3,1.8,.5,1) both;}
+.cell[data-fx~="first"] .orb:nth-child(2){animation-delay:.07s;}
+.cell[data-fx~="first"] .orb:nth-child(3){animation-delay:.14s;}
+@keyframes orbPop{0%{scale:0;}60%{scale:1.35;}100%{scale:1;}}
+
+/* ระเบิด: scale ตามความลึกของ chain (--burst ตั้งที่ #grid ต่อ wave) + แสงวาบสีผู้เล่น */
+#grid{--burst:1.35;}
+.cell[data-fx~="burst"]{animation:cellBurst2 .48s cubic-bezier(.36,1.56,.64,1);z-index:5;}
+@keyframes cellBurst2{0%{transform:scale(1);}22%{transform:scale(var(--burst,1.35));}58%{transform:scale(.93);}100%{transform:scale(1);}}
+.cell[data-fx~="burst"]::before{box-shadow:none;background:#fff;animation:cellFlash .48s ease-out both;}
+@keyframes cellFlash{0%{opacity:0;}16%{opacity:.92;}100%{opacity:0;}}
+
+/* ── เอฟเฟกต์เดิมที่ animate filter:blur → ตัดออกให้ลื่น ── */
+@keyframes cellEmojiPop{0%{opacity:0;transform:translate(-50%,-50%) scale(0.1);}20%{opacity:1;transform:translate(-50%,-50%) scale(1.5);}50%{transform:translate(-50%,-80%) scale(1.1);}80%{opacity:1;transform:translate(-50%,-130%) scale(1.0);}100%{opacity:0;transform:translate(-50%,-170%) scale(0.6);}}
+@keyframes singularityPulse{0%{transform:translate(-50%,-50%) scale(0.1);opacity:0;}25%{opacity:1;transform:translate(-50%,-50%) scale(1.8);}60%{transform:translate(-50%,-50%) scale(3.5);opacity:0.9;}100%{transform:translate(-50%,-50%) scale(0.2);opacity:0;}}
+.annihilate-vfx,.tornado-vfx,.freeze-vfx,.card-vfx{will-change:transform,opacity;}
+
+/* ── กระดาน: แสงวาบทั้งกระดาน + ขอบเรืองสีผู้เล่นปัจจุบัน ── */
+/* will-change: กระดานเป็น layer ของตัวเองตั้งแต่แรก → ตอนเริ่ม shake ไม่ต้องจัด layer ของช่องใหม่ทั้งกระดาน (วัดได้ ~100ms) */
+#grid-wrap{position:relative;--turn:#ffffff;will-change:transform;}
+#fx-boardflash{position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;z-index:6;}
+#fx-turnframe{position:absolute;inset:-5px;border-radius:21px;pointer-events:none;border:3px solid var(--turn);box-shadow:0 0 28px var(--turn),inset 0 0 26px -8px var(--turn);opacity:.5;animation:turnBreath 2.2s ease-in-out infinite alternate;}
+@keyframes turnBreath{from{opacity:.3;}to{opacity:.85;}}
+#fx-turnpop{position:absolute;inset:-5px;border-radius:21px;pointer-events:none;border:4px solid var(--turn);box-shadow:0 0 34px var(--turn);opacity:0;}
+#game-screen{--turn:#ffffff;}
+#game-screen::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:-1;background:radial-gradient(120% 70% at 50% 108%,var(--turn) 0%,transparent 60%);opacity:.2;}
+.fx-chain{font-family:'Fredoka One',cursive;font-weight:900;letter-spacing:-1px;text-align:center;line-height:.9;-webkit-text-stroke:2px rgba(0,0,0,.28);paint-order:stroke fill;}
+.fx-chain small{display:block;font-size:.26em;letter-spacing:.28em;margin-bottom:.1em;-webkit-text-stroke:0;opacity:.9;}
+.fx-turnchip{font-family:'Fredoka One',cursive;font-size:.92rem;color:#fff;padding:7px 18px 7px 12px;border-radius:999px;display:flex;align-items:center;gap:8px;background:rgba(18,12,36,.86);border:2px solid var(--c,#fff);box-shadow:0 6px 22px rgba(0,0,0,.35),0 0 18px var(--c,#fff);}
+.fx-turnchip i{width:14px;height:14px;border-radius:50%;background:var(--c,#fff);box-shadow:0 0 10px var(--c,#fff);flex-shrink:0;}
+
+/* ── เปิด/ใช้การ์ด: ไล่ระดับตาม rarity ── */
+#fx-cast{position:absolute;left:50%;top:15%;width:0;height:0;--rc:#d4d4d4;--rc2:#9a9a9a;}
+#fx-cast .fxc-rays{position:absolute;left:0;top:0;width:560px;height:560px;margin:-280px 0 0 -280px;border-radius:50%;opacity:0;
+  background:repeating-conic-gradient(from 0deg,transparent 0 9deg,var(--rc) 9deg 13deg,transparent 13deg 24deg);
+  -webkit-mask-image:radial-gradient(circle,#000 8%,rgba(0,0,0,.5) 34%,transparent 68%);mask-image:radial-gradient(circle,#000 8%,rgba(0,0,0,.5) 34%,transparent 68%);will-change:transform,opacity;}
+#fx-cast[data-rarity="mythical"] .fxc-rays{background:repeating-conic-gradient(from 0deg,transparent 0 6deg,#ff5ca8 6deg 9deg,transparent 9deg 15deg,#ffd34d 15deg 18deg,transparent 18deg 24deg,#5cffb0 24deg 27deg,transparent 27deg 33deg,#5cc8ff 33deg 36deg,transparent 36deg 42deg,#b47cff 42deg 45deg);}
+#fx-cast .fxc-ring{position:absolute;left:0;top:0;width:150px;height:150px;margin:-75px 0 0 -75px;border-radius:50%;border:4px solid var(--rc);box-shadow:0 0 26px var(--rc);opacity:0;will-change:transform,opacity;}
+#fx-cast .fxc-card{position:absolute;left:0;top:0;opacity:0;will-change:transform,opacity;display:flex;flex-direction:column;align-items:center;gap:3px;width:128px;padding:12px 10px 10px;border-radius:16px;text-align:center;
+  background:linear-gradient(165deg,#2c2350 0%,#161029 100%);border:3px solid var(--rc);box-shadow:0 10px 30px rgba(0,0,0,.45),0 0 22px var(--rc);}
+#fx-cast .fxc-emoji{font-size:2.2rem;line-height:1.1;}
+#fx-cast .fxc-name{font-family:'Fredoka One',cursive;font-size:.95rem;color:#fff;line-height:1.15;}
+#fx-cast .fxc-rar{font-size:.56rem;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:#111;background:linear-gradient(90deg,var(--rc),var(--rc2));border-radius:999px;padding:2px 9px;}
+#fx-cast .fxc-who{font-size:.66rem;font-weight:700;color:rgba(255,255,255,.75);display:flex;align-items:center;gap:5px;margin-top:2px;}
+#fx-cast .fxc-who i{width:9px;height:9px;border-radius:50%;background:var(--pc,#fff);box-shadow:0 0 6px var(--pc,#fff);}
+/* common / uncommon = ป้ายเรียบๆ */
+#fx-cast.plain .fxc-card{flex-direction:row;width:auto;white-space:nowrap;gap:9px;padding:8px 16px 8px 12px;border-radius:999px;border-width:2px;box-shadow:0 8px 22px rgba(0,0,0,.4);}
+#fx-cast.plain .fxc-emoji{font-size:1.35rem;}
+#fx-cast.plain .fxc-rar{display:none;}
+#fx-cast.plain .fxc-who{margin-top:0;}
+#fx-cast[data-rarity="common"]{--rc:#d9d9e2;--rc2:#a9a9b6;}
+#fx-cast[data-rarity="uncommon"]{--rc:#7fe08a;--rc2:#3fb55a;}
+#fx-cast[data-rarity="rare"]{--rc:#6fb8ff;--rc2:#3a84e6;}
+#fx-cast[data-rarity="super_rare"]{--rc:#c98bff;--rc2:#8b4be0;}
+#fx-cast[data-rarity="epic"]{--rc:#ff8f6b;--rc2:#ff4f8f;}
+#fx-cast[data-rarity="legendary"]{--rc:#ffd34d;--rc2:#ff9a1f;}
+#fx-cast[data-rarity="mythical"]{--rc:#9af7ff;--rc2:#c68bff;}
+
+/* ── ฉากชนะ ── */
+#fx-confetti{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:505;}
+#winner-overlay.show .winner-card{animation:winCardIn .7s cubic-bezier(.3,1.5,.5,1) both;}
+@keyframes winCardIn{0%{transform:scale(.4) translateY(40px);opacity:0;}60%{transform:scale(1.06) translateY(0);opacity:1;}100%{transform:scale(1);}}
+#winner-overlay.show .trophy{animation:trophyBob 1.4s ease-in-out .5s infinite alternate;display:inline-block;}
+@keyframes trophyBob{from{transform:translateY(0) rotate(-6deg) scale(1);}to{transform:translateY(-8px) rotate(6deg) scale(1.12);}}
+
+/* ── ระดับคุณภาพ ── */
+body.fx-low .cell.warm .orbs-spin:not(.n1){animation:orbSpin var(--sp,4s) linear var(--ph,0s) infinite;}
+body.fx-low .orbs-wrap.orbit .orbs-spin.n1{animation:none;}
+body.fx-low .cell.crit::before{animation:none;opacity:.8;}
+/* เครื่องยังตามไม่ทันแม้อยู่ระดับประหยัด: เหลือเฉพาะช่องที่ใกล้ระเบิดที่ยังขยับ */
+body.fx-lite .cell:not(.crit) .orbs-spin{animation:none!important;}
+body.fx-min .orbs-spin,body.fx-min .cell .orbs-wrap,body.fx-min #fx-turnframe,body.fx-min #winner-overlay.show .trophy{animation:none!important;}
+body.fx-min .cell.crit::before{animation:none;opacity:.8;}
+body.fx-min .cell[data-fx]{animation:none!important;}
+@media (prefers-reduced-motion: reduce){
+  .orbs-spin,.cell .orbs-wrap,#fx-turnframe,#winner-overlay.show .trophy,#winner-overlay.show .winner-card{animation:none!important;}
+  .cell.crit::before{animation:none;opacity:.8;}
+  .cell[data-fx]{animation:none!important;}
+}
+
+/* ── ตั้งค่าเอฟเฟกต์ ── */
+.fx-note{font-size:.68rem;color:rgba(255,255,255,.5);margin-top:7px;line-height:1.5;}
+</style>
 <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
@@ -714,6 +851,24 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);min-height:100vh;displ
       </div>
     </div>
     <div class="settings-group">
+      <div class="section-label">🎬 แรงสั่นของจอ</div>
+      <div class="pill-group" id="shake-pills">
+        <div class="pill" data-val="0">ปิด</div>
+        <div class="pill" data-val="0.5">เบา</div>
+        <div class="pill active" data-val="1">ปกติ</div>
+        <div class="pill" data-val="1.6">แรง</div>
+      </div>
+    </div>
+    <div class="settings-group">
+      <div class="section-label">✨ เอฟเฟกต์อนุภาค</div>
+      <div class="pill-group" id="fxq-pills">
+        <div class="pill active" data-val="auto">อัตโนมัติ</div>
+        <div class="pill" data-val="high">เต็ม</div>
+        <div class="pill" data-val="low">ประหยัด</div>
+      </div>
+      <div class="fx-note" id="fx-rm-note" style="display:none">อุปกรณ์นี้เปิด “ลดการเคลื่อนไหว” อยู่ เกมจึงปิดการสั่นและลดอนุภาคให้อัตโนมัติ</div>
+    </div>
+    <div class="settings-group">
       <div class="section-label">🌐 ภาษา / Language</div>
       <div class="pill-group" id="lang-pills">
         <div class="pill active" data-val="th">🇹🇭 ไทย</div>
@@ -924,6 +1079,567 @@ let cfg={players:2,mapSize:8,mapCols:8,theme:'night',cardInterval:2,bots:[]};
 let STATE={};
 let animating=false,pendingPickPlayer=-1,targetingCard=null,targetData={},selectedHandCard=null,rerollsLeft=999;
 const STEP_DELAY=520,HAND_LIMIT=4;
+
+// ══════════ FX ENGINE (v2) ══════════
+// แอนิเมชันทั้งหมดใช้ transform/opacity ผ่าน Web Animations API บน element ที่วนใช้ซ้ำจาก pool
+// ไม่มีจุดไหน await แอนิเมชัน → จังหวะ STEP_DELAY และการ sync กับ server เหมือนเดิมทุกประการ
+const FX=(()=>{
+  const LS='cr.fx';
+  const S={shake:1,quality:'auto'};
+  try{const s=JSON.parse(localStorage.getItem(LS)||'null');if(s&&typeof s==='object'){if(typeof s.shake==='number')S.shake=s.shake;if(typeof s.quality==='string')S.quality=s.quality;}}catch(e){}
+  const save=()=>{try{localStorage.setItem(LS,JSON.stringify(S));}catch(e){}};
+  const mq=window.matchMedia?window.matchMedia('(prefers-reduced-motion: reduce)'):null;
+  let reduced=!!(mq&&mq.matches),autoLow=false,autoLite=false;
+  if(mq){const on=e=>{reduced=e.matches;syncFlags();};if(mq.addEventListener)mq.addEventListener('change',on);else if(mq.addListener)mq.addListener(on);}
+  const canAnim=typeof Element!=='undefined'&&!!Element.prototype.animate;
+
+  // 0 = ลดการเคลื่อนไหว (prefers-reduced-motion) · 1 = ประหยัด · 2 = เต็ม
+  function tier(){
+    if(reduced)return 0;
+    if(S.quality==='low')return 1;
+    if(S.quality==='high')return 2;
+    const n=(STATE.size||0)*(STATE.cols||STATE.size||0);
+    return(autoLow||n>150)?1:2;
+  }
+  function syncFlags(){const t=tier(),b=document.body;if(!b)return;b.classList.toggle('fx-low',t===1);b.classList.toggle('fx-min',t===0);b.classList.toggle('fx-lite',t===1&&autoLite&&S.quality==='auto');}
+
+  // ── pool ──
+  // ไม่ใช้ onfinish: event จบแอนิเมชันบังคับให้ main thread ผลิตเฟรมเพิ่มทุกครั้งที่อนุภาคหมดอายุ
+  // จึงจำเวลาหมดอายุไว้ แล้วเก็บ element คืนตอนมีคนขอใช้ครั้งถัดไป (ระหว่างนั้นมันโปร่งใสอยู่แล้ว)
+  const CAP=[110,220,380];
+  let layer=null,busy=[];const free=[];
+  function ensureLayer(){if(!layer){layer=document.createElement('div');layer.id='fx-layer';document.body.appendChild(layer);}return layer;}
+  function sweep(now){
+    const keep=[];
+    for(const el of busy){if(el._until<=now){el._a=null;if(el._big){el._big=false;el.style.cssText='';}free.push(el);}else keep.push(el);}
+    busy=keep;
+  }
+  function take(prio=1){
+    if(!canAnim)return null;
+    const cap=CAP[tier()];
+    if(!free.length||busy.length>=cap)sweep(performance.now());
+    if(busy.length>=cap&&(prio<2||busy.length>=cap+90))return null;
+    let el=free.pop();
+    if(!el){el=document.createElement('div');el.className='fxp';ensureLayer().appendChild(el);}
+    else if(el.className!=='fxp'){el.className='fxp';el.textContent='';}
+    el._until=performance.now()+4000;busy.push(el);return el;
+  }
+  // สร้าง element ของ pool ไว้ล่วงหน้าตอนเริ่มเกม จะได้ไม่ไปสร้างกลางการระเบิดครั้งแรก
+  let warmed=false;
+  function prewarm(){if(warmed||!canAnim)return;warmed=true;const L=ensureLayer(),n=tier()===2?96:64;for(let i=free.length+busy.length;i<n;i++){const el=document.createElement('div');el.className='fxp';L.appendChild(el);free.push(el);}}
+  function play(el,frames,opts){el._a=el.animate(frames,opts);el._until=performance.now()+(opts.delay||0)+opts.duration+40;return el._a;}
+  function clear(){
+    busy.forEach(el=>{if(el._a){try{el._a.cancel();}catch(e){}}el._a=null;el._big=false;el.style.cssText='';free.push(el);});busy=[];
+    depth=0;wasEmpty=false;turnKey='';waveAt=0;
+    if(shakeA){try{shakeA.cancel();}catch(e){}shakeA=null;}
+  }
+
+  // ── geometry ──
+  let geo=null,geoT=0;
+  function G(){
+    const g=document.getElementById('grid');if(!g||!g.firstElementChild)return null;
+    const now=performance.now();
+    if(geo&&now-geoT<90&&geo.n===g.childElementCount)return geo;
+    const gr=g.getBoundingClientRect(),w=document.getElementById('grid-wrap').getBoundingClientRect();
+    const cs=STATE._cellSize||parseFloat(g.firstElementChild.style.width)||40;
+    geo={x0:gr.left,y0:gr.top,cs,step:cs+5,n:g.childElementCount,wx:w.left,wy:w.top,ww:w.width,wh:w.height};geoT=now;return geo;
+  }
+  function center(r,c){const g=G();if(!g)return{x:window.innerWidth/2,y:window.innerHeight/2};return{x:g.x0+c*g.step+g.cs/2,y:g.y0+r*g.step+g.cs/2};}
+  function cell(r,c){const g=document.getElementById('grid');if(!g)return null;const el=g.children[r*(STATE.cols||STATE.size)+c];return(el&&+el.dataset.r===r&&+el.dataset.c===c)?el:document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);}
+  const T=(x,y,s)=>`translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`+(s===undefined?'':` scale(${s})`);
+  const PC=i=>PLAYER_COLORS[i]||'#ffffff';
+  function mix(hex,to,t){const p=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));const a=p(hex),b=p(to);return'#'+a.map((v,i)=>Math.round(v+(b[i]-v)*t).toString(16).padStart(2,'0')).join('');}
+
+  // สถานะเอฟเฟกต์ชั่วคราวของช่อง เก็บใน data-fx (className เป็นของ renderGrid) · ลบด้วย timer เดียวต่อชุด
+  function tok(els,name,ms){
+    if(!els.length)return;
+    els.forEach(el=>{const cur=el.dataset.fx;if(!cur)el.dataset.fx=name;else if(!cur.split(' ').includes(name))el.dataset.fx=cur+' '+name;});
+    setTimeout(()=>els.forEach(el=>{const cur=el.dataset.fx;if(!cur)return;const nx=cur.split(' ').filter(t=>t!==name).join(' ');if(nx)el.dataset.fx=nx;else delete el.dataset.fx;}),ms);
+  }
+
+  // ── primitives ──
+  function dot(size,color,frames,opts,prio=1,glow=true){
+    const el=take(prio);if(!el)return null;
+    el.style.cssText=`width:${size}px;height:${size}px;margin:${-size/2}px 0 0 ${-size/2}px;border-radius:50%;background:${color};`+(glow?`box-shadow:0 0 ${Math.round(size*.9)}px ${color};`:'');
+    play(el,frames,opts);return el;
+  }
+  function ring(x,y,size,color,scaleTo,dur,delay=0,prio=1,bw=3,fill=0){
+    const el=take(prio);if(!el)return null;
+    el.style.cssText=`width:${size}px;height:${size}px;margin:${-size/2}px 0 0 ${-size/2}px;border-radius:50%;border:${bw}px solid ${color};`+(fill?`background:${hexToRgba(color,fill)};`:'');
+    play(el,[{transform:T(x,y,.25),opacity:.95},{transform:T(x,y,scaleTo),opacity:0}],{duration:dur,delay,easing:'cubic-bezier(.2,.7,.3,1)'});return el;
+  }
+  // ทุกอนุภาคในชุดเดียวใช้ duration แค่ 2 ค่า และ delay เป็นขั้นๆ: จุดเริ่ม/จบของแอนิเมชันแต่ละจุดต้องใช้ main frame 1 เฟรม
+  // ถ้าสุ่มเวลาอิสระทุกตัว main thread จะต้องผลิตเฟรมแทบต่อเนื่อง (วัดแล้วแพงกว่า ~6 เท่า)
+  function sparks(x,y,n,color,spread,o={}){
+    const glow=tier()===2,d0=Math.round((o.dur||420)*.82),d1=Math.round((o.dur||420)*1.12);
+    for(let i=0;i<n;i++){
+      const a=Math.random()*6.2832,d=spread*(.45+Math.random()*.75),sz=o.size||(2+Math.random()*3.5);
+      dot(sz,(o.white&&i%2)?'#ffffff':color,[{transform:T(x,y,1),opacity:1},{transform:T(x+Math.cos(a)*d,y+Math.sin(a)*d+(o.grav||0),.2),opacity:0}],
+        {duration:i%2?d1:d0,delay:(o.delay||0)+(o.stagger?Math.floor(i/6)*o.stagger*6:0),easing:'cubic-bezier(.1,.7,.3,1)'},o.prio||0,glow);
+    }
+  }
+  function text(x,y,str,css,frames,opts,prio=1){
+    const el=take(prio);if(!el)return null;
+    el.className='fxp t';el.style.cssText=css||'';el.textContent=str;
+    play(el,frames.map(f=>Object.assign({},f,{transform:T(x,y)+' '+(f.transform||'translate(-50%,-50%)')})),opts);return el;
+  }
+  function flash(color,dur=300,peak=.7){
+    if(tier()===0)peak*=.35;
+    const el=take(2);if(!el)return;
+    el._big=true;el.style.cssText=`width:100%;height:100%;background:${color};`;
+    play(el,[{opacity:peak},{opacity:0}],{duration:dur,easing:'ease-out'});
+  }
+  function flashCell(r,c,color,delayMs=0,dur=400){
+    const g=G();if(!g)return;const el=take(1);if(!el)return;
+    const p=center(r,c),cs=g.cs;
+    el.style.cssText=`width:${cs}px;height:${cs}px;border-radius:10px;background:${color};box-shadow:0 0 0 3px ${color}`+(tier()===2?`,0 0 22px ${color}`:'')+`;transform:${T(p.x-cs/2,p.y-cs/2)};`;
+    const tot=60+dur+400;
+    play(el,[{opacity:0},{opacity:.85,offset:60/tot},{opacity:.85,offset:(60+dur)/tot},{opacity:0}],{duration:tot,delay:delayMs,easing:'linear'});
+  }
+
+  // ── helper เดิม (emoji / ตัวเลข / ลูกศร) ย้ายมาใช้ pool ──
+  let emojiLive=0;
+  function emoji(r,c,str,o={}){
+    const cap=[24,40,80][tier()];if(emojiLive>=cap)return;
+    const p=center(r,c),dur=(o.dur||.7)*1000,delay=(o.delay||0)*1000;
+    const el=text(p.x,p.y,str,`font-size:${o.size||'1.6rem'};`,[
+      {opacity:0,transform:'translate(-50%,-50%) scale(.1)'},
+      {opacity:1,transform:'translate(-50%,-50%) scale(1.5)',offset:.2},
+      {opacity:1,transform:'translate(-50%,-80%) scale(1.1)',offset:.5},
+      {opacity:1,transform:'translate(-50%,-130%) scale(1)',offset:.8},
+      {opacity:0,transform:'translate(-50%,-170%) scale(.6)'}],{duration:dur,delay,easing:'ease-out'});
+    if(el){emojiLive++;setTimeout(()=>{emojiLive=Math.max(0,emojiLive-1);},dur+delay);}
+  }
+  function number(r,c,value,o={}){
+    const p=center(r,c),color=o.color||(value>0?'#88ffaa':'#ff6677');
+    text(p.x,p.y,(value>0?'+':'')+value,`font-size:${o.size||'1.1rem'};font-weight:900;color:${color};text-shadow:0 2px 8px rgba(0,0,0,.5),0 0 12px ${color};`,[
+      {opacity:0,transform:'translate(-50%,-120%)'},{opacity:1,transform:'translate(-50%,-140%)',offset:.2},
+      {opacity:1,transform:'translate(-50%,-200%)',offset:.8},{opacity:0,transform:'translate(-50%,-220%)'}],
+      {duration:(o.dur||.8)*1000,delay:(o.delay||0)*1000,easing:'ease-out'},2);
+  }
+  function arrow(fr,fc,tr,tc,str='🌀',o={}){
+    const a=center(fr,fc),b=center(tr,tc),dx=b.x-a.x,dy=b.y-a.y;
+    text(a.x,a.y,str,`font-size:${o.size||'1.4rem'};`,[
+      {opacity:0,transform:'translate(-50%,-50%) scale(.5)'},
+      {opacity:1,transform:`translate(calc(-50% + ${(dx*.2).toFixed(1)}px),calc(-50% + ${(dy*.2).toFixed(1)}px)) scale(.75)`,offset:.2},
+      {opacity:1,transform:`translate(calc(-50% + ${dx.toFixed(1)}px),calc(-50% + ${dy.toFixed(1)}px)) scale(1)`,offset:.8},
+      {opacity:0,transform:`translate(calc(-50% + ${dx.toFixed(1)}px),calc(-50% + ${dy.toFixed(1)}px)) scale(.6)`}],
+      {duration:550,delay:(o.delay||0)*1000,easing:'cubic-bezier(.4,0,.6,1)'});
+  }
+
+  // ── ระเบิด ──
+  function ripple(r,c,owner,k=0,prio=1){
+    const g=G();if(!g)return;const p=center(r,c),col=PC(owner);
+    ring(p.x,p.y,g.cs,col,2.6+1.8*k,Math.round(520+140*k),0,prio,Math.max(2,Math.round(g.cs*(.06+.05*k))),.22);
+  }
+  function flyOrbs(r,c,owner,nbs,k=0){
+    const g=G();if(!g)return;const p=center(r,c),col=PC(owner),lite=mix(col,'#ffffff',.25+.35*k);
+    const os=Math.round(Math.max(6,Math.floor(g.cs*.26))*(1+.3*k)),dur=Math.round(250-100*k),glow=tier()>0;
+    nbs.forEach(([nr,nc])=>{
+      const q=center(nr,nc);
+      dot(os,lite,[{transform:T(p.x,p.y,.6),opacity:1},{transform:T(p.x+(q.x-p.x)*.55,p.y+(q.y-p.y)*.55,1.15),opacity:1,offset:.55},{transform:T(q.x,q.y,.75),opacity:.9,offset:.9},{transform:T(q.x,q.y,.4),opacity:0}],
+        {duration:dur,easing:'cubic-bezier(.3,0,.6,1)'},2,glow);
+    });
+  }
+
+  let depth=0,chainEl=null,shakeA=null,slow=0,waveAt=0;
+  function chainReset(){depth=0;}
+  function chainStep(){return ++depth;}
+  function shake(amp,dur=260,target){
+    if(reduced||S.shake<=0||!canAnim)return;
+    const w=target||document.getElementById('grid-wrap');if(!w)return;
+    const a=amp*S.shake;if(a<.5)return;
+    const fr=[{transform:'translate(0px,0px) rotate(0deg)'}],n=7;
+    for(let i=1;i<n;i++){const f=1-i/n,ang=Math.random()*6.2832;fr.push({transform:`translate(${(Math.cos(ang)*a*f).toFixed(1)}px,${(Math.sin(ang)*a*f).toFixed(1)}px) rotate(${((Math.random()-.5)*a*.09*f).toFixed(2)}deg)`});}
+    fr.push({transform:'translate(0px,0px) rotate(0deg)'});
+    if(shakeA){try{shakeA.cancel();}catch(e){}}
+    shakeA=w.animate(fr,{duration:dur,easing:'linear'});if(!target)geo=null;
+  }
+  // watchdog แบบไม่ใช้ rAF (rAF จะบังคับให้ main thread ผลิตเฟรม แล้ว CSS animation ทุกตัวต้อง tick บน main ไปด้วย)
+  // วัดจากความล่าช้าของ timer ระหว่าง wave → land: ถ้า main thread ตันติดกัน 3 wave ให้ลดคุณภาพเอง
+  function monitorLand(){
+    if(!waveAt||autoLite||reduced||S.quality!=='auto')return;const late=performance.now()-waveAt-STEP_DELAY*.45;waveAt=0;
+    if(late>1000)return;
+    // ขั้นแรกลดเป็นระดับประหยัด · ถ้าอยู่ระดับประหยัดแล้วยังช้า ให้เหลือเฉพาะช่องใกล้ระเบิดที่ขยับ
+    if(late>45){if(++slow>=3){slow=0;if(tier()===2)autoLow=true;else autoLite=true;syncFlags();}}else slow=Math.max(0,slow-1);
+  }
+  function boardEls(){
+    const w=document.getElementById('grid-wrap');if(!w)return null;
+    if(!document.getElementById('fx-boardflash'))['fx-boardflash','fx-turnframe','fx-turnpop'].forEach(id=>{const d=document.createElement('div');d.id=id;w.appendChild(d);});
+    return w;
+  }
+  function chainText(d,owner,g){
+    if(d<3||!canAnim)return;
+    if(!chainEl){chainEl=document.createElement('div');chainEl.className='fxp t fx-chain';ensureLayer().appendChild(chainEl);}
+    const col=PC(owner),fs=Math.round(Math.max(30,Math.min(96,g.ww*.17))*(1+.035*Math.min(d,14)));
+    chainEl.style.cssText=`font-size:${fs}px;color:${mix(col,'#ffffff',.3)};text-shadow:0 0 ${Math.round(fs*.35)}px ${col},0 4px 0 rgba(0,0,0,.25);`;
+    chainEl.innerHTML=`<small>CHAIN</small>×${d}`;
+    const base=T(g.wx+g.ww/2,g.wy+g.wh*.3)+' translate(-50%,-50%)';
+    const big=tier()===0?1:(1.5+Math.min(d,12)*.04);
+    chainEl.animate([{transform:base+` scale(${big})`,opacity:0},{transform:base+' scale(1)',opacity:.96,offset:.2},{transform:base+' scale(1)',opacity:.9,offset:.62},{transform:base+' scale(1.06)',opacity:0}],{duration:480,easing:'ease-out'});
+  }
+  // เสียงของ wave — ด้านเสียงจะมาแทนที่ฟังก์ชันนี้
+  let waveSound=(d,n)=>{if(n>=4)SFX.bigChain();else SFX.explode(n);};
+  function wave(list,d){
+    if(!list||!list.length)return;
+    const n=list.length,t=tier(),k=Math.min(1,(d-1)/9);
+    waveSound(d,n,list[0].owner);
+    const g=G();if(!g)return;
+    waveAt=document.hidden?0:performance.now();
+    const rows=STATE.size,cols=STATE.cols||STATE.size;
+    const perSpark=(t>0&&d>=3&&n<=24)?Math.min(6,1+Math.floor(d/2)):0;
+    let budget=t===2?70:24,sx=0,sy=0;const tally={},els=[];
+    // wave ใหญ่มาก (หลายสิบช่องพร้อมกัน): สุ่มตัวอย่างวงแหวน/ลูกบอลที่กระเด็นให้อยู่ในงบ — ทุกช่องยังเด้ง + วาบครบ
+    // ลดการเคลื่อนไหว (t=0): ไม่มีวงแหวน/สะเก็ด เหลือลูกบอลที่กระเด็นไปช่องข้างๆ จำนวนจำกัด เพราะเป็นตัวบอกว่าเกิดอะไรขึ้น
+    const stepR=Math.ceil(n/(t===2?40:20)),stepO=Math.ceil(n/(t===2?56:t===1?30:10));
+    list.forEach(({r,c,owner},i)=>{
+      const col=PC(owner),el=cell(r,c),p=center(r,c);
+      tally[owner]=(tally[owner]||0)+1;sx+=p.x;sy+=p.y;
+      if(el)els.push(el);
+      if(t>0&&i%stepR===0)ripple(r,c,owner,k);
+      if(i%stepO===0){const nbs=[];if(r>0)nbs.push([r-1,c]);if(r<rows-1)nbs.push([r+1,c]);if(c>0)nbs.push([r,c-1]);if(c<cols-1)nbs.push([r,c+1]);flyOrbs(r,c,owner,nbs,k);}
+      if(perSpark&&budget>0){const m=Math.min(perSpark,budget);budget-=m;sparks(p.x,p.y,m,col,g.cs*(1.1+1.3*k),{white:true,dur:380+160*k});}
+    });
+    // ช่องที่ระเบิด: scale แรงขึ้นตามความลึก (ตัวแปรเดียวบน #grid) + แสงวาบสีผู้เล่น
+    document.getElementById('grid').style.setProperty('--burst',(1.3+.4*k).toFixed(2));
+    tok(els,'burst',480);
+    const top=+Object.keys(tally).sort((a,b)=>tally[b]-tally[a])[0],col=PC(top);
+    // แสงวาบสีผู้เล่นทั้งกระดาน — แรงขึ้นตามความลึก
+    if(boardEls()&&canAnim){
+      const f=document.getElementById('fx-boardflash');
+      const cx=((sx/n-g.wx)/g.ww*100).toFixed(1),cy=((sy/n-g.wy)/g.wh*100).toFixed(1);
+      f.style.background=`radial-gradient(circle at ${cx}% ${cy}%,${hexToRgba(col,.95)} 0%,${hexToRgba(col,.4)} 36%,transparent 72%)`;
+      const peak=Math.min(t===0?.14:.5,.07+.3*k+n*.012);
+      f.animate([{opacity:peak},{opacity:0}],{duration:480,easing:'cubic-bezier(.1,.7,.3,1)'});
+    }
+    // screen shake: เบาเมื่อ chain ≥ 4 · แรงเมื่อ ≥ 8
+    if(d>=8)shake(7*(1+Math.min(n,10)*.05),320);
+    else if(d>=4)shake(3*(1+Math.min(n,10)*.05),240);
+    chainText(d,top,g);
+  }
+  // 45% ของ step: บอลถึงช่องข้างๆ → วาบสีที่ช่องรับ
+  function land(list){
+    monitorLand();
+    const rows=STATE.size,cols=STATE.cols||STATE.size,seen=new Set(),els=[];
+    list.forEach(({r,c})=>{
+      [[r-1,c],[r+1,c],[r,c-1],[r,c+1]].forEach(([nr,nc])=>{
+        if(nr<0||nc<0||nr>=rows||nc>=cols)return;const key=nr*cols+nc;if(seen.has(key))return;seen.add(key);
+        const el=cell(nr,nc);if(el)els.push(el);
+      });
+    });
+    tok(els,'nb',320);
+  }
+
+  // ── วางบอล ──
+  function place(r,c,owner,first){
+    const col=PC(owner),el=cell(r,c);
+    if(el)tok([el],first?'first':'placed',first?720:480);
+    const g=G();if(!g||tier()===0)return;const p=center(r,c);
+    ring(p.x,p.y,g.cs,col,first?2.5:1.75,first?640:430,0,2,Math.max(2,Math.round(g.cs*.07)),.14);
+    if(first){
+      ring(p.x,p.y,g.cs,'#ffffff',3.4,780,110,1,2);
+      ring(p.x,p.y,g.cs,col,4.3,900,220,1,2);
+      sparks(p.x,p.y,tier()===2?14:7,col,g.cs*1.7,{white:true,dur:560,prio:1});
+      text(p.x,p.y,'✦',`font-size:${Math.round(g.cs*.9)}px;color:#fff;text-shadow:0 0 14px ${col},0 0 28px ${col};`,[
+        {opacity:0,transform:'translate(-50%,-50%) scale(.2) rotate(-40deg)'},{opacity:1,transform:'translate(-50%,-50%) scale(1.5) rotate(20deg)',offset:.35},
+        {opacity:0,transform:'translate(-50%,-50%) scale(.6) rotate(90deg)'}],{duration:620,easing:'ease-out'});
+    }
+  }
+
+  // ── เทิร์น ──
+  let turnKey='';
+  function turn(cur){
+    const w=boardEls();if(!w)return;const col=PC(cur);
+    w.style.setProperty('--turn',col);const gs=document.getElementById('game-screen');if(gs)gs.style.setProperty('--turn',col);
+    const key=(STATE._gameId||0)+'|'+cur+'|'+(STATE.turnCount||0);
+    if(key===turnKey)return;const firstCall=!turnKey;turnKey=key;
+    if(!canAnim||tier()===0)return;
+    // one-shot อยู่คนละ element กับกรอบที่ "หายใจ" ด้วย CSS — ถ้า animate ซ้อน property เดียวกันบน element เดียว
+    // Chrome จะย้าย CSS animation นั้นไปรันบน main thread ถาวร
+    document.getElementById('fx-turnpop').animate([{transform:'scale(1.08)',opacity:1},{transform:'scale(1)',opacity:0}],{duration:520,easing:'cubic-bezier(.2,.8,.3,1)'});
+    const online=!!(window._getOnlineMode&&window._getOnlineMode());
+    if(online&&window._getMySlot&&window._getMySlot()===cur)return; // ตาเราออนไลน์มี popup ใหญ่อยู่แล้ว
+    if(firstCall&&!online&&isBot(cur))return;
+    const g=G();if(!g)return;
+    const frozen=STATE.frozen&&STATE.frozen[cur]>0;
+    const el=take(2);if(!el)return;
+    el.className='fxp t fx-turnchip';el.style.cssText=`--c:${col};`;
+    el.innerHTML='<i></i>';el.appendChild(document.createTextNode(`${frozen?'❄️ ':(!online&&isBot(cur))?'🤖 ':''}ตาของ ${getPlayerName(cur)}`));
+    const base=T(g.wx+g.ww/2,g.wy+14);
+    play(el,[{transform:base+' translate(-50%,-150%) scale(.8)',opacity:0},{transform:base+' translate(-50%,-50%) scale(1)',opacity:1,offset:.18},
+      {transform:base+' translate(-50%,-50%) scale(1)',opacity:1,offset:.74},{transform:base+' translate(-50%,-90%) scale(.94)',opacity:0}],{duration:1150,easing:'ease-out'});
+  }
+
+  // ── การ์ด: เอฟเฟกต์ตอนใช้ ไล่ระดับตามความหายาก ──
+  const RANK={common:0,uncommon:1,rare:2,super_rare:3,epic:4,legendary:5,mythical:6};
+  const RCOL={common:'#d9d9e2',uncommon:'#7fe08a',rare:'#6fb8ff',super_rare:'#c98bff',epic:'#ff8f6b',legendary:'#ffd34d',mythical:'#9af7ff'};
+  let castEl=null;
+  function cardCast(def,playerIdx){
+    if(!def||!canAnim)return;
+    const L=ensureLayer();
+    if(!castEl){castEl=document.createElement('div');castEl.id='fx-cast';castEl.innerHTML='<div class="fxc-rays"></div><div class="fxc-ring"></div><div class="fxc-card"><span class="fxc-emoji"></span><span class="fxc-name"></span><span class="fxc-rar"></span><span class="fxc-who"><i></i><b></b></span></div>';L.appendChild(castEl);}
+    const rk=RANK[def.rarity]||0,t=tier(),col=RCOL[def.rarity]||'#ffffff',g=G();
+    castEl.dataset.rarity=def.rarity;castEl.classList.toggle('plain',rk<2);castEl.style.setProperty('--pc',PC(playerIdx));
+    // ป้ายเรียบ (common/uncommon) อยู่เหนือกระดาน · การ์ดเต็มใบ (rare ขึ้นไป) ลอยทับขอบบนของกระดาน
+    castEl.style.top=g?Math.round(rk<2?Math.max(30,g.wy-24):g.wy+86)+'px':'15%';
+    castEl.querySelector('.fxc-emoji').textContent=def.emoji;castEl.querySelector('.fxc-name').textContent=def.name;
+    castEl.querySelector('.fxc-rar').textContent=(RARITY_LABEL[def.rarity]||'').replace(/^[^A-Za-z]+/,'');castEl.querySelector('.fxc-who b').textContent=getPlayerName(playerIdx);
+    const card=castEl.querySelector('.fxc-card'),rays=castEl.querySelector('.fxc-rays'),rg=castEl.querySelector('.fxc-ring');
+    [card,rays,rg].forEach(e=>e.getAnimations&&e.getAnimations().forEach(a=>a.cancel()));
+    const dur=[760,820,920,1020,1180,1420,1680][rk],C='translate(-50%,-50%)';
+    if(t===0){card.animate([{transform:C,opacity:0},{transform:C,opacity:1,offset:.2},{transform:C,opacity:1,offset:.8},{transform:C,opacity:0}],{duration:dur});return;}
+    card.animate([{transform:`translate(-50%,${rk<2?'-190%':'170%'}) scale(.5) rotate(${rk<2?0:-9}deg)`,opacity:0},
+      {transform:C+` scale(${rk<2?1.06:1.16}) rotate(${rk<2?0:2}deg)`,opacity:1,offset:.2},{transform:C+' scale(1) rotate(0deg)',opacity:1,offset:.32},
+      {transform:C+' scale(1) rotate(0deg)',opacity:1,offset:.8},{transform:'translate(-50%,-110%) scale(.88) rotate(0deg)',opacity:0}],{duration:dur,easing:'cubic-bezier(.3,.9,.4,1)'});
+    const r=castEl.getBoundingClientRect(),x=r.left,y=r.top,d0=dur*.2;
+    if(rk>=2)rg.animate([{transform:'scale(.3)',opacity:0},{transform:'scale(.5)',opacity:1,offset:.1},{transform:`scale(${1.6+rk*.35})`,opacity:0}],{duration:520+rk*70,delay:d0,easing:'ease-out'});
+    if(rk>=4)rays.animate([{transform:'scale(.2) rotate(0deg)',opacity:0},{transform:`scale(${.7+rk*.1}) rotate(40deg)`,opacity:rk>=5?.95:.6,offset:.25},{transform:`scale(${.85+rk*.12}) rotate(140deg)`,opacity:0}],{duration:dur*.95,delay:d0*.6,easing:'ease-out'});
+    const ns=[0,0,8,12,18,28,40][rk];
+    if(ns)sparks(x,y,t===2?ns:Math.ceil(ns/2),col,90+rk*34,{white:true,dur:520+rk*60,delay:d0,prio:1});
+    if(rk===5){setTimeout(()=>{flash('#ffd34d',520,.4);shake(3,260);},d0);}
+    if(rk===6){setTimeout(()=>{flash('#ffffff',240,.62);shake(6,320);},d0);setTimeout(()=>{flash('#b47cff',760,.36);if(t===2)sparks(x,y,24,'#ff8ad8',260,{white:true,dur:900,prio:0});},d0+200);}
+  }
+  // เปิดการ์ดในหน้าเลือกการ์ด: rare+ มีวงแหวน · epic+ มีอนุภาค · legendary/mythical มีลำแสง + flash เต็มจอ
+  function raysEl(x,y,color,size,dur,delay=0,peak=.9){
+    const el=take(2);if(!el)return;
+    el._big=true;
+    el.style.cssText=`width:${size}px;height:${size}px;margin:${-size/2}px 0 0 ${-size/2}px;border-radius:50%;background:repeating-conic-gradient(from 0deg,transparent 0 8deg,${color} 8deg 12deg,transparent 12deg 22deg);-webkit-mask-image:radial-gradient(circle,#000 6%,transparent 68%);mask-image:radial-gradient(circle,#000 6%,transparent 68%);`;
+    play(el,[{transform:T(x,y,.15)+' rotate(0deg)',opacity:0},{transform:T(x,y,.9)+' rotate(35deg)',opacity:peak,offset:.25},{transform:T(x,y,1.25)+' rotate(120deg)',opacity:0}],{duration:dur,delay,easing:'ease-out'});
+  }
+  function revealCards(row){
+    if(!row||!canAnim||tier()===0)return;
+    [...row.querySelectorAll('.pick-card')].forEach((el,i)=>{
+      const rk=RANK[el.dataset.rarity]||0;if(rk<2)return;
+      setTimeout(()=>{
+        if(!el.isConnected)return;const b=el.getBoundingClientRect();if(!b.width)return;
+        const x=b.left+b.width/2,y=b.top+b.height/2,col=RCOL[el.dataset.rarity],t=tier();
+        ring(x,y,b.width,col,1.5+rk*.12,520+rk*60,0,1,3);
+        if(rk>=4)sparks(x,y,Math.round((t===2?1:.5)*[0,0,0,0,12,22,32][rk]),col,b.width*(.8+rk*.12),{white:true,dur:640,prio:1});
+        if(rk>=5){raysEl(x,y,col,Math.round(b.width*2.6),1500,0,.85);flash(rk===6?'#ffffff':'#ffd34d',rk===6?420:360,rk===6?.45:.28);}
+      },160+i*90);
+    });
+  }
+
+  // ── highlight การ์ดเด่น ──
+  function burstRings(x,y,cols,size,to,dur,gap=110){cols.forEach((c,i)=>ring(x,y,size,c,to,dur+i*90,i*gap,2,5));}
+  function vignette(color,dur,peak=1){
+    const el=take(2);if(!el)return;
+    el._big=true;el.style.cssText=`width:100%;height:100%;background:radial-gradient(ellipse at center,transparent 42%,${color} 100%);`;
+    play(el,[{opacity:0},{opacity:peak,offset:.2},{opacity:peak,offset:.6},{opacity:0}],{duration:dur,easing:'ease-out'});
+  }
+  const mid=()=>{const g=G();return g?{x:g.wx+g.ww/2,y:g.wy+g.wh/2}:{x:window.innerWidth/2,y:window.innerHeight/2};};
+  const HL={
+    // Freeze: ขอบจอเป็นน้ำแข็ง + เกล็ดน้ำแข็งพุ่งไปหาผู้เล่นที่โดน
+    freeze(pi){
+      const t=tier();vignette('rgba(150,228,255,.6)',1150,t===0?.5:1);if(t===0)return;
+      const sc=pi>=0?document.getElementById(`sc-${pi}`):null,W=window.innerWidth,H=window.innerHeight;
+      const tgt=sc?(b=>({x:b.left+b.width/2,y:b.top+b.height/2}))(sc.getBoundingClientRect()):{x:W/2,y:H*.35};
+      const n=t===2?18:9;
+      for(let i=0;i<n;i++){
+        const sx=Math.random()*W,sy=H*(.25+Math.random()*.7),sz=Math.round(4+Math.random()*6),el=take(1);if(!el)break;
+        el.style.cssText=`width:${sz}px;height:${sz}px;margin:${-sz/2}px 0 0 ${-sz/2}px;border-radius:2px;background:${i%3?'#e8fbff':'#8fdcff'};box-shadow:0 0 8px #bff1ff;`;
+        play(el,[{transform:T(sx,sy,.2)+' rotate(0deg)',opacity:0},{transform:T(sx+(Math.random()-.5)*40,sy-20,1)+' rotate(120deg)',opacity:1,offset:.3},{transform:T(tgt.x,tgt.y,.4)+' rotate(400deg)',opacity:.9,offset:.92},{transform:T(tgt.x,tgt.y,.1)+' rotate(420deg)',opacity:0}],
+          {duration:i%2?780:920,delay:Math.floor(i/6)*110,easing:'cubic-bezier(.5,0,.3,1)'});
+      }
+      setTimeout(()=>{burstRings(tgt.x,tgt.y,['#bff1ff','#ffffff'],46,2.6,520);sparks(tgt.x,tgt.y,t===2?12:6,'#bff1ff',70,{white:true,dur:520,prio:1});},820);
+    },
+    // Nuclear: วาบขาว → คลื่นกระแทก 3 วง + ลำแสง + สะเก็ดไฟ + เขย่าจอ 2 จังหวะ
+    nuclear(){
+      const t=tier(),{x,y}=mid();
+      flash('#ffffff',200,.85);if(t===0)return;
+      const R=Math.max(window.innerWidth,window.innerHeight);
+      burstRings(x,y,['#ffffff','#ffcf5a','#ff7a1a'],120,R/60,900,130);
+      raysEl(x,y,'#ffcf5a',Math.round(R*1.1),1300);
+      sparks(x,y,t===2?34:14,'#ffb347',R*.42,{white:true,dur:1000,size:5,stagger:6,prio:1});
+      shake(9,340);setTimeout(()=>shake(6,300),420);
+    },
+    // Big Bang: ยุบตัวเข้ากลาง → ระเบิดออกเป็นวงแหวนหลายสี
+    bigbang(){
+      const t=tier(),{x,y}=mid();
+      if(t===0){flash('#ffffff',260,.5);return;}
+      const n=t===2?22:11,R=Math.min(window.innerWidth,window.innerHeight)*.48,big=Math.max(window.innerWidth,window.innerHeight);
+      for(let i=0;i<n;i++){const a=(i/n)*6.2832,c=['#ff8a3c','#ff4f8f','#ffd34d','#ffffff'][i%4];
+        dot(Math.round(6+Math.random()*6),c,[{transform:T(x+Math.cos(a)*R,y+Math.sin(a)*R,1),opacity:0},{transform:T(x+Math.cos(a+.9)*R*.5,y+Math.sin(a+.9)*R*.5,1),opacity:1,offset:.5},{transform:T(x,y,.2),opacity:1}],{duration:300,easing:'cubic-bezier(.6,0,.9,.4)'},1,true);}
+      setTimeout(()=>{
+        flash('#ffffff',260,.8);
+        burstRings(x,y,['#ffffff','#ff8a3c','#ff4f8f','#b47cff'],120,big/60,950,100);
+        raysEl(x,y,'#ffb36b',Math.round(big*1.1),1200);
+        sparks(x,y,t===2?40:16,'#ffd34d',R*1.5,{white:true,dur:1100,size:5,prio:1});
+        shake(10,360);
+      },300);
+    },
+    // Black Hole: จานหมุนมืด + อนุภาคหมุนวนเข้าหาช่อง
+    blackhole(r,c){
+      const t=tier(),g=G();if(!g)return;const p=center(r,c),cs=g.cs;
+      const disc=take(2);
+      if(disc){const sz=Math.round(cs*3.4);
+        disc.style.cssText=`width:${sz}px;height:${sz}px;margin:${-sz/2}px 0 0 ${-sz/2}px;border-radius:50%;background:radial-gradient(circle,#000 0 26%,rgba(40,8,70,.95) 34%,transparent 58%),conic-gradient(from 0deg,transparent,#b47cff,transparent 30%,#ff7ad9 50%,transparent 62%,#6fb8ff 82%,transparent);-webkit-mask-image:radial-gradient(circle,#000 54%,transparent 70%);mask-image:radial-gradient(circle,#000 54%,transparent 70%);`;
+        play(disc,t===0?[{transform:T(p.x,p.y,.9)+' rotate(0deg)',opacity:0},{transform:T(p.x,p.y,.9)+' rotate(0deg)',opacity:.9,offset:.3},{transform:T(p.x,p.y,.9)+' rotate(0deg)',opacity:0}]
+          :[{transform:T(p.x,p.y,.1)+' rotate(0deg)',opacity:0},{transform:T(p.x,p.y,1)+' rotate(260deg)',opacity:1,offset:.3},{transform:T(p.x,p.y,.95)+' rotate(620deg)',opacity:1,offset:.75},{transform:T(p.x,p.y,.05)+' rotate(900deg)',opacity:0}],{duration:880,easing:'linear'});}
+      if(t===0)return;
+      const n=t===2?18:9;
+      for(let i=0;i<n;i++){const a=(i/n)*360,R=cs*(1.7+Math.random()*1.1),sz=Math.round(3+Math.random()*4),el=take(1);if(!el)break;
+        el.style.cssText=`width:${sz}px;height:${sz}px;margin:${-sz/2}px 0 0 ${-sz/2}px;border-radius:50%;background:${['#d9b8ff','#ff9ae6','#9ad0ff'][i%3]};`;
+        play(el,[{transform:T(p.x,p.y)+` rotate(${a}deg) translate(${R.toFixed(1)}px,0px)`,opacity:0},{transform:T(p.x,p.y)+` rotate(${a+140}deg) translate(${(R*.7).toFixed(1)}px,0px)`,opacity:1,offset:.3},{transform:T(p.x,p.y)+` rotate(${a+460}deg) translate(0px,0px)`,opacity:.9}],{duration:i%2?640:760,delay:Math.floor(i/6)*70,easing:'cubic-bezier(.4,0,.8,.5)'});}
+      setTimeout(()=>{ring(p.x,p.y,cs,'#d9b8ff',2.8,460,0,2,3);flash('#5a1a9a',320,.22);shake(4,240);},760);
+    },
+    // Rebirth: เสาแสงพุ่งขึ้นจากช่องเกิดใหม่ + อนุภาคลอยขึ้น
+    rebirth(r,c){
+      const t=tier();vignette('rgba(0,255,204,.34)',1250,t===0?.5:1);
+      const g=G();if(!g||r===undefined||c===undefined||t===0)return;
+      const p=center(r,c),cs=g.cs,h=Math.round(Math.max(260,p.y+40)),at=480,by=p.y+cs*.45;
+      const beam=take(2);
+      if(beam){beam._big=true;beam.style.cssText=`width:${Math.round(cs*1.1)}px;height:${h}px;margin:${-h}px 0 0 ${-Math.round(cs*.55)}px;transform-origin:50% 100%;border-radius:${cs}px ${cs}px 6px 6px;background:linear-gradient(to top,#ffffff 0%,rgba(140,255,225,.85) 22%,rgba(0,255,204,.25) 70%,transparent 100%);`;
+        play(beam,[{transform:T(p.x,by)+' scale(.2,0)',opacity:0},{transform:T(p.x,by)+' scale(1,1)',opacity:1,offset:.22},{transform:T(p.x,by)+' scale(.75,1)',opacity:.9,offset:.6},{transform:T(p.x,by)+' scale(.1,1.05)',opacity:0}],{duration:820,delay:at,easing:'cubic-bezier(.2,.8,.3,1)'});}
+      setTimeout(()=>burstRings(p.x,p.y,['#ffffff','#5cffd2','#00d6a6'],cs,3.6,700,120),at);
+      const n=t===2?16:8;
+      for(let i=0;i<n;i++){const ox=(Math.random()-.5)*cs*1.4,sz=Math.round(3+Math.random()*4);
+        dot(sz,i%2?'#ffffff':'#7fffd4',[{transform:T(p.x+ox,p.y+cs*.3,1),opacity:0},{transform:T(p.x+ox*.8,p.y-cs*.6,1),opacity:1,offset:.25},{transform:T(p.x+ox*.4,p.y-cs*(2.2+Math.random()*2.2),.3),opacity:0}],{duration:i%2?860:1080,delay:at+Math.floor(i/4)*90,easing:'ease-out'},1,true);}
+    },
+  };
+
+  // ── ฉากชนะ: confetti + พลุ บน canvas เดียว ──
+  let cv=null,raf=0;
+  function winStop(){cancelAnimationFrame(raf);raf=0;if(cv){cv.remove();cv=null;}}
+  function winStart(color){
+    winStop();if(reduced)return;
+    const t=tier();cv=document.createElement('canvas');cv.id='fx-confetti';document.body.appendChild(cv);
+    const dpr=Math.min(window.devicePixelRatio||1,1.5),W=window.innerWidth,H=window.innerHeight;
+    cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);
+    const ctx=cv.getContext('2d');ctx.scale(dpr,dpr);
+    let win='#ffd34d';const m=/(\d+)[^\d]+(\d+)[^\d]+(\d+)/.exec(color||'');if(m)win='#'+[m[1],m[2],m[3]].map(v=>(+v).toString(16).padStart(2,'0')).join('');else if(/^#[0-9a-f]{6}$/i.test(color||''))win=color;
+    const pal=[win,win,mix(win,'#ffffff',.5),'#ffd34d','#ffffff',...PLAYER_COLORS];
+    const P=[],MAX=t===2?170:80;
+    const conf=(x,y,vx,vy)=>{if(P.length>=MAX)return;P.push({k:0,x,y,vx,vy,w:5+Math.random()*6,h:8+Math.random()*8,a:Math.random()*6.28,va:(Math.random()-.5)*.4,c:pal[Math.floor(Math.random()*pal.length)],life:1,dl:.0045+Math.random()*.004});};
+    const cannon=side=>{for(let i=0;i<(t===2?34:18);i++)conf(side?W+10:-10,H*.92,(side?-1:1)*(4+Math.random()*9),-(9+Math.random()*10));};
+    const shell=()=>{const x=W*(.15+Math.random()*.7),y=H*(.12+Math.random()*.33),c=pal[Math.floor(Math.random()*pal.length)],n=t===2?26:14;
+      for(let i=0;i<n;i++){if(P.length>=MAX+60)break;const a=(i/n)*6.2832,s=2.5+Math.random()*3.5;P.push({k:1,x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,c,life:1,dl:.016+Math.random()*.01});}};
+    cannon(0);cannon(1);
+    const t0=performance.now();let last=t0,nextRain=0,shells=0,nextShell=350,volley=false;
+    const frame=now=>{
+      if(!cv)return;const el=now-t0,dt=Math.min(2.2,(now-last)/16.67);last=now;
+      if(!volley&&el>650){volley=true;cannon(0);cannon(1);}
+      if(el<3600&&el>nextRain){nextRain=el+(t===2?55:120);conf(Math.random()*W,-12,(Math.random()-.5)*2,1.5+Math.random()*2);}
+      if(shells<6&&el>nextShell){shells++;nextShell=el+420+Math.random()*260;shell();}
+      ctx.clearRect(0,0,W,H);
+      for(let i=P.length-1;i>=0;i--){const p=P[i];
+        if(p.k===0){p.vy+=.3*dt;p.vx*=.992;p.x+=p.vx*dt+Math.sin(p.a)*.6;p.y+=p.vy*dt;p.a+=p.va*dt;if(p.vy>4)p.vy=4;p.life-=p.dl*dt;
+          if(p.life<=0||p.y>H+30){P.splice(i,1);continue;}
+          ctx.save();ctx.globalAlpha=Math.min(1,p.life*3);ctx.translate(p.x,p.y);ctx.rotate(p.a);ctx.fillStyle=p.c;const hh=p.h*Math.cos(p.a*1.7);ctx.fillRect(-p.w/2,-hh/2,p.w,hh);ctx.restore();
+        }else{p.vx*=.965;p.vy=p.vy*.965+.06*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=p.dl*dt;
+          if(p.life<=0){P.splice(i,1);continue;}
+          ctx.globalAlpha=p.life;ctx.fillStyle=p.c;ctx.beginPath();ctx.arc(p.x,p.y,2.2+p.life*1.6,0,6.2832);ctx.fill();ctx.globalAlpha=1;}
+      }
+      if(el<7500&&(P.length||el<4200))raf=requestAnimationFrame(frame);else winStop();
+    };
+    raf=requestAnimationFrame(frame);
+  }
+
+  // ── hook หลัง renderGrid ──
+  let wasEmpty=false;const stats={crit:0,warm:0,occ:0,total:0};
+  function afterRender(){
+    syncFlags();geo=null;
+    const g=document.getElementById('grid');if(!g||!STATE.cells)return;
+    let crit=0,warm=0,occ=0,total=0;
+    for(let r=0;r<STATE.size;r++){const row=STATE.cells[r];if(!row)continue;for(let c=0;c<row.length;c++){const ce=row[c];total++;if(ce.count>0){occ++;const cap=(STATE.catalyzed&&STATE.catalyzed[`${r},${c}`])?2:(ce.cap||4);const l=ce.count/cap;if(l>=.75)crit++;else if(l>=.5)warm++;}}}
+    stats.crit=crit;stats.warm=warm;stats.occ=occ;stats.total=total;
+    // เริ่มเกม (กระดานว่างครั้งแรก): ช่องเด้งเข้ามาเป็นคลื่นทแยง
+    const empty=occ===0;
+    if(empty&&!wasEmpty&&tier()>0&&canAnim){const cols=STATE.cols||STATE.size,ch=g.children;
+      for(let i=0;i<ch.length;i++)ch[i].animate([{transform:'scale(.35)',opacity:0},{transform:'scale(1)',opacity:1}],{duration:320,delay:(Math.floor(i/cols)+(i%cols))*14,easing:'cubic-bezier(.3,1.4,.5,1)',fill:'backwards'});}
+    wasEmpty=empty;
+    if(!warmed)setTimeout(prewarm,400);
+    if(api.onRender)api.onRender(stats);
+  }
+
+  // winner overlay: เริ่ม/หยุดพลุเองเมื่อ class เปลี่ยน (ครอบทั้งออฟไลน์และออนไลน์)
+  function init(){
+    const wo=document.getElementById('winner-overlay');let on=false;
+    if(wo&&window.MutationObserver)new MutationObserver(()=>{const s=wo.classList.contains('show');if(s&&!on){on=true;winStart(document.getElementById('winner-title').style.color);}else if(!s&&on){on=false;winStop();}}).observe(wo,{attributes:true,attributeFilter:['class']});
+    syncFlags();
+  }
+
+  const api={S,save,tier,syncFlags,clear,center,cell,G,flash,flashCell,emoji,number,arrow,ripple,flyOrbs,sparks,ring,
+    wave,land,chainReset,chainStep,shake,place,turn,cardCast,revealCards,HL,afterRender,init,stats,onRender:null,
+    setWaveSound(fn){waveSound=fn;},
+    setShake(v){S.shake=v;save();},setQuality(q){S.quality=q;save();syncFlags();},
+    get reduced(){return reduced;},get depth(){return depth;},
+    debug(){sweep(performance.now());return{live:busy.length,free:free.length,tier:tier(),autoLow,autoLite,depth};}};
+  return api;
+})();
+
+// ลูกบอลในช่อง: 1–3 ลูกหมุนวนรอบกัน, ใกล้ระเบิด (≥75% ของความจุ) หมุนเร็ว + สั่นถี่ + วงแหวนเตือน (class crit/warm มาจาก paintCell)
+const ORB_BG=PLAYER_COLORS.map(col=>{const p=[1,3,5].map(i=>parseInt(col.slice(i,i+2),16));const dk='#'+p.map(v=>Math.round(v*.62).toString(16).padStart(2,'0')).join('');return `radial-gradient(circle at 50% 42%,rgba(255,255,255,.92) 0%,rgba(255,255,255,.5) 12%,${col} 46%,${dk} 100%)`;});
+function buildOrbs(el,cell,cellSize,r,c,hideCount,cap){
+  const old=el.querySelector('.orbs-wrap');if(old)old.remove();
+  if(!(cell.count>0&&cell.owner>=0))return;
+  const color=PLAYER_COLORS[cell.owner],orbSize=Math.max(6,Math.floor(cellSize*.26));
+  const wrap=document.createElement('div');wrap.className='orbs-wrap';
+  const label=(txt,col)=>{const l=document.createElement('div');l.style.cssText=`font-size:${Math.max(8,orbSize*.7)}px;font-family:'Fredoka One',cursive;color:${col};font-weight:900;pointer-events:none;`;l.textContent=txt;return l;};
+  const mk=(bg,glow)=>{const o=document.createElement('div');o.className='orb';o.style.width=o.style.height=orbSize+'px';o.style.background=bg;o.style.boxShadow=glow?`0 0 ${orbSize*.5}px ${color}66`:'none';return o;};
+  if(hideCount){ // Eclipse: ซ่อนจำนวนลูกบอลของศัตรู
+    wrap.appendChild(mk('#888',false));wrap.appendChild(label('?','#888'));el.appendChild(wrap);return;
+  }
+  if(cell.count<=3){
+    const n=cell.count,crit=cell.count/(cap||4)>=.75;
+    const R=n===1?0:orbSize*(n===2?.62:.74),per=n===1?2.8:crit?1.15:n===2?4.2:3.2;
+    const spin=document.createElement('div');spin.className='orbs-spin n'+n;
+    // เฟสอิงนาฬิกากลาง → ช่องที่ถูกสร้างใหม่หมุนต่อจากจังหวะเดิม ไม่กระตุก
+    const ph=(performance.now()/1000+((r*7+c*13)%10)*per/10)%(per*2);
+    spin.style.setProperty('--sp',per+'s');spin.style.setProperty('--ph',(-ph).toFixed(2)+'s');
+    const m=-orbSize/2;
+    for(let k=0;k<n;k++){const a=(k/n)*6.2832-1.5708,o=mk(ORB_BG[cell.owner]||color,true);o.style.margin=`${m}px 0 0 ${m}px`;if(R)o.style.transform=`translate(${(Math.cos(a)*R).toFixed(1)}px,${(Math.sin(a)*R).toFixed(1)}px)`;spin.appendChild(o);}
+    wrap.classList.add('orbit');wrap.appendChild(spin);
+  }else{
+    const show=Math.min(cell.count,8);
+    for(let k=0;k<show;k++)wrap.appendChild(mk(color,true));
+    if(cell.count>8)wrap.appendChild(label(cell.count,color));
+  }
+  el.appendChild(wrap);
+}
+// อัปเดตช่องเดียวแบบ diff: className / inline style / ลูกบอล จะถูกเขียนใหม่เฉพาะเมื่อค่าที่ควรเป็นต่างจากของเดิม
+// (ผลลัพธ์เท่ากับสร้างช่องใหม่ทุกครั้งเหมือนเดิม แต่ช่องที่ไม่เปลี่ยนไม่ถูกแตะ แอนิเมชันจึงเล่นต่อเนื่อง)
+function cellTargetClass(r,c){
+  if(!(selectedHandCard||targetingCard))return '';
+  const aCard=targetingCard||(selectedHandCard&&STATE.hands[selectedHandCard.playerIdx][selectedHandCard.cardIdx]);
+  const pi=targetingCard?targetData.playerIdx:selectedHandCard?selectedHandCard.playerIdx:STATE.current;
+  if(!(aCard&&aCard.needTarget))return '';
+  const cellOwner=STATE.cells[r][c].owner,cellCount=STATE.cells[r][c].count;
+  let valid=false,type='own';
+  if(aCard.id==='l5'){valid=true;type='own';}
+  else if(aCard.targetSelf){
+    const emptyOk=['c1','c2','c4','c5','c6','c8','u1','u7','r1','r2','e1','e2','u2','u3'].includes(aCard.id);
+    if(emptyOk) valid=(cellOwner===pi||cellOwner===-1);
+    else valid=(cellOwner===pi&&cellCount>0);
+    type='own';
+  } else {
+    valid=(cellOwner!==pi&&cellOwner!==-1&&cellCount>0&&STATE.shielded[r][c]<=0);
+    type='enemy';
+  }
+  // ไฮไลต์ช่องแรกที่เลือกใน twoTarget
+  if(targetingCard&&targetingCard.twoTarget&&r===targetData.r1&&c===targetData.c1)return ' first-picked';
+  return valid?(type==='own'?' target-own':' target-enemy'):' target-inactive';
+}
+function paintCell(div,r,c,cellSize){
+  const cell=STATE.cells[r][c],key=`${r},${c}`;
+  let cls='cell'+cellTargetClass(r,c);
+  if(STATE.shielded[r][c]>0)cls+=' shielded';
+  const bomb=STATE.timeBombs.find(b=>b.r===r&&b.c===c);if(bomb){cls+=' timed';const t=`💣${bomb.turnsLeft}`;if(div.dataset.timer!==t)div.dataset.timer=t;}
+  if(STATE.severed&&STATE.severed[key]>0)cls+=' severed';
+  if(STATE.pinned&&(STATE.pinned[key]||0)>0)cls+=' pinned';
+  if(STATE.voidCells&&STATE.voidCells[key]>0)cls+=' voided';
+  const own=cell.count>0&&cell.owner>=0;
+  const hide=own&&STATE.eclipse>0&&cell.owner!==STATE.current; // Eclipse: ซ่อนจำนวนลูกบอลของศัตรู
+  const cap=(STATE.catalyzed&&STATE.catalyzed[key])?2:(cell.cap||4);
+  if(own&&!hide){const lvl=cell.count/cap;if(lvl>=.75)cls+=' crit';else if(lvl>=.5)cls+=' warm';}
+  if(div.className!==cls)div.className=cls;
+  const hex=own?PLAYER_COLORS[cell.owner]:null;
+  if(hex)div._pc=hex; // จำสีเจ้าของล่าสุดไว้ให้แสงวาบตอนระเบิด (ช่องว่างแล้วก็ยังวาบสีเดิม)
+  const css=`width:${cellSize}px;height:${cellSize}px;`+(hex?`background:${hexToRgba(hex,0.22)};box-shadow:0 4px 0 ${hexToRgba(hex,0.25)};`:'')+(div._pc?`--pc:${div._pc};`:'')+`--j:${(cellSize/40).toFixed(2)}px;`;
+  if(div._c!==css||div.style.cssText!==div._s){div.style.cssText=css;div._c=css;div._s=div.style.cssText;}
+  const sig=own?`${cell.owner}|${cell.count}|${hide?1:0}|${cap}|${cellSize}`:'';
+  if(div._o!==sig||(!!sig)!==(!!div.firstElementChild)){buildOrbs(div,cell,cellSize,r,c,hide,cap);div._o=sig;}
+}
 
 let sfxStyle='retro';
 const SFX=(()=>{
@@ -1275,6 +1991,7 @@ function setupPills(gid,key){
 }
 // ══ MENU NAVIGATION ══
 function showScreen(id){
+  if(id==='main-menu')FX.clear();
   ['main-menu','solo-screen','multi-screen','settings-screen','online-screen','room-screen'].forEach(s=>{
     const el=document.getElementById(s);if(!el)return;
     if(s==='main-menu') el.style.display=s===id?'flex':'none';
@@ -1463,6 +2180,15 @@ document.getElementById('sfx-pills').querySelectorAll('.pill').forEach(p=>{
   });
 });
 
+// ตั้งค่าเอฟเฟกต์ (FX จำค่าไว้ใน localStorage)
+[['shake-pills',v=>FX.setShake(parseFloat(v)),()=>String(FX.S.shake)],['fxq-pills',v=>FX.setQuality(v),()=>FX.S.quality]].forEach(([gid,set,get])=>{
+  const pills=document.getElementById(gid).querySelectorAll('.pill');
+  const sync=()=>pills.forEach(p=>p.classList.toggle('active',p.dataset.val===get()));
+  pills.forEach(p=>p.addEventListener('click',()=>{set(p.dataset.val);sync();SFX.select();if(gid==='shake-pills')FX.shake(7,320,document.querySelector('#settings-screen .settings-panel'));}));
+  sync();
+});
+if(FX.reduced)document.getElementById('fx-rm-note').style.display='block';
+
 document.getElementById('theme-swatches').querySelectorAll('.swatch').forEach(s=>{
   s.addEventListener('click',()=>{
     document.querySelectorAll('.swatch').forEach(x=>x.classList.remove('active'));
@@ -1516,6 +2242,7 @@ function draw3UniqueCards(){const chosen=[];const useKey=STATE&&STATE.keyActive>
 
 function startGame(){
   applyTheme(cfg.theme);
+  FX.clear();
   animating=false;selectedHandCard=null;targetingCard=null;pendingPickPlayer=-1;rerollsLeft=999;vfxFinishTime=0;
   if(STATE)STATE._dead=false;
   document.getElementById('blocker').classList.remove('on');
@@ -1646,24 +2373,12 @@ function renderGridHighlight(){
 }
 
 function updateCellDisplay(r,co){
-  const el=document.querySelector(`.cell[data-r="${r}"][data-c="${co}"]`);
-  if(!el)return;
-  const cell=STATE.cells[r][co],cellSize=STATE._cellSize||40;
-  const hex=cell.owner>=0&&cell.count>0?PLAYER_COLORS[cell.owner]:null;
-  el.style.background=hex?hexToRgba(hex,0.22):'';
-  el.style.boxShadow=hex?`0 4px 0 ${hexToRgba(hex,0.25)}`:'';
-  let wrap=el.querySelector('.orbs-wrap');
-  if(cell.count>0&&cell.owner>=0){
-    if(!wrap){wrap=document.createElement('div');wrap.className='orbs-wrap';el.appendChild(wrap);}
-    wrap.innerHTML='';
-    const orbSize=Math.max(6,Math.floor(cellSize*.26)),color=PLAYER_COLORS[cell.owner];
-    const show=Math.min(cell.count,8);
-    for(let k=0;k<show;k++){const orb=document.createElement('div');orb.className='orb';orb.style.width=orb.style.height=orbSize+'px';orb.style.background=color;orb.style.boxShadow=`0 0 ${orbSize*.5}px ${color}66`;wrap.appendChild(orb);}
-    if(cell.count>8){const lbl=document.createElement('div');lbl.style.cssText=`font-size:${Math.max(8,orbSize*.7)}px;font-family:'Fredoka One',cursive;color:${color};font-weight:900;pointer-events:none;`;lbl.textContent=cell.count;wrap.appendChild(lbl);}
-  } else if(wrap){wrap.remove();}
+  const el=FX.cell(r,co);
+  if(el)paintCell(el,r,co,STATE._cellSize||40);
 }
 function renderGrid(forceResize=false){
   const g=document.getElementById('grid'),size=STATE.size;
+  if(!size||!STATE.cells)return;
   // คำนวณ cellSize ใหม่เฉพาะตอน forceResize หรือยังไม่มี grid
   const cols2=STATE.cols||size;
   if(forceResize||!STATE._cellSize||STATE._gridSize!==size||STATE._gridCols!==cols2){
@@ -1680,59 +2395,16 @@ function renderGrid(forceResize=false){
     STATE._gridSize=size;STATE._gridCols=cols2;
   }
   const cellSize=STATE._cellSize;
-  const gridCols=STATE.cols||size;g.style.gridTemplateColumns=`repeat(${gridCols},${cellSize}px)`;g.innerHTML='';
-  const renderCols=STATE.cols||size;for(let r=0;r<size;r++){
-    for(let c=0;c<renderCols;c++){
-      const cell=STATE.cells[r][c];const div=document.createElement('div');let cls='cell';
-      if(selectedHandCard||targetingCard){
-        const aCard=targetingCard||(selectedHandCard&&STATE.hands[selectedHandCard.playerIdx][selectedHandCard.cardIdx]);
-        const pi=targetingCard?targetData.playerIdx:selectedHandCard?selectedHandCard.playerIdx:STATE.current;
-        if(aCard&&aCard.needTarget){
-          const cellOwner=STATE.cells[r][c].owner;
-          const cellCount=STATE.cells[r][c].count;
-          let valid=false,type='own';
-          if(aCard.id==='l5'){valid=true;type='own';}
-          else if(aCard.targetSelf){
-            const emptyOk=['c1','c2','c4','c5','c6','c8','u1','u7','r1','r2','e1','e2','u2','u3'].includes(aCard.id);
-            if(emptyOk) valid=(cellOwner===pi||cellOwner===-1);
-            else valid=(cellOwner===pi&&cellCount>0);
-            type='own';
-          } else {
-            valid=(cellOwner!==pi&&cellOwner!==-1&&cellCount>0&&STATE.shielded[r][c]<=0);
-            type='enemy';
-          }
-          // ไฮไลต์ช่องแรกที่เลือกใน twoTarget
-          if(targetingCard&&targetingCard.twoTarget&&r===targetData.r1&&c===targetData.c1){
-            cls+=' first-picked';
-          } else {
-            if(valid) cls+=type==='own'?' target-own':' target-enemy';
-            else cls+=' target-inactive';
-          }
-        }
-      }
-      if(STATE.shielded[r][c]>0)cls+=' shielded';
-      const bomb=STATE.timeBombs.find(b=>b.r===r&&b.c===c);if(bomb){cls+=' timed';div.dataset.timer=`💣${bomb.turnsLeft}`;}
-      if(STATE.severed&&STATE.severed[`${r},${c}`]>0)cls+=' severed';
-      if(STATE.pinned&&(STATE.pinned[`${r},${c}`]||0)>0)cls+=' pinned';
-      if(STATE.voidCells&&STATE.voidCells[`${r},${c}`]>0)cls+=' voided';
-      div.className=cls;div.style.width=div.style.height=cellSize+'px';div.dataset.r=r;div.dataset.c=c;
-      if(cell.owner>=0&&cell.count>0){const hex=PLAYER_COLORS[cell.owner];div.style.background=hexToRgba(hex,0.22);div.style.boxShadow=`0 4px 0 ${hexToRgba(hex,0.25)}`;}
-
-      if(cell.count>0&&cell.owner>=0){
-        const wrap=document.createElement('div');wrap.className='orbs-wrap';
-        const orbSize=Math.max(6,Math.floor(cellSize*.26)),color=PLAYER_COLORS[cell.owner];
-        // Eclipse: ซ่อนจำนวนลูกบอลของศัตรู
-        const hideCount=STATE.eclipse>0&&cell.owner!==STATE.current;
-        const show=hideCount?1:Math.min(cell.count,8);
-        for(let k=0;k<show;k++){const orb=document.createElement('div');orb.className='orb';orb.style.width=orb.style.height=orbSize+'px';orb.style.background=hideCount?'#888':color;orb.style.boxShadow=hideCount?'none':`0 0 ${orbSize*.5}px ${color}66`;wrap.appendChild(orb);}
-        if(!hideCount&&cell.count>8){const lbl=document.createElement('div');lbl.style.cssText=`font-size:${Math.max(8,orbSize*.7)}px;font-family:'Fredoka One',cursive;color:${color};font-weight:900;pointer-events:none;`;lbl.textContent=cell.count;wrap.appendChild(lbl);}
-        if(hideCount){const q=document.createElement('div');q.style.cssText=`font-size:${Math.max(8,orbSize*.7)}px;font-family:'Fredoka One',cursive;color:#888;font-weight:900;pointer-events:none;`;q.textContent='?';wrap.appendChild(q);}
-        if(hideCount){const q=document.createElement('div');q.style.cssText=`font-size:${Math.max(8,orbSize*.7)}px;font-family:'Fredoka One',cursive;color:#888;font-weight:900;pointer-events:none;`;q.textContent='?';wrap.appendChild(q);}
-        div.appendChild(wrap);
-      }
-      div.addEventListener('click',handleCellClick);g.appendChild(div);
-    }
+  // DOM ของช่องถูกสร้างใหม่เฉพาะเมื่อขนาดกระดานเปลี่ยน — ปกติ diff ทีละช่อง (paintCell) ช่องที่ไม่เปลี่ยนจึงไม่ถูกแตะ
+  const total=size*cols2;
+  if(g._n!==total||g._cs!==cellSize||g._cols!==cols2||g.childElementCount!==total){
+    g.style.gridTemplateColumns=`repeat(${cols2},${cellSize}px)`;g.innerHTML='';
+    for(let r=0;r<size;r++)for(let c=0;c<cols2;c++){const div=document.createElement('div');div.className='cell';div.dataset.r=r;div.dataset.c=c;div.addEventListener('click',handleCellClick);g.appendChild(div);}
+    g._n=total;g._cs=cellSize;g._cols=cols2;
   }
+  const ch=g.children;
+  for(let r=0;r<size;r++)for(let c=0;c<cols2;c++)paintCell(ch[r*cols2+c],r,c,cellSize);
+  FX.afterRender();
 }
 
 function updateHandHighlight(){
@@ -1887,8 +2559,7 @@ function handleCellClick(){
   if(isFirstPlace){showToast('🎯 วางครั้งแรก! +3 ลูกบอล');SFX.firstPlace();}else{SFX.place();}
 
   renderGrid();
-  const placedEl=document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
-  if(placedEl){placedEl.classList.add('orb-placed');setTimeout(()=>placedEl.classList.remove('orb-placed'),400);}
+  FX.chainReset();FX.place(r,c,cur,isFirstPlace);
   processExplosions(()=>{if(!tickTimeBombs()){checkEliminations();if(!checkWin())endTurn();}});
 }
 
@@ -1918,34 +2589,12 @@ function isValidTarget(cardDef,r,c,playerIdx){
 function showCardAnnounce(cardDef){return Promise.resolve();}
 function showCardResult(emoji,text){return Promise.resolve();}
 
-function getCellCenter(r,c){const gWrap=document.getElementById('grid-wrap'),rect=gWrap.getBoundingClientRect();const cells=document.querySelectorAll('.cell');if(!cells.length)return{x:window.innerWidth/2,y:window.innerHeight/2};const cellSize=parseFloat(cells[0].style.width),gap=5,pad=10;return{x:rect.left+pad+c*(cellSize+gap)+cellSize/2,y:rect.top+pad+r*(cellSize+gap)+cellSize/2};}
+function getCellCenter(r,c){return FX.center(r,c);}
 
-// แสดง emoji ลอยบนช่อง
-function spawnFloatingNumber(r,c,value,opts={}){
-  const p=getCellCenter(r,c);
-  const el=document.createElement('div');
-  const color=opts.color||(value>0?'#88ffaa':'#ff6677');
-  const text=(value>0?'+':'')+value;
-  el.style.cssText=`position:fixed;left:${p.x}px;top:${p.y}px;font-family:'Fredoka One',cursive;font-size:${opts.size||'1.1rem'};font-weight:900;color:${color};text-shadow:0 2px 8px rgba(0,0,0,0.5),0 0 12px ${color};pointer-events:none;z-index:1200;transform:translate(-50%,-50%);animation:floatNumber ${opts.dur||0.8}s ease-out forwards;animation-delay:${opts.delay||0}s;opacity:0;`;
-  el.textContent=text;document.body.appendChild(el);
-  setTimeout(()=>el.remove(),(opts.dur||0.8)*1000+(opts.delay||0)*1000+100);
-}
-function spawnCellEmoji(r,c,emoji,opts={}) {
-  const p=getCellCenter(r,c);const el=document.createElement('div');
-  el.style.cssText=`position:fixed;left:${p.x}px;top:${p.y}px;font-size:${opts.size||'1.6rem'};pointer-events:none;z-index:900;transform:translate(-50%,-50%);animation:cellEmojiPop ${opts.dur||0.7}s ease-out forwards;animation-delay:${opts.delay||0}s;opacity:0;`;
-  el.textContent=emoji;document.body.appendChild(el);
-  setTimeout(()=>el.remove(),(opts.dur||0.7)*1000+(opts.delay||0)*1000+100);
-}
-// ลูกศรพุ่งจากช่องหนึ่งไปอีกช่อง
-function spawnArrow(fromR,fromC,toR,toC,emoji='🌀',opts={}){
-  const fp=getCellCenter(fromR,fromC),tp=getCellCenter(toR,toC);
-  const dx=tp.x-fp.x,dy=tp.y-fp.y;
-  const angle=Math.atan2(dy,dx)*180/Math.PI;
-  const el=document.createElement('div');
-  el.style.cssText=`position:fixed;left:${fp.x}px;top:${fp.y}px;font-size:${opts.size||'1.4rem'};pointer-events:none;z-index:901;transform:translate(-50%,-50%) rotate(${angle}deg);animation:arrowFly 0.55s cubic-bezier(.4,0,.6,1) forwards;animation-delay:${opts.delay||0}s;opacity:0;--tx:${dx}px;--ty:${dy}px;`;
-  el.textContent=emoji;document.body.appendChild(el);
-  setTimeout(()=>el.remove(),700+(opts.delay||0)*1000);
-}
+// helper VFX เดิม — ใช้ element จาก pool ของ FX (animate เฉพาะ transform/opacity)
+function spawnFloatingNumber(r,c,value,opts={}){FX.number(r,c,value,opts);}
+function spawnCellEmoji(r,c,emoji,opts={}){FX.emoji(r,c,emoji,opts);}
+function spawnArrow(fromR,fromC,toR,toC,emoji='🌀',opts={}){FX.arrow(fromR,fromC,toR,toC,emoji,opts);}
 
 async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
   const _onlineMode=!!(window._getOnlineMode&&window._getOnlineMode());
@@ -1953,28 +2602,9 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
   const pos=(r!==undefined&&c!==undefined)?getCellCenter(r,c):{x:window.innerWidth/2,y:window.innerHeight/2};
   const cx=window.innerWidth/2,cy=window.innerHeight/2;
 
-  // helper flash ช่อง
-  function flashScreen(color,dur=300){
-    const el=document.createElement('div');
-    el.style.cssText=`position:fixed;inset:0;background:${color};pointer-events:none;z-index:800;`;
-    document.body.appendChild(el);
-    el.animate([{opacity:0.7},{opacity:0}],{duration:dur,easing:'ease-out'}).onfinish=()=>el.remove();
-  }
-  function flashCell(ro,co,color,delayMs=0,dur=400){
-    setTimeout(()=>{
-      const el=document.querySelector(`.cell[data-r="${ro}"][data-c="${co}"]`);if(!el)return;
-      const cell=STATE.cells[ro][co];
-      const origBg=cell&&cell.owner>=0&&cell.count>0?hexToRgba(PLAYER_COLORS[cell.owner],0.22):'';
-      el.style.transition='box-shadow .06s, background .06s';
-      el.style.boxShadow=`0 0 0 3px ${color}, 0 0 24px ${color}, inset 0 0 18px ${color}`;
-      el.style.background=color.replace(/[\d.]+\)$/,'0.35)');
-      setTimeout(()=>{
-        el.style.transition='box-shadow .4s, background .4s';
-        el.style.boxShadow='';
-        el.style.background=origBg;
-        setTimeout(()=>{el.style.transition='';el.style.background=origBg;},400);
-      },dur);
-    },delayMs);}
+  // helper flash — ชั้น overlay ของ FX (animate เฉพาะ opacity ไม่แตะ box-shadow/background ของช่อง)
+  const flashScreen=(color,dur=300)=>FX.flash(color,dur);
+  const flashCell=(ro,co,color,delayMs=0,dur=400)=>FX.flashCell(ro,co,color,delayMs,dur);
 
   switch(cardId){
     // ── c1 Overload: +2 flash ──
@@ -2010,7 +2640,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
     case 'c5':case 'u8':case 'u2':(vfxData.moves||[]).forEach((mv,i)=>{spawnArrow(mv.from[0],mv.from[1],mv.to[0],mv.to[1],'🌀',{delay:i*0.1});flashCell(mv.to[0],mv.to[1],'#cc88ff88',i*100+300);});await delay(700);break;
 
     // ── c6 Attract / r2 Black Hole: ดึงเข้า ──
-    case 'c6':case 'r2':{const to=vfxData.to||[r,c];(vfxData.pulled||[]).forEach(([pr,pc],i)=>{spawnArrow(pr,pc,to[0],to[1],'🧲',{delay:i*0.07,size:'1.3rem'});flashCell(pr,pc,'#ffaa4488',i*70);if(_onlineMode){setTimeout(()=>{const el=document.querySelector(`.cell[data-r="${pr}"][data-c="${pc}"]`);if(el){el.style.transition='opacity .3s';el.style.opacity='0.15';}},i*70+350);}});spawnCellEmoji(to[0],to[1],'⭕',{size:'2rem',delay:0.4});await delay(800);}break;
+    case 'c6':case 'r2':{const to=vfxData.to||[r,c];if(cardId==='r2')FX.HL.blackhole(to[0],to[1]);(vfxData.pulled||[]).forEach(([pr,pc],i)=>{spawnArrow(pr,pc,to[0],to[1],'🧲',{delay:i*0.07,size:'1.3rem'});flashCell(pr,pc,'#ffaa4488',i*70);if(_onlineMode){setTimeout(()=>{const el=document.querySelector(`.cell[data-r="${pr}"][data-c="${pc}"]`);if(el){el.style.transition='opacity .3s';el.style.opacity='0.15';}},i*70+350);}});spawnCellEmoji(to[0],to[1],'⭕',{size:'2rem',delay:0.4});await delay(800);}break;
 
     // ── c7 Poke: กดระเบิด ──
     case 'c7':spawnCellEmoji(r,c,'💢',{size:'2rem'});flashCell(r,c,'#ff888888');await delay(400);break;
@@ -2078,6 +2708,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
     case 'r3':{
       // แสดง VFX บนผู้เล่นที่ถูก Freeze
       const frozenPi = vfxData.frozenPlayer ?? -1;
+      FX.HL.freeze(frozenPi);
       spawnCellEmoji(r||0,c||0,'🧊',{size:'2.5rem'});
       flashScreen('#88eeff33', 600);
       // Flash score card ของผู้เล่นที่โดน
@@ -2291,6 +2922,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
     // ── l2 Big Bang ──
     // ── l2 Nuclear ── ระเบิดออกจากกลางกระดาน ripple
     case 'l2':{
+      FX.HL.nuclear();
       const nEl=document.createElement('div');nEl.className='annihilate-vfx';
       nEl.style.cssText=`left:50vw;top:50vh;font-size:8rem;filter:drop-shadow(0 0 40px #ffaa00) drop-shadow(0 0 80px #ff6600);animation:singularityPulse 1.4s ease-out forwards;`;
       nEl.textContent='☢️';document.body.appendChild(nEl);
@@ -2386,6 +3018,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
 
     // ── m2 Big Bang ──
     case 'm2':{
+      FX.HL.bigbang();
       const bbEl=document.createElement('div');bbEl.className='annihilate-vfx';
       bbEl.style.cssText=`left:50vw;top:50vh;font-size:8rem;filter:drop-shadow(0 0 50px #ff6600) drop-shadow(0 0 100px #ff0000);animation:singularityPulse 1.6s ease-out forwards;`;
       bbEl.textContent='🌌';document.body.appendChild(bbEl);
@@ -2567,6 +3200,7 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
       await delay((vfxData.invaded||[]).length*120+700);
     }break;
     case 'l5':{
+      FX.HL.rebirth(vfxData.target?vfxData.target[0]:r,vfxData.target?vfxData.target[1]:c);
       const r5el=document.createElement('div');r5el.className='annihilate-vfx';
       r5el.style.cssText=`left:50vw;top:50vh;font-size:8rem;filter:drop-shadow(0 0 50px #00ffcc) drop-shadow(0 0 100px #00aa88);animation:singularityPulse 1.6s ease-out forwards;`;
       r5el.textContent='🔮';document.body.appendChild(r5el);
@@ -2625,6 +3259,7 @@ async function executeCard(cardDef,playerIdx,cardIdx,targets){
   SFX.card(cardDef.rarity);
   SFX.cardCat(cardDef.cat);
   SFX.cardSpecial(cardDef.id);
+  FX.chainReset();FX.cardCast(cardDef,cur);
   const{r,c,r2,c2}=targets,size=STATE.size,cols=STATE.cols||STATE.size;let resultText='';let vfxData={};
   switch(cardDef.id){
     case 'c1':if(STATE.cells[r][c].owner===cur||STATE.cells[r][c].owner===-1){STATE.cells[r][c].count+=2;STATE.cells[r][c].owner=cur;resultText='+2 ลูกบอล!';}break;
@@ -2904,7 +3539,7 @@ function showCardPickOverlay(playerIdx,cards,rollsLeft=999){
   if(isFull){
     // มือเต็ม — กด 1 ทีดู desc แล้วค่อยกดยืนยันทิ้ง
     STATE.hands[playerIdx].forEach((cardInHand,ci)=>{
-      const el=document.createElement('div');el.className='pick-card discard-mode';el.style.animationDelay=(ci*.07)+'s';
+      const el=document.createElement('div');el.className='pick-card discard-mode';el.dataset.rarity=cardInHand.rarity;el.style.animationDelay=(ci*.07)+'s';
       el.innerHTML=`<div class="pc-emoji">${cardInHand.emoji}</div><div class="pc-name">${cardInHand.name}</div><div class="pc-rarity ${RARITY_COLORS[cardInHand.rarity]}">${RARITY_LABEL[cardInHand.rarity]}</div><div class="pc-desc">${cardInHand.desc}</div><button class="pc-confirm">🗑️ ยืนยันทิ้ง</button>`;
       el.addEventListener('click',(e)=>{
         if(e.target.classList.contains('pc-confirm'))return; // ไม่ใช้ปุ่มแล้ว
@@ -2926,13 +3561,14 @@ function showCardPickOverlay(playerIdx,cards,rollsLeft=999){
   } else {
     // รับการ์ด — กดปุ๊บได้เลย เหมือนเดิม
     cards.forEach((def,idx)=>{
-      const el=document.createElement('div');el.className='pick-card';el.style.animationDelay=(idx*.07)+'s';
+      const el=document.createElement('div');el.className='pick-card';el.dataset.rarity=def.rarity;el.style.animationDelay=(idx*.07)+'s';
       el.innerHTML=`<div class="pc-emoji">${def.emoji}</div><div class="pc-name">${def.name}</div><div class="pc-rarity ${RARITY_COLORS[def.rarity]}">${RARITY_LABEL[def.rarity]}</div><div class="pc-desc">${def.desc}</div>`;
       el.addEventListener('click',()=>pickCard(def));
       row.appendChild(el);
     });
   }
   document.getElementById('card-pick-overlay').classList.add('show');
+  if(!isFull)FX.revealCards(row);
 }
 function pickCard(def){if(pendingPickPlayer<0)return;STATE.hands[pendingPickPlayer].push({...def});SFX.pickCard();showToast(`✅ ${def.emoji} ${def.name} เพิ่มในมือ!`);closePick();}
 document.getElementById('reroll-btn').addEventListener('click',()=>{
@@ -3015,6 +3651,7 @@ async function doBotPlace(playerIdx,size){
   STATE.cells[r][c].count+=hasOwnCells?1:3;
   STATE.cells[r][c].owner=playerIdx;
   renderGrid();
+  FX.chainReset();FX.place(r,c,playerIdx,!hasOwnCells);
   processExplosions(()=>{if(!tickTimeBombs()){checkEliminations();if(!checkWin())endTurn();}});
 }
 
@@ -3051,29 +3688,14 @@ function explodeWave(cells){
         STATE.cells[nr][nc].count++;STATE.cells[nr][nc].owner=owner2;
       });
     });
-    changes.forEach(([r,c,owner])=>{
-      const allNbs=neighbors(r,c,STATE.size,STATE.cols);
-      const srcEl=document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
-      if(srcEl){srcEl.classList.add('bursting');setTimeout(()=>srcEl.classList.remove('bursting'),460);}
-      spawnRipple(r,c,owner);spawnFlyingOrbs(r,c,owner,allNbs);
-    });
-    if(changes.length>=4)SFX.bigChain();else SFX.explode(changes.length);
-    setTimeout(()=>{renderGrid();changes.forEach(([r2,c2,owner2])=>{neighbors(r2,c2,STATE.size,STATE.cols).forEach(([nr,nc])=>{const el=document.querySelector(`.cell[data-r="${nr}"][data-c="${nc}"]`);if(el){el.classList.add('explosion-flash');setTimeout(()=>el.classList.remove('explosion-flash'),200);}});});setTimeout(resolve,STEP_DELAY*.55);},STEP_DELAY*.45);
+    // เอฟเฟกต์ + เสียงของ wave นี้ (แรงขึ้นตามลำดับใน chain) — ไม่กระทบจังหวะ STEP_DELAY
+    const list=changes.map(([r,c,owner])=>({r,c,owner}));
+    FX.wave(list,FX.chainStep());
+    setTimeout(()=>{renderGrid();FX.land(list);setTimeout(resolve,STEP_DELAY*.55);},STEP_DELAY*.45);
   });
 }
-function spawnFlyingOrbs(r,c,playerIdx,nbs){
-  const gWrap=document.getElementById('grid-wrap'),rect=gWrap.getBoundingClientRect();const cells=document.querySelectorAll('.cell');if(!cells.length)return;
-  const cellSize=parseFloat(cells[0].style.width),gap=5,pad=10;const srcX=rect.left+pad+c*(cellSize+gap)+cellSize/2,srcY=rect.top+pad+r*(cellSize+gap)+cellSize/2;
-  const color=PLAYER_COLORS[playerIdx]||'#fff',orbSize=Math.max(6,Math.floor(cellSize*.26));
-  nbs.forEach(([nr,nc])=>{const dstX=rect.left+pad+nc*(cellSize+gap)+cellSize/2,dstY=rect.top+pad+nr*(cellSize+gap)+cellSize/2;const tx=dstX-srcX,ty=dstY-srcY;const orb=document.createElement('div');orb.style.cssText=`position:fixed;width:${orbSize}px;height:${orbSize}px;border-radius:50%;background:${color};box-shadow:0 0 ${orbSize*.7}px ${color};left:${srcX-orbSize/2}px;top:${srcY-orbSize/2}px;pointer-events:none;z-index:1000;--tx:${tx}px;--ty:${ty}px;animation:orbFly 0.38s cubic-bezier(.4,0,.6,1) forwards;`;document.body.appendChild(orb);setTimeout(()=>orb.remove(),420);});
-}
-function spawnRipple(r,c,playerIdx){
-  const gWrap=document.getElementById('grid-wrap'),rect=gWrap.getBoundingClientRect();const cells=document.querySelectorAll('.cell');if(!cells.length)return;
-  const cellSize=parseFloat(cells[0].style.width),gap=5,pad=10;const x=rect.left+pad+c*(cellSize+gap)+cellSize/2,y=rect.top+pad+r*(cellSize+gap)+cellSize/2;
-  const rip=document.createElement('div');rip.className='ripple-particle';const color=PLAYER_COLORS[playerIdx]||'#fff';
-  rip.style.cssText=`left:${x-cellSize/2}px;top:${y-cellSize/2}px;width:${cellSize}px;height:${cellSize}px;background:${hexToRgba(color,.3)};border:3px solid ${color};`;
-  document.body.appendChild(rip);setTimeout(()=>rip.remove(),620);
-}
+function spawnFlyingOrbs(r,c,playerIdx,nbs){FX.flyOrbs(r,c,playerIdx,nbs);}
+function spawnRipple(r,c,playerIdx){FX.ripple(r,c,playerIdx);}
 
 function tickTimeBombs(){SFX.timeBomb();
   const cur=STATE.current; // เทิร์นที่เพิ่งเล่น (justPlayed ก่อน nextTurn)
@@ -3167,6 +3789,7 @@ function updateTurnLabel(){
   }
   const gWrap=document.getElementById('grid-wrap');
   if(gWrap) gWrap.style.boxShadow=`0 8px 32px rgba(0,0,0,0.2), 0 0 0 3px ${color}, 0 0 24px ${color}66`;
+  FX.turn(cur);
 }
 
 function goMenu(){
@@ -3205,6 +3828,7 @@ document.getElementById('menu-exit-btn').addEventListener('click',()=>{
 document.getElementById('winner-replay').addEventListener('click',()=>{if(window._getOnlineMode&&window._getOnlineMode())return;document.getElementById('winner-overlay').classList.remove('show');startGame();});
 document.getElementById('winner-menu').addEventListener('click',()=>{if(window._getOnlineMode&&window._getOnlineMode())return;goMenu();});
 window.addEventListener('resize',()=>{if(document.getElementById('game-screen').style.display!=='none'){STATE._cellSize=null;renderGrid(true);}});
+FX.init();
 </script>
 
 <script src="/online.js"></script>

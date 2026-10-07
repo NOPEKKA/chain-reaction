@@ -109,6 +109,7 @@ function showGroupPickOverlay(cards, handSize, timeLimit, mySlotName) {
   cards.forEach((def, idx) => {
     const el = document.createElement('div');
     el.className = 'pick-card';
+    el.dataset.rarity = def.rarity;
     el.style.animationDelay = (idx * 0.07) + 's';
     el.innerHTML = `
       <div class="pc-emoji">${def.emoji}</div>
@@ -139,6 +140,7 @@ function showGroupPickOverlay(cards, handSize, timeLimit, mySlotName) {
     row.appendChild(el);
   });
   ov.appendChild(row);
+  FX.revealCards(row);
 
 
 
@@ -176,27 +178,14 @@ async function playExplosionWavesIncremental(waves, finalState) {
   const rows = STATE.size || finalState.rows || 8;
   const cols = STATE.cols || finalState.cols || rows;
   const STEP = 520; // เหมือน STEP_DELAY offline
+  FX.chainReset();
 
   for (const wave of waves) {
     const explosions = wave.explosions || [];
     if (!explosions.length) continue;
 
-    // Phase 1: burst + ripple + flying orbs ทันที (เหมือน offline)
-    const chainLen = explosions.length;
-    if (chainLen >= 4) SFX.bigChain && SFX.bigChain();
-    else SFX.explode && SFX.explode(chainLen);
-
-    explosions.forEach(({ r, c, owner }) => {
-      const el = document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
-      if (el) { el.classList.add('bursting'); setTimeout(() => el.classList.remove('bursting'), 460); }
-      if (window.spawnRipple) spawnRipple(r, c, owner);
-      const nbs = [];
-      if (r > 0) nbs.push([r-1, c]);
-      if (r < rows-1) nbs.push([r+1, c]);
-      if (c > 0) nbs.push([r, c-1]);
-      if (c < cols-1) nbs.push([r, c+1]);
-      if (window.spawnFlyingOrbs) spawnFlyingOrbs(r, c, owner, nbs);
-    });
+    // Phase 1: burst + ripple + flying orbs + เสียง ทันที — ใช้ FX ชุดเดียวกับ offline (แรงขึ้นตามลำดับ wave)
+    FX.wave(explosions, FX.chainStep());
 
     // Phase 2 (45%): apply cells ของ wave นี้ + renderGrid + flash
     await new Promise(resolve => {
@@ -226,17 +215,7 @@ async function playExplosionWavesIncremental(waves, finalState) {
         renderGrid(false);
 
         // Flash neighbors
-        explosions.forEach(({ r, c }) => {
-          const nbs = [];
-          if (r > 0) nbs.push([r-1, c]);
-          if (r < rows-1) nbs.push([r+1, c]);
-          if (c > 0) nbs.push([r, c-1]);
-          if (c < cols-1) nbs.push([r, c+1]);
-          nbs.forEach(([nr, nc]) => {
-            const nel = document.querySelector(`.cell[data-r="${nr}"][data-c="${nc}"]`);
-            if (nel) { nel.classList.add('explosion-flash'); setTimeout(() => nel.classList.remove('explosion-flash'), 200); }
-          });
-        });
+        FX.land(explosions);
 
         // Phase 3 (55%): resolve
         setTimeout(resolve, STEP * 0.55);
@@ -252,40 +231,13 @@ async function playExplosionWaves(waves, stateData) {
 
   const playWave = (waveExplosions) => {
     return new Promise(resolve => {
-      const chainLen = waveExplosions.length;
-      if (chainLen >= 4) SFX.bigChain && SFX.bigChain();
-      else SFX.explode && SFX.explode(chainLen);
-
       // Phase 1: burst + ripple + flying orbs (ทันที)
-      waveExplosions.forEach(({ r, c, owner }) => {
-        const el = document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
-        if (el) {
-          el.classList.add('bursting');
-          setTimeout(() => el.classList.remove('bursting'), 460);
-        }
-        if (window.spawnRipple) spawnRipple(r, c, owner);
-        const nbs = [];
-        if (r > 0) nbs.push([r-1, c]);
-        if (r < rows-1) nbs.push([r+1, c]);
-        if (c > 0) nbs.push([r, c-1]);
-        if (c < cols-1) nbs.push([r, c+1]);
-        if (window.spawnFlyingOrbs) spawnFlyingOrbs(r, c, owner, nbs);
-      });
+      FX.wave(waveExplosions, FX.chainStep());
 
       // Phase 2 (45%): renderGrid + flash neighbors
       setTimeout(() => {
         if (typeof renderGrid === 'function') renderGrid(false);
-        waveExplosions.forEach(({ r, c }) => {
-          const nbs = [];
-          if (r > 0) nbs.push([r-1, c]);
-          if (r < rows-1) nbs.push([r+1, c]);
-          if (c > 0) nbs.push([r, c-1]);
-          if (c < cols-1) nbs.push([r, c+1]);
-          nbs.forEach(([nr, nc]) => {
-            const nel = document.querySelector(`.cell[data-r="${nr}"][data-c="${nc}"]`);
-            if (nel) { nel.classList.add('explosion-flash'); setTimeout(() => nel.classList.remove('explosion-flash'), 200); }
-          });
-        });
+        FX.land(waveExplosions);
         // Phase 3 (55%): resolve
         setTimeout(resolve, WAVE_DELAY * 0.55);
       }, WAVE_DELAY * 0.45);
@@ -294,6 +246,7 @@ async function playExplosionWaves(waves, stateData) {
 
   // เล่นทีละ wave
   _pendingExplosionWaves = waves.length;
+  FX.chainReset();
   for (const wave of waves) {
     await playWave(wave.explosions);
     _pendingExplosionWaves--;
@@ -627,6 +580,7 @@ function initSocket() {
       SFX.card && SFX.card(cardDef.rarity);
       SFX.cardCat && SFX.cardCat(cardDef.cat);
       SFX.cardSpecial && SFX.cardSpecial(cardId);
+      FX.cardCast(cardDef, playerIdx);
     }
     if (window.spawnCardVfx) {
       // คำนวณ vfxFinishTime ก่อน เหมือน offline
@@ -672,11 +626,15 @@ function initSocket() {
     if (!onlineMode) return;
     if (isFirstPlace) SFX.firstPlace && SFX.firstPlace();
     else SFX.place && SFX.place();
+    // แสดงบอลที่เพิ่งวางทันที (state จริงจะ sync ทับจาก room_update เสมอ) แล้วเล่นเอฟเฟกต์วางบอล
+    const placed = STATE.cells && STATE.cells[r] && STATE.cells[r][c];
+    if (placed && !_waveAnimating) {
+      placed.count += isFirstPlace ? 3 : 1;
+      placed.owner = playerIdx;
+      updateCellDisplay(r, c);
+    }
     // delay เล็กน้อยรอ renderGrid เสร็จก่อน
-    setTimeout(() => {
-      const el = document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
-      if (el) { el.classList.add('orb-placed'); setTimeout(() => el.classList.remove('orb-placed'), 400); }
-    }, 60);
+    setTimeout(() => FX.place(r, c, playerIdx, isFirstPlace), 60);
   });
 
   // explosion_vfx handled inline in room_update
@@ -731,6 +689,7 @@ function syncStateFromServer(serverState) {
   STATE.cols    = serverState.cols || STATE.size;
   STATE.players = serverState.players;
   STATE.current = serverState.current;
+  STATE.turnCount = serverState.turnCount || 0;
   STATE.alive   = serverState.alive;
   STATE.moved   = serverState.moved;
   STATE.scores  = serverState.scores;
