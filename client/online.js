@@ -131,7 +131,6 @@ function showGroupPickOverlay(cards, handSize, timeLimit, mySlotName) {
       });
       el.style.border = '3px solid rgba(255,255,255,0.8)';
       el.style.boxShadow = '0 0 20px rgba(255,255,255,0.3)';
-      skipBtn.style.display = 'none';
       progRow.textContent = '✅ เลือกแล้ว — รอผู้เล่นอื่น...';
       SFX.pickCard && SFX.pickCard();
     };
