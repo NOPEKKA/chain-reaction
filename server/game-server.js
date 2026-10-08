@@ -94,6 +94,7 @@ function broadcastRoom(room) {
   const payload = {
     code:    room.code,
     phase:   room.phase,
+    gameId:  room.gameId || 0, // client ใช้แยก "เกมไหน" (เช่น เปิดหน้าผู้ชนะครั้งเดียวต่อเกม)
     members: room.members.map(m => ({
       name: m.name, slot: m.slot, connected: m.connected,
       isHost: m.socketId === room.host,
@@ -126,6 +127,10 @@ function sanitizeState(state) {
   for (const k of STATE_FIELDS) pick[k] = state[k];
   const s = JSON.parse(JSON.stringify(pick));
   s.handsCount = state.hands.map(h => h.length); // จำนวนการ์ดในมือเท่านั้น — มือจริงส่งแยกให้เจ้าของ (your_hand)
+  // สิ่งที่เกิดในตานี้ (การ์ด / การวาง / โดน Freeze) — ส่งมากับ state เลย client จะได้เล่นเอฟเฟกต์ได้จาก update ก้อนเดียว
+  // ไม่ต้องพึ่งว่า card_vfx / place_vfx มาถึงก่อนหรือหลัง · เป็นของ broadcast ครั้งเดียว ส่งแล้วล้าง
+  s.last = state._last || null;
+  delete state._last;
   s.lastCardId = state._lastCardId || null;
   s.lastCardVfxData = state._lastCardVfxData || null;
   // waves ของเทิร์นล่าสุด (ไม่เกิน 20 wave กัน message ใหญ่) — เป็นของ broadcast ครั้งเดียว ส่งแล้วล้าง
@@ -627,6 +632,7 @@ io.on('connection', (socket) => {
       log(`[place] slot=${member.slot} frozen - cancelling`);
       cb?.({ ok: true, isFirstPlace: false });
       io.to(room.code).emit('frozen_cancel', { playerIdx: member.slot, action: 'place' });
+      state._last = { frozen: { playerIdx: member.slot, action: 'place' } };
       state.moved[member.slot] = true;
       processTurnEnd(room);
       return;
@@ -639,6 +645,7 @@ io.on('connection', (socket) => {
     log(`[place] OK cell=${JSON.stringify(state.cells[r][c])}`);
     cb?.({ ok: true, isFirstPlace: result.isFirstPlace });
     io.to(room.code).emit('place_vfx', { r, c, playerIdx: member.slot, isFirstPlace: result.isFirstPlace });
+    state._last = { place: { r, c, playerIdx: member.slot, isFirstPlace: !!result.isFirstPlace } };
     processTurnEnd(room);
   });
 
@@ -673,6 +680,7 @@ io.on('connection', (socket) => {
     if (state.frozen[member.slot] > 0) {
       cb?.({ ok: true, vfxData: {}, resultText: '' });
       io.to(room.code).emit('frozen_cancel', { playerIdx: member.slot, action: 'card', cardId });
+      state._last = { frozen: { playerIdx: member.slot, action: 'card', cardId } };
       state.moved[member.slot] = true;
       processTurnEnd(room);
       return;
@@ -694,6 +702,7 @@ io.on('connection', (socket) => {
     io.to(room.code).emit('card_vfx', { cardId, targets: targets||{}, playerIdx: member.slot, vfxData: result.vfxData||{} });
     // บันทึกการ์ดล่าสุดใน state เพื่อให้ room_update รู้ว่ามี VFX
     state._lastCardId = cardId;
+    state._last = { card: { cardId, targets: targets || {}, playerIdx: member.slot, vfxData: result.vfxData || {} } };
     state._lastCardVfxData = result.vfxData || {};
     processTurnEnd(room);
   });

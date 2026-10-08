@@ -79,6 +79,8 @@ async function openPage(url) {
   };
   const P = { send, ev, logs, close: () => { try { send('Page.close'); } catch (e) {} setTimeout(() => { try { ws.close(); } catch (e) {} }, 100); } };
   pages.push(P);
+  // โปรไฟล์ Chrome ใช้ร่วมกันทั้งชุด: ล้างที่นั่งค้าง (localStorage) ของเคสก่อนหน้า ไม่งั้นหน้าใหม่จะ rejoin เข้าห้องเก่าเอง
+  await send('Storage.clearDataForOrigin', { origin: new URL(url).origin, storageTypes: 'local_storage,session_storage' });
   await send('Page.navigate', { url });
   await until(() => ev(`document.readyState === 'complete' && typeof FX === 'object' && typeof window._onlineCellClick === 'function'`).catch(() => false), 15000, 'หน้าเกมโหลด');
   return P;
@@ -96,6 +98,13 @@ const INSTRUMENT = `(() => {
   // หน้าเลือกการ์ดถูกสร้างตอนใช้ครั้งแรก → เฝ้าที่ body
   new MutationObserver(() => { const gp = document.getElementById('group-pick-overlay'); if (gp && gp.style.display === 'flex' && M.pickAt == null) M.pickAt = performance.now(); })
     .observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
+  // บันทึก event เข้า/ออกของ socket (ไว้อ่านตอนเทสต์ล้ม)
+  M.net = [];
+  try {
+    const SP = io.Socket.prototype, oe = SP.emitEvent, om = SP.emit;
+    SP.emitEvent = function (args) { const d = args[1] || {}; M.net.push([Math.round(performance.now()), '<' + args[0], d.phase || '', d.state ? d.state.turnCount + '/' + d.state.current + '/w' + ((d.state.explosionWaves || []).length) : '']); if (M.net.length > 40) M.net.shift(); return oe.apply(this, arguments); };
+    SP.emit = function (ev) { if (typeof ev === 'string' && !/^(connect|disconnect)/.test(ev)) { M.net.push([Math.round(performance.now()), '>' + ev]); if (M.net.length > 40) M.net.shift(); } return om.apply(this, arguments); };
+  } catch (e) {}
   window.__sig = () => (STATE.cells || []).map(r => r.map(c => c.count + ':' + (c.count ? c.owner : -1)).join(',')).join('/');
 })()`;
 const sigOf = state => state.cells.map(r => r.map(c => c.count + ':' + (c.count ? c.owner : -1)).join(',')).join('/');
@@ -118,14 +127,17 @@ async function game({ rows = 6, cols = 8, cardInterval = 0 } = {}) {
   await P.ev(`document.getElementById('btn-online').click()`);
   await until(() => P.ev(`document.getElementById('online-screen').classList.contains('active')`), 5000, 'หน้าออนไลน์');
   await P.ev(`document.getElementById('online-name').value = 'Alice'`);
+  // กดสร้างห้อง "ครั้งเดียว": ถ้า socket ยังต่อไม่ติด หน้าเกมจะลองกดซ้ำเองใน 1.5 วินาที (กดซ้ำจากเทสต์จะได้ create_room ซ้อนตามมาทีหลัง)
+  await sleep(250);
+  await P.ev(`document.getElementById('btn-create-room').click()`);
   const code = await until(async () => {
-    await P.ev(`document.getElementById('room-screen').classList.contains('active') || document.getElementById('btn-create-room').click()`);
     const c = await P.ev(`document.getElementById('room-screen').classList.contains('active') ? document.getElementById('room-code-big').textContent.trim() : ''`);
     return /^\d{4}$/.test(c) ? c : null;
-  }, 8000, 'สร้างห้อง', 400);
+  }, 10000, 'สร้างห้อง', 100);
   const B = ioc(`http://localhost:${port}`, { transports: ['websocket'], forceNew: true, reconnection: false });
   socks.push(B);
   B.updates = []; B.on('room_update', r => B.updates.push(r));
+  B.skips = []; B.on('turn_skipped', x => B.skips.push(x));
   await new Promise((res, rej) => { B.once('connect', res); B.once('connect_error', rej); });
   const j = await emit(B, 'join_room', { code, name: 'Bob' });
   assert.equal(j.ok, true, j.msg); B.token = j.token;
@@ -173,9 +185,15 @@ async function game({ rows = 6, cols = 8, cardInterval = 0 } = {}) {
   g.place = (r, c) => g.act(`window._onlineCellClick(${r}, ${c})`);
   g.cardAt = (id, r, c) => g.act(`(() => { if (STATE.current !== 0) return; selectedHandCard = { playerIdx: 0, cardIdx: 0, cardId: '${id}' }; targetData = {}; window._onlineCellClick(${r}, ${c}); })()`);
   g.cardNow = () => g.act(`(() => { if (STATE.current !== 0 || !STATE.hands[0][0]) return; window._onlineActivateCard(0, 0, STATE.hands[0][0]); })()`);
-  // รอจนไม่มี wave ใหม่ quietMs (และเงื่อนไขเสริมเป็นจริง) แล้วคืนค่าที่วัดได้
+  // รอจนหน้าแสดงกระดานเดียวกับ server, ไม่มี wave ใหม่ quietMs (และเงื่อนไขเสริมเป็นจริง) แล้วคืนค่าที่วัดได้
   g.settle = async ({ quietMs = 1300, need = 'true', ms = 25000 } = {}) => {
-    await until(() => P.ev(`(() => { const w = __m.waves, last = w.length ? w[w.length - 1].t : 0; return (performance.now() - last > ${quietMs}) && (${need}); })()`), ms, 'เอฟเฟกต์นิ่ง', 100);
+    const want = JSON.stringify(sigOf(g.S()));
+    try {
+      await until(() => P.ev(`(() => { const w = __m.waves, last = w.length ? w[w.length - 1].t : 0; return __sig() === ${want} && (performance.now() - last > ${quietMs}) && (${need}); })()`), ms, 'เอฟเฟกต์นิ่งและกระดานตรงกับ server', 100);
+    } catch (e) {
+      const d = await P.ev(`JSON.stringify({ sigOk: __sig() === ${want}, waves: __m.waves.length, winnerAt: __m.winnerAt, pickAt: __m.pickAt, fx: window._onlineFx ? window._onlineFx() : null, now: Math.round(performance.now()), net: __m.net.slice(-12) })`).catch(x => String(x));
+      throw new Error(e.message + ' · หน้า: ' + d + ' · server: ' + JSON.stringify({ phase: room().phase, turn: g.S().turnCount, cur: g.S().current, alive: g.S().alive, updatesToB: B.updates.length, skips: B.skips, lasts: B.updates.slice(-3).map(u => u.state && u.state.last) }) + ' · console: ' + P.logs.slice(-3).join(' | '));
+    }
     return P.ev(`({ waves: __m.waves, winnerAt: __m.winnerAt, pickAt: __m.pickAt, hiddenWaves: __m.hiddenWaves, sig: __sig(), fx: window._onlineFx ? window._onlineFx() : null })`);
   };
   g.sent = mark => B.updates.slice(mark).map(wavesIn).filter(n => n > 0);
