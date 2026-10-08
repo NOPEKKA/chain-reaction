@@ -812,6 +812,7 @@ button.mode-card{width:100%;border:1px solid rgba(255,255,255,.14);color:#fff;te
 }
 </style>
 <script src="/socket.io/socket.io.js"></script> <!-- มีเฉพาะเมื่อเปิดจาก server ของเกม · GitHub Pages ไม่มี → ใช้ Firebase -->
+<script src="shared/gameLogic.js"></script> <!-- window.CRLogic: กติกา + เวลาของเอฟเฟกต์ ชุดเดียวกับ server -->
 <script src="fb-config.js"></script>
 <script src="fb-transport.js"></script>
 </head>
@@ -3990,25 +3991,8 @@ async function executeCardInner(cardDef,playerIdx,cardIdx,targets){
     case 'e4':{// Pillar: ทุกช่องใน column +1
     const col=[];for(let ro=0;ro<size;ro++)if(STATE.cells[ro][c].owner===cur||STATE.cells[ro][c].owner===-1){STATE.cells[ro][c].count++;STATE.cells[ro][c].owner=cur;col.push([ro,c]);}vfxData={col};resultText='ทั้ง column +1!';}break;
   }
-  // คำนวณว่า vfx ของการ์ดนี้นานแค่ไหน
-  const vfxDur={
-    // Common
-    c1:600,c2:1400,c3:1100,c4:1400,c5:700,c6:900,c7:500,c8:700,c9:1300,c10:500,c11:700,c12:500,c13:800,c14:1300,
-    // Uncommon
-    u1:400,u2:700,u3:700,u4:700,u5:500,u6:1100,u7:600,u8:700,u9:600,u9:600,u10:1100,u11:500,
-    // Rare
-    r1:700,r2:900,r3:900,r4:1500,r5:1300,r6:700,r7:700,r8:1400,
-    // Super Rare
-    sr1:600,sr2:900,sr3:500,
-    // Epic
-    ep3:1000,ep4:600,ep5:1400,ep6:1200,e1:500,e2:800,e3:500,e4:800,
-    // Legendary
-    l1:1400,l2:1800,l3:1800,l4:1400,l5:1300,
-    // Mythical
-    m1:1800,m2:1500,
-  };
-  const baseDur=vfxData.dur||vfxData.novaDur||vfxDur[cardDef.id]||500;
-  const extraDur=cardDef.id==='l3'?(vfxData.maxDist||0)*55+900:0;
+  // vfx ของการ์ดนี้นานแค่ไหน — ตารางเดียวกับโหมดออนไลน์และ server (shared/gameLogic.js)
+  const baseDur=CRLogic.cardVfxMs(cardDef.id,vfxData),extraDur=0;
   vfxFinishTime=Date.now()+baseDur+extraDur;
   animating=true;document.getElementById('blocker').classList.add('on');
   // VFX ของการ์ดถูกนับไว้ใน FX — endTurn จะรอจนเล่นจบก่อนเปลี่ยนตา

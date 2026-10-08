@@ -9,7 +9,7 @@ const {
   createInitialState, applyPlace, applyCard,
   processExplosionsWithWaves, checkEliminations, checkWin,
   nextTurn, tickTimeBombs, draw3UniqueCards,
-  PLAYER_NAMES, HAND_LIMIT, CARD_DEFS,
+  PLAYER_NAMES, HAND_LIMIT, CARD_DEFS, animMs,
 } = require('../shared/gameLogic');
 
 function attach(io, opts = {}) {
@@ -27,8 +27,6 @@ const LOBBY_GRACE_MS    = envMs('LOBBY_GRACE_MS', 15000);      // หลุด�
 const ROOM_TTL_EMPTY_MS = envMs('ROOM_TTL_EMPTY_MS', 10 * 60 * 1000); // ห้องที่ไม่มีใครเชื่อมต่ออยู่เลย
 const ROOM_TTL_LOBBY_MS = envMs('ROOM_TTL_LOBBY_MS', 30 * 60 * 1000); // ห้องรอ (lobby) ที่ไม่มีความเคลื่อนไหว
 const ROOM_SWEEP_MS     = envMs('ROOM_SWEEP_MS', 30000);
-const WAVE_MS     = 520;  // client เล่นระเบิด wave ละ 520ms
-const CARD_VFX_MS = 2000; // เผื่อเวลา VFX ของการ์ดฝั่ง client
 
 const rooms     = new Map();
 const socketRoom= new Map();
@@ -160,10 +158,9 @@ function sendAllHands(room) {
 const turnKey = room => `${room.gameId || 0}:${room.state.turnCount}:${room.state.current}`;
 
 // เวลาที่ client ใช้เล่นแอนิเมชันของ update นี้ (ระเบิดทีละ wave + VFX การ์ด) — บวกเพิ่มให้ตาถัดไป จะได้ไม่เสียเวลาคิดไปกับการดูเอฟเฟกต์
+// ตัวเลขมาจาก shared/gameLogic.js (animMs) ตัวเดียวกับที่คิวเอฟเฟกต์ของ client ใช้ — ของเดิมเผื่อ VFX การ์ด 2 วินาทีตายตัว ไม่ตรงกับของจริงรายใบ
 function animMsOf(state) {
-  const waves = state._fx ? state._fx.waves.length : 0;
-  const card  = state._lastCardId ? CARD_VFX_MS : 0;
-  return waves * WAVE_MS + card + (waves || card ? 300 : 0);
+  return animMs(state._fx ? state._fx.waves.length : 0, state._lastCardId, state._lastCardVfxData);
 }
 
 function clearTurnTimer(room) {

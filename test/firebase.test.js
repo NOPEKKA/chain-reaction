@@ -209,3 +209,34 @@ test('F9 นาฬิกาตาอยู่ที่โฮสต์: หมด
   assert.equal(skipped[1].playerIdx, 0); assert.equal(skipped[1].reason, 'timeout');
   await until(() => last(b).state.current === 1, 1500, 'ตาเปลี่ยนไปที่แขก');
 });
+
+test('F10 ลูกโซ่ผ่าน Firebase ที่หน่วง: แขกได้ wave ครบ + กระดานก่อนระเบิด + ข้อมูลของตานั้นใน update ก้อนเดียว และลำดับข้อความไม่สลับ', async () => {
+  const db = new MemDB({ delay: () => 5 + Math.random() * 45 });
+  const r = await room(db);
+  const [a, b] = r.players;
+  assert.equal((await emit(a, 'start_game')).ok, true);
+  await until(() => last(b).state, 2000, 'เกมเริ่ม');
+  const order = [];
+  for (const ev of ['place_vfx', 'room_update', 'game_over']) b.on(ev, () => order.push(ev));
+  // แถว 0: โฮสต์ (0,0)=3 + แขก (0,1..4)=3 → โฮสต์วาง = ลูกโซ่ 5 wave กวาดแขกหมด → จบเกม
+  const st = (await r.rt()).game.rooms.get(r.code).state;
+  for (const row of st.cells) for (const c of row) { c.count = 0; c.owner = -1; }
+  st.cells[0][0] = { count: 3, owner: 0, cap: 4 };
+  for (let c = 1; c < 5; c++) st.cells[0][c] = { count: 3, owner: 1, cap: 4 };
+  st.moved = [false, true]; st.current = 0; st.turnCount = 2;
+  assert.equal((await emit(a, 'place', { r: 0, c: 0 })).ok, true);
+  const upd = await until(() => b.updates.find(u => u.phase === 'finished'), 3000, 'แขกได้ update จบเกม');
+  await until(() => seen(b, 'game_over').length === 1, 2000, 'แขกได้ game_over');
+  assert.equal(upd.state.explosionWaves.length, 5, 'ลูกโซ่ครบทุก wave');
+  assert.deepEqual(upd.state.explosionWaves[0].e, [0, 0, 0]);
+  assert.equal(upd.state.fxBase.length, st.rows * st.cols * 2, 'มีกระดานก่อน wave แรก');
+  assert.deepEqual(upd.state.fxBase.slice(0, 4), [4, 0, 3, 1], 'base = หลังวาง ก่อนระเบิด: (0,0) มี 4 ลูกของโฮสต์, (0,1) ยังเป็นของแขก');
+  assert.deepEqual(upd.state.last, { place: { r: 0, c: 0, playerIdx: 0, isFirstPlace: false } });
+  assert.equal(typeof upd.gameId, 'number');
+  assert.equal(upd.state.winner, 0);
+  assert.deepEqual(order, ['place_vfx', 'room_update', 'game_over'], 'ลำดับเดียวกับที่โฮสต์ส่ง');
+  // ฝั่งโฮสต์ (ไม่ผ่าน Firebase) ต้องได้ข้อมูลเดียวกัน
+  const mine = a.updates.find(u => u.phase === 'finished');
+  assert.deepEqual(mine.state.explosionWaves, upd.state.explosionWaves);
+  assert.deepEqual(mine.state.fxBase, upd.state.fxBase);
+});

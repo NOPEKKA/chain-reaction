@@ -58,7 +58,7 @@ async function launchChrome() {
     '--disable-backgrounding-occluded-windows', '--window-size=900,760', 'about:blank'], { stdio: 'ignore' });
   await until(async () => { try { return (await fetch(`http://127.0.0.1:${cdpPort}/json/version`)).ok; } catch (e) { return false; } }, 15000, 'Chrome เปิด');
 }
-async function openPage(url) {
+async function openPage(url, inject) {
   const t = await (await fetch(`http://127.0.0.1:${cdpPort}/json/new?about:blank`, { method: 'PUT' })).json();
   const ws = new WebSocket(t.webSocketDebuggerUrl);
   await new Promise((res, rej) => { ws.addEventListener('open', res); ws.addEventListener('error', rej); });
@@ -81,6 +81,7 @@ async function openPage(url) {
   pages.push(P);
   // โปรไฟล์ Chrome ใช้ร่วมกันทั้งชุด: ล้างที่นั่งค้าง (localStorage) ของเคสก่อนหน้า ไม่งั้นหน้าใหม่จะ rejoin เข้าห้องเก่าเอง
   await send('Storage.clearDataForOrigin', { origin: new URL(url).origin, storageTypes: 'local_storage,session_storage' });
+  if (inject) await send('Page.addScriptToEvaluateOnNewDocument', { source: inject });
   await send('Page.navigate', { url });
   await until(() => ev(`document.readyState === 'complete' && typeof FX === 'object' && typeof window._onlineCellClick === 'function'`).catch(() => false), 15000, 'หน้าเกมโหลด');
   return P;
@@ -415,4 +416,78 @@ test('6c จบเกมแล้วกด "เล่นใหม่": หน้
   metrics['6c เล่นใหม่'] = { winnerShownTimesInSecondGame: await g.P.ev(`window.__shows`), wavesPlayed: m.waves.length };
   assert.equal(await g.P.ev(`window.__shows`), 1, 'เกมที่สองจบ: หน้าผู้ชนะขึ้นครั้งเดียว');
   noErrors(g); g.P.close();
+});
+
+// ── โหมด Firebase (ไม่มี server): โฮสต์รัน game-server ในหน้าเว็บ ข้อมูลวิ่งผ่านฐานข้อมูลจำลองที่หน่วง 60–200ms ──
+// วัดทั้งสองฝั่ง — แขกได้ทุกอย่างผ่าน Firebase: ลูกโซ่ต้องครบ และหน้าผู้ชนะต้องขึ้นหลังลูกโซ่จบ เหมือนโหมด socket.io
+test('7 โหมด Firebase (หน่วง 60–200ms): ชนะด้วยการ์ด — ทั้งโฮสต์และแขกเห็นลูกโซ่ครบก่อนหน้าผู้ชนะ', { skip: SKIP }, async () => {
+  const memdb = fs.readFileSync(path.join(__dirname, 'support', 'memdb.js'), 'utf8');
+  const chan = 'cr-fx-' + Date.now();
+  // headless Chrome ถือว่าแท็บที่ไม่ได้อยู่หน้าสุด "ถูกซ่อน" (เกมจะไม่เล่นแอนิเมชัน ซึ่งถูกต้อง) — เคสนี้ต้องการให้ทั้งสองหน้ามองเห็นได้พร้อมกันเหมือนเปิดสองหน้าต่าง
+  const inject = memdb + `
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+    window.CR_FORCE_FIREBASE = true;
+    window.CR_DB_ADAPTER_FACTORY = () => {
+      const db = new CRMemDB.MemDB({ channel: '${chan}', delay: () => 60 + Math.random() * 140 });
+      const a = CRMemDB.memoryAdapter(db, 'u' + Math.random().toString(36).slice(2, 10));
+      addEventListener('pagehide', () => a.drop()); window.__fba = a; return a;
+    };`;
+  const url = `http://localhost:${port}/`;
+  const A = await openPage(url, inject), G = await openPage(url, inject);
+  await A.ev(INSTRUMENT); await G.ev(INSTRUMENT);
+  await A.ev(`document.getElementById('btn-online').click()`);
+  await until(() => A.ev(`document.getElementById('online-screen').classList.contains('active')`), 5000, 'หน้าออนไลน์ (โฮสต์)');
+  await A.ev(`document.getElementById('online-name').value = 'Host'`);
+  await sleep(600);
+  await A.ev(`document.getElementById('btn-create-room').click()`);
+  const code = await until(async () => {
+    const c = await A.ev(`document.getElementById('room-screen').classList.contains('active') ? document.getElementById('room-code-big').textContent.trim() : ''`);
+    return /^\d{4}$/.test(c) ? c : null;
+  }, 12000, 'โฮสต์สร้างห้องผ่าน Firebase', 100);
+  await G.ev(`document.getElementById('btn-online').click()`);
+  await sleep(800);
+  await G.ev(`(() => { document.getElementById('online-name').value = 'Guest'; document.getElementById('btn-join-room').click(); document.getElementById('join-code-input').value = '${code}'; document.getElementById('btn-confirm-join').click(); })()`);
+  await until(() => G.ev(`document.getElementById('room-screen').classList.contains('active')`), 12000, 'แขกเข้าห้อง');
+  await until(() => A.ev(`document.querySelectorAll('#room-members-list .lm-row:not(.empty)').length === 2`), 8000, 'โฮสต์เห็นแขก');
+  await A.ev(`document.getElementById('btn-start-online').click()`);
+  for (const P of [A, G]) await until(() => P.ev(`!!(window._getOnlineMode() && STATE.cells)`), 10000, 'เกมเริ่ม');
+
+  // ยัดกระดาน + มือการ์ดเข้า game-server ที่รันอยู่ในหน้าโฮสต์ แล้วบังคับ broadcast (rejoin ของโฮสต์เอง)
+  const hostSig = () => A.ev(`(async () => { const rt = await __fba._rt, room = [...rt.game.rooms.values()][0]; return room.state.cells.map(r => r.map(c => c.count + ':' + (c.count ? c.owner : -1)).join(',')).join('/'); })()`);
+  await A.ev(`(async () => {
+    const rt = await __fba._rt, room = [...rt.game.rooms.values()][0], s = room.state;
+    for (const row of s.cells) for (const c of row) { c.count = 0; c.owner = -1; }
+    s.cells[0][0].count = 3; s.cells[0][0].owner = 0;
+    for (let c = 1; c < 8; c++) { s.cells[0][c].count = 3; s.cells[0][c].owner = 1; }
+    s.moved = [false, true]; s.current = 0; s.turnCount = 2; s.alive = [0, 1];
+    s.hands[0] = [{ ...CARD_DEFS.find(d => d.id === 'u1') }];
+    const sess = JSON.parse(sessionStorage.getItem('cr.session'));
+    rt.io.sockets.sockets.get(room.host)._dispatch('rejoin_room', [{ code: sess.code, token: sess.token, takeover: true }, () => {}]);
+  })()`);
+  const want = await hostSig();
+  for (const P of [A, G]) await until(async () => (await P.ev(`__sig()`)) === want, 8000, 'ทั้งสองหน้าซิงก์กระดาน');
+  await until(() => A.ev(`(STATE.hands[0] || []).some(d => d.id === 'u1')`), 4000, 'โฮสต์ได้มือการ์ด');
+  await sleep(400);
+  await A.ev(`__m.reset()`); await G.ev(`__m.reset()`);
+  await until(async () => {
+    await A.ev(`(() => { if (STATE.current !== 0) return; selectedHandCard = { playerIdx: 0, cardIdx: 0, cardId: 'u1' }; targetData = {}; window._onlineCellClick(0, 0); })()`);
+    await sleep(200);
+    return A.ev(`(async () => { const rt = await __fba._rt; return [...rt.game.rooms.values()][0].phase === 'finished'; })()`);
+  }, 8000, 'โฮสต์ใช้การ์ดชนะ', 200);
+  const final = await hostSig();
+  const out = {};
+  for (const [name, P] of [['host', A], ['guest', G]]) {
+    await until(() => P.ev(`(() => { const w = __m.waves, last = w.length ? w[w.length - 1].t : 0; return __sig() === ${JSON.stringify(final)} && performance.now() - last > 1300 && __m.winnerAt != null; })()`), 25000, name + ': เอฟเฟกต์นิ่ง มีหน้าผู้ชนะ', 100);
+    const m = await P.ev(`({ waves: __m.waves, winnerAt: __m.winnerAt, fx: window._onlineFx ? window._onlineFx() : null })`);
+    const gap = median(gaps(m.waves)), last = m.waves.length ? m.waves[m.waves.length - 1].t : 0;
+    out[name] = { wavesPlayed: m.waves.length, msPerWave: Math.round(gap), winnerAfterLastWaveStart: Math.round(m.winnerAt - last), warpCells: m.fx ? m.fx.warpCells : 'n/a' };
+  }
+  metrics['7 โหมด Firebase ชนะด้วยการ์ด'] = out;
+  for (const name of ['host', 'guest']) {
+    assert.equal(out[name].wavesPlayed, 8, name + ': เล่นลูกโซ่ครบ 8 wave');
+    assert.ok(out[name].winnerAfterLastWaveStart >= out[name].msPerWave * 0.9, `${name}: หน้าผู้ชนะขึ้น ${out[name].winnerAfterLastWaveStart}ms หลัง wave สุดท้ายเริ่ม`);
+  }
+  assert.deepEqual(G.logs.filter(l => !/favicon|vibrate/.test(l)), [], 'ไม่มี error ใน console ของแขก');
+  A.close(); G.close();
 });

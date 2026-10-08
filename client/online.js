@@ -217,24 +217,10 @@ function closeGroupPickOverlay() {
 //   → จบเกม: หน้าผู้ชนะ · ไม่งั้น: ประกาศตาใหม่ → งานถัดไป
 // หน้าเลือกการ์ด (group_pick_start) เข้าคิวเดียวกัน จึงขึ้นหลังเอฟเฟกต์ของตาที่มาก่อนเสมอ โดยไม่ต้องคำนวณเวลารอเอง
 // งานแต่ละชิ้นมีข้อมูลครบในตัว (state.last = การ์ด/การวาง/การโดน Freeze ของตานั้น) — ไม่พึ่งลำดับของ card_vfx / place_vfx / game_over
-const WAVE_MS = 520;       // เวลาต่อ wave ปกติ (เท่ากับ STEP_DELAY ของโหมดออฟไลน์)
-const WAVE_FAST_MS = 170;  // เมื่องานค้างเยอะ: เร่ง แต่ยังเล่นครบทุก wave
-const WAVE_MIN_MS = 90;    // ขั้นภาพสั้นสุด — ลูกโซ่ที่ต้องเร็วกว่านี้จะรวมหลาย wave เป็นขั้นภาพเดียว
-const CHAIN_CAP_MS = 8000; // ลูกโซ่ยาวแค่ไหนก็เล่นจบใน ~8 วินาที
-// เวลาต่อ wave ของลูกโซ่ n wave
-const waveStepMs = n => Math.min(WAVE_MS, CHAIN_CAP_MS / Math.max(1, n));
-const VFX_MS = {
-  c1:600,c2:1400,c3:1100,c4:1400,c5:700,c6:900,c7:500,c8:700,c9:1300,c10:500,c11:700,c13:800,c14:1300,
-  u1:400,u2:700,u3:700,u4:700,u5:500,u6:1100,u7:600,u8:700,u9:600,u10:1100,
-  r1:700,r2:900,r3:900,r4:1500,r5:1300,r6:700,r7:700,r8:1400,
-  sr1:600,sr2:900,sr3:500,
-  ep3:1000,ep4:600,ep5:1400,ep6:1200,e1:500,e2:800,e3:500,e4:800,
-  l1:1400,l2:1800,l3:1800,l4:1400,l5:1300,m1:1800,m2:1500,
-};
-function cardVfxMs(cardId, vfxData) {
-  const v = vfxData || {};
-  return (v.dur || v.novaDur || VFX_MS[cardId] || 500) + (cardId === 'l3' ? (v.maxDist || 0) * 55 + 900 : 0);
-}
+// เวลาทั้งหมดมาจาก shared/gameLogic.js (window.CRLogic) ชุดเดียวกับที่ server ใช้ต่อเวลานาฬิกาตา
+const { cardVfxMs, waveStepMs, animMs } = window.CRLogic;
+const { WAVE_FAST_MS, WAVE_MIN_MS, CARD_GAP_MS, SETTLE_MS } = window.CRLogic.FX_TIMING;
+const FX_IDLE_MAX_MS = 2500; // รออนุภาคนิ่งนานสุดเท่านี้
 
 const FXQ = { jobs: [], cur: null, epoch: 0, stats: { jobs: 0, waves: 0, warpCells: 0, forced: 0 } };
 let _winnerKey = null;   // เกมที่เปิดหน้าผู้ชนะไปแล้ว — กันขึ้นซ้ำ
@@ -290,14 +276,14 @@ function fxIdle(job, max) {
 // เวลาที่งานนี้ควรใช้ (ms) — ใช้ตั้ง watchdog
 function fxEstimate(job) {
   if (job.type !== 'update' || job.instant) return 300;
-  const st = job.room.state, last = st.last || {}, n = (st.explosionWaves || []).length;
-  return (last.card ? cardVfxMs(last.card.cardId, last.card.vfxData) + 200 : 0) + n * waveStepMs(n) + 2500 + (job.room.phase === 'finished' ? 300 : 0);
+  const st = job.room.state, card = st.last && st.last.card;
+  return animMs((st.explosionWaves || []).length, card && card.cardId, card && card.vfxData) + FX_IDLE_MAX_MS;
 }
 // งานค้างเยอะ (≥ 3 ชิ้นรวมชิ้นที่เล่นอยู่ หรือที่รออยู่รวมกันเกิน ~6 วินาที) → เร่ง
 function fxBehind() {
   const waiting = FXQ.jobs.filter(j => j.type === 'update');
   if (waiting.length >= 2) return true;
-  return waiting.reduce((ms, j) => ms + fxEstimate(j) - 2500, 0) > 6000;
+  return waiting.reduce((ms, j) => ms + fxEstimate(j) - FX_IDLE_MAX_MS, 0) > 6000;
 }
 
 async function fxRun(job, ep) {
@@ -319,16 +305,18 @@ async function fxRun(job, ep) {
       clearAllTimers();
     }
     if (room.phase !== 'finished') hideWinner();
+    // แท็บถูกซ่อน / มือถือล็อกจอ: ไม่เล่นแอนิเมชัน (timer ถูกเบราว์เซอร์ยืด คิวจะค้าง) — ซิงก์งานนี้ตรงๆ แล้วไปต่อ
+    if (document.hidden) job.instant = true;
     if (!job.instant) {
       if (last.frozen) fxFrozen(last.frozen);
       if (last.place) fxPlace(last.place);
       if (last.card) { await fxCard(last.card, job); if (!alive()) return; }
       if (waves.length) { await fxWaves(job, waves, alive); if (!alive()) return; }
-      await fxIdle(job, 2500); if (!alive()) return;
+      await fxIdle(job, FX_IDLE_MAX_MS); if (!alive()) return;
     }
     fxFinal(job);
     if (room.phase === 'finished') {
-      if (!job.instant) { await fxWait(300, job); if (!alive()) return; }
+      if (!job.instant) { await fxWait(SETTLE_MS, job); if (!alive()) return; }
       showWinner(room, job.instant);
     } else if (!fxUpdatesQueued()) {
       announceTurn(room); // มีงานรออยู่อีก = ตานี้ผ่านไปแล้ว ให้งานสุดท้ายเป็นคนประกาศ
@@ -390,7 +378,7 @@ async function fxCard({ cardId, targets, playerIdx, vfxData }, job) {
   const ms = cardVfxMs(cardId, vfxData);
   FX.hold(ms);
   FX.track(spawnCardVfx(cardId, targets || {}, playerIdx, vfxData || {}).catch(() => {}));
-  await fxWait(ms + 200, job);
+  await fxWait(ms + CARD_GAP_MS, job);
 }
 
 // เล่นลูกโซ่ทีละ wave: ระเบิด (45% ของช่วง) → กระดานเปลี่ยน + ลูกลงช่อง (55%)
@@ -463,6 +451,17 @@ function showWinner(room, silent) {
   wo.classList.add('show');
   if (!silent && !already) SFX.win && SFX.win();
 }
+
+// ซ่อนแท็บกลางคัน: เร่งงานที่เล่นอยู่ให้จบ (งานถัดไปจะซิงก์ตรงเองเพราะ document.hidden)
+// กลับมามองเห็น: ล้างอนุภาคค้าง ซิงก์ไปที่ state ล่าสุด แล้วนับเวลาตาใหม่จากเวลาที่เหลือจริง
+document.addEventListener('visibilitychange', () => {
+  if (!onlineMode) return;
+  if (document.hidden) { if (FXQ.cur) fxRush(FXQ.cur); return; }
+  FX.clear();
+  if (isSettling() || !currentRoom || !currentRoom.state) return; // มีงานเข้ามาพอดี: คิวจัดการเอง
+  fxFinal({ room: currentRoom });
+  if (currentRoom.phase !== 'finished') announceTurn(currentRoom);
+});
 
 window._onlineFx = () => ({ queued: FXQ.jobs.length, running: !!FXQ.cur, jobsDone: FXQ.stats.jobs, wavesPlayed: FXQ.stats.waves, warpCells: FXQ.stats.warpCells, forced: FXQ.stats.forced });
 

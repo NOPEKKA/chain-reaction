@@ -482,7 +482,7 @@ function runOnlineClient() {
   const ctx = {
     document, navigator: {}, console, setTimeout, clearTimeout, setInterval() { return 0; }, clearInterval() {},
     sessionStorage: store(), localStorage: store(), location: { search: '', hash: '' },
-    io: () => socket, SFX: noop, FX: noop, STATE: {}, cfg: {}, CARD_DEFS: logic.CARD_DEFS,
+    io: () => socket, SFX: noop, FX: noop, STATE: {}, cfg: {}, CARD_DEFS: logic.CARD_DEFS, CRLogic: logic, // CRLogic = shared/gameLogic.js ที่ index.html โหลดให้ client
     showScreen() {}, showToast(m) { text.push(String(m)); }, renderGrid() {}, renderHandBar() {}, renderScoreboard() {}, updateTurnLabel() {},
     esc: s => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])),
   };

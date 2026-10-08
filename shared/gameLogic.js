@@ -1,6 +1,16 @@
 // ══ SHARED GAME LOGIC ══
 // ใช้ร่วมกันระหว่าง server และ client
 // ไม่มี DOM, ไม่มี window, ไม่มี document
+//
+// โหลดได้ 3 ทาง ด้วยไฟล์เดียวกันนี้:
+//   · Node:                 require('../shared/gameLogic')
+//   · เบราว์เซอร์ (<script>): window.CRLogic — ทุกชื่อข้างในอยู่ในฟังก์ชันปิด ไม่ชนกับ global ของ client/index.html
+//   · โหมด Firebase:        client/fb-transport.js อ่านไฟล์นี้แล้วรันด้วย new Function('require','module','exports', src)
+(function (root, factory) {
+  const api = factory();
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (root) root.CRLogic = api;
+})(typeof window !== 'undefined' ? window : null, function () {
 
 const CARD_DEFS = [
   {id:'c1',emoji:'⚡',name:'Overload',rarity:'uncommon',cat:'burst',desc:'เพิ่มลูกบอล +2 ในช่องที่เลือก',needTarget:true,targetSelf:true},
@@ -159,6 +169,38 @@ function applyPlace(state, playerIdx, r, c) {
 
 // ── Process explosions (sync, returns changed cells) ──
 // คืน array ของ waves สำหรับ animation (online mode)
+// ── เวลาของเอฟเฟกต์ ──
+// ที่เดียวที่ทั้ง server (ต่อเวลานาฬิกาตา / หน่วงหน้าเลือกการ์ด) และ client (คิวเอฟเฟกต์, โหมดออฟไลน์) ใช้
+// แก้ตัวเลขที่นี่แล้วทั้งสองฝั่งเปลี่ยนตาม — ไม่มีตารางสำเนาให้ลืมแก้
+const FX_TIMING = {
+  WAVE_MS: 520,        // เวลาต่อ wave ปกติ
+  WAVE_FAST_MS: 170,   // client มีงานค้าง: เร่ง
+  WAVE_MIN_MS: 90,     // ขั้นภาพสั้นสุด — ลูกโซ่ที่ต้องเร็วกว่านี้ client รวมหลาย wave เป็นขั้นภาพเดียว
+  CHAIN_CAP_MS: 8000,  // ลูกโซ่ยาวแค่ไหนก็เล่นจบในเวลานี้
+  CARD_GAP_MS: 200,    // เว้นหลัง VFX การ์ดก่อนเริ่มลูกโซ่
+  SETTLE_MS: 300,      // เผื่อให้อนุภาคนิ่งก่อนตาถัดไป
+};
+const CARD_VFX_MS = {
+  c1:600,c2:1400,c3:1100,c4:1400,c5:700,c6:900,c7:500,c8:700,c9:1300,c10:500,c11:700,c12:500,c13:800,c14:1300,
+  u1:400,u2:700,u3:700,u4:700,u5:500,u6:1100,u7:600,u8:700,u9:600,u10:1100,u11:500,
+  r1:700,r2:900,r3:900,r4:1500,r5:1300,r6:700,r7:700,r8:1400,
+  sr1:600,sr2:900,sr3:500,
+  ep3:1000,ep4:600,ep5:1400,ep6:1200,e1:500,e2:800,e3:500,e4:800,
+  l1:1400,l2:1800,l3:1800,l4:1400,l5:1300,m1:1800,m2:1500,
+};
+// VFX ของการ์ดใบนี้ยาวกี่ ms (บางใบขึ้นกับผลของมัน เช่น Dominion ไล่ตามระยะ)
+function cardVfxMs(cardId, vfxData) {
+  const v = vfxData || {};
+  return (v.dur || v.novaDur || CARD_VFX_MS[cardId] || 500) + (cardId === 'l3' ? (v.maxDist || 0) * 55 + 900 : 0);
+}
+// เวลาต่อ wave ของลูกโซ่ n wave: ปกติ 520ms แต่ทั้งลูกโซ่ต้องจบใน CHAIN_CAP_MS
+function waveStepMs(n) { return Math.min(FX_TIMING.WAVE_MS, FX_TIMING.CHAIN_CAP_MS / Math.max(1, n)); }
+// เวลารวมที่ client ใช้เล่นเอฟเฟกต์ของ update หนึ่งก้อน
+function animMs(nWaves, cardId, vfxData) {
+  const n = nWaves || 0;
+  return Math.round((cardId ? cardVfxMs(cardId, vfxData) + FX_TIMING.CARD_GAP_MS : 0) + n * waveStepMs(n) + (n || cardId ? FX_TIMING.SETTLE_MS : 0));
+}
+
 // ── บันทึกลูกโซ่ให้ client เล่นตาม (state._fx) ──
 // client ไม่คำนวณกฎระเบิดเอง: เริ่มจาก base (กระดานก่อน wave แรก) แล้ววาดค่าที่ server บอกทีละ wave
 //   base  = [count, owner, ...] ทุกช่อง เรียงทีละแถว
@@ -580,13 +622,11 @@ function applyCard(state, playerIdx, cardDef, targets) {
   return { ok: true, resultText, vfxData, needsExplosion: true };
 }
 
-// Export สำหรับ Node.js
-if (typeof module !== 'undefined') {
-  module.exports = {
+return {
     CARD_DEFS, RARITY_WEIGHTS, PLAYER_COLORS, PLAYER_NAMES, HAND_LIMIT,
     createInitialState, applyPlace, applyCard,
     processExplosionsSync, processExplosionsWithWaves, checkEliminations, checkWin,
     nextTurn, tickTimeBombs, draw3UniqueCards, drawRandomCard, neighbors, rebirthUsable,
-    FX_MAX_WAVES,
+    FX_MAX_WAVES, FX_TIMING, CARD_VFX_MS, cardVfxMs, waveStepMs, animMs,
   };
-}
+});

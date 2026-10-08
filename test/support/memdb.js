@@ -9,8 +9,9 @@ const clone = v => (v === undefined || v === null ? null : JSON.parse(JSON.strin
 const seg = p => String(p).split('/').filter(Boolean);
 
 class MemDB {
-  constructor({ channel } = {}) {
-    this.data = {}; this.subs = new Set(); this.seq = 0; this.synced = true;
+  // delay: () => ms — หน่วงการแจ้ง listener (จำลองความหน่วงของเครือข่าย) โดยยังคงลำดับเดิมเหมือน Firebase จริง
+  constructor({ channel, delay } = {}) {
+    this.data = {}; this.subs = new Set(); this.seq = 0; this.synced = true; this.delay = delay || null; this._due = 0;
     if (channel && typeof BroadcastChannel !== 'undefined') {
       this.id = Math.random().toString(36).slice(2);
       this.bc = new BroadcastChannel(channel);
@@ -24,6 +25,11 @@ class MemDB {
       this.bc.postMessage({ t: 'hello', from: this.id });
       setTimeout(() => { this.synced = true; }, 300); // ไม่มีใครตอบ = ฐานข้อมูลว่างอยู่
     }
+  }
+  _later(fn) {
+    if (!this.delay) return later(fn);
+    const now = Date.now(), due = Math.max(this._due, now + this.delay());
+    this._due = due; setTimeout(fn, due - now);
   }
   whenSynced() { return new Promise(r => { const t = () => (this.synced ? r() : setTimeout(t, 20)); t(); }); }
   get(path) {
@@ -60,14 +66,14 @@ class MemDB {
       const v = this.get(s.path);
       if (s.type === 'value') {
         const j = JSON.stringify(v);
-        if (j !== s.last) { s.last = j; later(() => { if (!s.dead) s.cb(v === null ? null : JSON.parse(j)); }); }
+        if (j !== s.last) { s.last = j; this._later(() => { if (!s.dead) s.cb(v === null ? null : JSON.parse(j)); }); }
       } else {
         const kids = v && typeof v === 'object' ? Object.keys(v).sort() : [];
         if (s.type === 'added') {
-          for (const k of kids) if (!s.known.has(k)) { s.known.add(k); const x = clone(v[k]); later(() => { if (!s.dead) s.cb(k, x); }); }
+          for (const k of kids) if (!s.known.has(k)) { s.known.add(k); const x = clone(v[k]); this._later(() => { if (!s.dead) s.cb(k, x); }); }
           for (const k of [...s.known]) if (!(k in (v || {}))) s.known.delete(k);
         } else {
-          for (const k of [...s.known]) if (!(k in (v || {}))) { s.known.delete(k); later(() => { if (!s.dead) s.cb(k); }); }
+          for (const k of [...s.known]) if (!(k in (v || {}))) { s.known.delete(k); this._later(() => { if (!s.dead) s.cb(k); }); }
           for (const k of kids) s.known.add(k);
         }
       }
