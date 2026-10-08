@@ -454,7 +454,7 @@ body{font-family:'Nunito','Noto Sans Thai',sans-serif;background:var(--bg);min-h
 /* ช่องบนกระดานอยู่ถาวรแล้ว (renderGrid อัปเดตเฉพาะที่เปลี่ยน) → ไม่ transition สี/เงา เพื่อไม่ให้เกิด paint บน main thread */
 .cell{transition:transform .15s;will-change:auto;}
 
-/* ── ลูกบอลในช่อง: อยู่นิ่ง (2 ลูกเคียงกัน · 3 ลูกเป็นสามเหลี่ยม) ไม่หมุน ไม่สั่น — ช่องที่ใกล้ระเบิดเต้นเบาๆ พร้อมวงแหวนเตือน ── */
+/* ── ลูกบอลในช่อง 1–4 ลูก: อยู่นิ่ง (2 ลูกเคียงกัน · 3 ลูกเป็นสามเหลี่ยม · 4 ลูกเป็นจัตุรัส 2×2) ไม่หมุน ไม่สั่น — ช่องที่ใกล้ระเบิดเต้นเบาๆ พร้อมวงแหวนเตือน ── */
 .orbs-wrap.orbit{display:block;position:relative;padding:0;}
 .orbs-wrap.orbit .orbs-spin{position:absolute;inset:0;}
 .orbs-wrap.orbit .orbs-spin.n1{animation:orbBreathe 2.8s ease-in-out var(--ph,0s) infinite alternate;}
@@ -1819,7 +1819,7 @@ const FX=(()=>{
   return api;
 })();
 
-// ลูกบอลในช่อง: 1–3 ลูกวางนิ่งเป็นรูป (ไม่หมุน) · ใกล้ระเบิด (≥75% ของความจุ) เต้นเบาๆ + วงแหวนเตือน (class crit/warm มาจาก paintCell)
+// ลูกบอลในช่อง: 1–4 ลูกวางนิ่งเป็นรูป (ไม่หมุน) · ใกล้ระเบิด (≥75% ของความจุ) เต้นเบาๆ + วงแหวนเตือน (class crit/warm มาจาก paintCell)
 const ORB_BG=PLAYER_COLORS.map(col=>{const p=[1,3,5].map(i=>parseInt(col.slice(i,i+2),16));const dk='#'+p.map(v=>Math.round(v*.62).toString(16).padStart(2,'0')).join('');return `radial-gradient(circle at 50% 42%,rgba(255,255,255,.92) 0%,rgba(255,255,255,.5) 12%,${col} 46%,${dk} 100%)`;});
 function buildOrbs(el,cell,cellSize,r,c,hideCount,cap){
   const old=el.querySelector('.orbs-wrap');if(old)old.remove();
@@ -1831,13 +1831,15 @@ function buildOrbs(el,cell,cellSize,r,c,hideCount,cap){
   if(hideCount){ // Eclipse: ซ่อนจำนวนลูกบอลของศัตรู
     wrap.appendChild(mk('#888',false));wrap.appendChild(label('?','#888'));el.appendChild(wrap);return;
   }
-  if(cell.count<=3){
-    const n=cell.count,R=n===1?0:orbSize*(n===2?.62:.74);
+  if(cell.count<=4){
+    // รัศมีของ 4 ลูก (.88) ทำให้ลูกข้างเคียงห่างกันเท่ากับกรณี 2 ลูก: .88·cos45° ≈ .62
+    const n=cell.count,R=n===1?0:orbSize*(n===2?.62:n===3?.74:.88);
     const spin=document.createElement('div');spin.className='orbs-spin n'+n;
     if(n===1)spin.style.setProperty('--ph',(-(((r*7+c*13)%10)*.28)).toFixed(2)+'s'); // ลูกเดี่ยว "หายใจ" เหลื่อมจังหวะกันเล็กน้อย
     const m=-orbSize/2;
-    // 2 ลูก = ซ้าย/ขวา · 3 ลูก = สามเหลี่ยมหัวตั้ง
-    for(let k=0;k<n;k++){const a=n===2?k*3.1416+3.1416:(k/n)*6.2832-1.5708,o=mk(ORB_BG[cell.owner]||color,true);o.style.margin=`${m}px 0 0 ${m}px`;if(R)o.style.transform=`translate(${(Math.cos(a)*R).toFixed(1)}px,${(Math.sin(a)*R).toFixed(1)}px)`;spin.appendChild(o);}
+    // 2 ลูก = ซ้าย/ขวา · 3 ลูก = สามเหลี่ยมหัวตั้ง · 4 ลูก = จัตุรัส 2×2 (ซ้ายบน, ขวาบน, ซ้ายล่าง, ขวาล่าง)
+    const SQ=[3.927,5.4978,2.3562,.7854];
+    for(let k=0;k<n;k++){const a=n===4?SQ[k]:n===2?k*3.1416+3.1416:(k/n)*6.2832-1.5708,o=mk(ORB_BG[cell.owner]||color,true);o.style.margin=`${m}px 0 0 ${m}px`;if(R)o.style.transform=`translate(${(Math.cos(a)*R).toFixed(1)}px,${(Math.sin(a)*R).toFixed(1)}px)`;spin.appendChild(o);}
     wrap.classList.add('orbit');wrap.appendChild(spin);
   }else{
     const show=Math.min(cell.count,8);
