@@ -186,7 +186,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);min-height:100vh;displ
 .score-card.active-turn .score-wins{color:#e6a800;}
 #grid-wrap{background:rgba(255,255,255,0.1);border-radius:16px;padding:8px;box-shadow:0 8px 32px rgba(0,0,0,0.2);max-width:100%;transition:box-shadow .4s ease;}
 #grid{display:grid;gap:5px;}
-.cell{border-radius:10px;background:var(--tile);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s,box-shadow .15s,background .15s;will-change:transform,background;contain:layout style;box-shadow:0 4px 0 rgba(0,0,0,0.12);position:relative;user-select:none;overflow:hidden;-webkit-tap-highlight-color:transparent;touch-action:manipulation;}
+.cell{border-radius:var(--cr,10px);background:var(--tile);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s,box-shadow .15s,background .15s;will-change:transform,background;contain:layout style;box-shadow:0 4px 0 rgba(0,0,0,0.12);position:relative;user-select:none;overflow:hidden;-webkit-tap-highlight-color:transparent;touch-action:manipulation;}
 @media(hover:hover){.cell:hover{transform:translateY(-2px);box-shadow:0 6px 0 rgba(0,0,0,0.12);}}
 .cell:active{transform:scale(0.93);}
 .cell.target-own{transform:translateY(-4px) scale(1.07) !important;box-shadow:0 8px 0 rgba(0,0,0,0.15),0 10px 20px rgba(0,0,0,0.18),0 0 0 2px rgba(120,220,120,0.8),0 0 12px rgba(80,200,80,0.4) !important;cursor:pointer;z-index:4;background:var(--tile-hl) !important;transition:transform .12s cubic-bezier(.34,1.7,.64,1),box-shadow .12s !important;}
@@ -1169,10 +1169,10 @@ const FX=(()=>{
     if(geo&&now-geoT<90&&geo.n===g.childElementCount)return geo;
     const gr=g.getBoundingClientRect(),w=document.getElementById('grid-wrap').getBoundingClientRect();
     const cs=STATE._cellSize||parseFloat(g.firstElementChild.style.width)||40;
-    geo={x0:gr.left,y0:gr.top,cs,step:cs+5,n:g.childElementCount,wx:w.left,wy:w.top,ww:w.width,wh:w.height};geoT=now;return geo;
+    geo={x0:gr.left,y0:gr.top,cs,step:cs+(STATE._gap||5),tr:!!STATE._tr,n:g.childElementCount,wx:w.left,wy:w.top,ww:w.width,wh:w.height};geoT=now;return geo;
   }
-  function center(r,c){const g=G();if(!g)return{x:window.innerWidth/2,y:window.innerHeight/2};return{x:g.x0+c*g.step+g.cs/2,y:g.y0+r*g.step+g.cs/2};}
-  function cell(r,c){const g=document.getElementById('grid');if(!g)return null;const el=g.children[r*(STATE.cols||STATE.size)+c];return(el&&+el.dataset.r===r&&+el.dataset.c===c)?el:document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);}
+  function center(r,c){const g=G();if(!g)return{x:window.innerWidth/2,y:window.innerHeight/2};return g.tr?{x:g.x0+r*g.step+g.cs/2,y:g.y0+c*g.step+g.cs/2}:{x:g.x0+c*g.step+g.cs/2,y:g.y0+r*g.step+g.cs/2};}
+  function cell(r,c){const g=document.getElementById('grid');if(!g)return null;const el=g.children[cellIndex(r,c)];return(el&&+el.dataset.r===r&&+el.dataset.c===c)?el:document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);}
   const T=(x,y,s)=>`translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`+(s===undefined?'':` scale(${s})`);
   const PC=i=>PLAYER_COLORS[i]||'#ffffff';
   function mix(hex,to,t){const p=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));const a=p(hex),b=p(to);return'#'+a.map((v,i)=>Math.round(v+(b[i]-v)*t).toString(16).padStart(2,'0')).join('');}
@@ -1575,7 +1575,7 @@ const FX=(()=>{
     stats.crit=crit;stats.warm=warm;stats.occ=occ;stats.total=total;
     // เริ่มเกม (กระดานว่างครั้งแรก): ช่องเด้งเข้ามาเป็นคลื่นทแยง
     const empty=occ===0;
-    if(empty&&!wasEmpty&&tier()>0&&canAnim){const cols=STATE.cols||STATE.size,ch=g.children;
+    if(empty&&!wasEmpty&&tier()>0&&canAnim){const cols=STATE._tr?STATE.size:(STATE.cols||STATE.size),ch=g.children;
       for(let i=0;i<ch.length;i++)ch[i].animate([{transform:'scale(.35)',opacity:0},{transform:'scale(1)',opacity:1}],{duration:320,delay:(Math.floor(i/cols)+(i%cols))*14,easing:'cubic-bezier(.3,1.4,.5,1)',fill:'backwards'});}
     wasEmpty=empty;
     if(!warmed)setTimeout(prewarm,400);
@@ -2573,34 +2573,42 @@ function updateCellDisplay(r,co){
   const el=FX.cell(r,co);
   if(el)paintCell(el,r,co,STATE._cellSize||40);
 }
+// ตำแหน่งของช่อง (r,c) ใน DOM ของ #grid — กระดานที่หมุนแนวตั้งเรียงลูกตาม column
+function cellIndex(r,c){return STATE._tr?c*STATE.size+r:r*(STATE.cols||STATE.size)+c;}
+// กระดานต้องพอดีจอเสมอ: ลดช่องไฟ 5→2px แล้วใช้ขนาดช่องที่ใหญ่สุดที่ยังไม่ล้น
+// (ของเดิมบังคับช่องขั้นต่ำ 24px → แมพผืนผ้าบนจอแคบล้นขอบกระดาน ช่องที่ล้นออกไปถูกตัดและกดไม่ได้)
+// จอแนวตั้ง + แมพผืนผ้า: หมุนกระดานเป็นแนวตั้งถ้าช่องใหญ่ขึ้นชัดเจน — เฉพาะการแสดงผล พิกัด r,c ของเกมเหมือนเดิม
+function fitBoard(rows,cols){
+  const vw=window.innerWidth,vh=window.innerHeight||window.screen.height;
+  const scoreH=document.getElementById('scoreboard').offsetHeight,hudH=document.getElementById('hud').offsetHeight;
+  // ไม่นับ hand-bar จริง (กันกระดานขยับตอนการ์ดขยาย) — จองไว้ 130px เท่าเดิม · 16 = padding ของ #grid-wrap
+  const availW=vw-8-16-6,availH=vh*0.99-(scoreH+hudH+130+28)-16;
+  const fit=(vr,vc)=>{let cs=0,gap=2;for(const g of[5,4,3,2]){cs=Math.floor(Math.min((availW-(vc-1)*g)/vc,(availH-(vr-1)*g)/vr,80));gap=g;if(cs>=30)break;}return{cs,gap};};
+  let pick=fit(rows,cols),tr=false;
+  if(cols>rows&&vh>vw){const b=fit(cols,rows);if(b.cs>pick.cs*1.15){pick=b;tr=true;}}
+  return{cs:Math.max(8,pick.cs),gap:pick.gap,tr};
+}
 function renderGrid(forceResize=false){
   const g=document.getElementById('grid'),size=STATE.size;
   if(!size||!STATE.cells)return;
   // คำนวณ cellSize ใหม่เฉพาะตอน forceResize หรือยังไม่มี grid
   const cols2=STATE.cols||size;
   if(forceResize||!STATE._cellSize||STATE._gridSize!==size||STATE._gridCols!==cols2){
-    // ใช้ scoreboard + hud เท่านั้น ไม่นับ hand-bar (เพื่อไม่ให้กระดานขยับตอนการ์ดขยาย)
-    const scoreH=document.getElementById('scoreboard').offsetHeight;
-    const hudH=document.getElementById('hud').offsetHeight;
-    const handBarReserved=130;
-    const uiH=scoreH+hudH+handBarReserved+28;
-    const availW=window.innerWidth*0.97;
-    const availH=(window.innerHeight||window.screen.height)*0.99-uiH;
-    const cellByW=Math.floor((availW-(cols2+1)*5)/cols2);
-    const cellByH=Math.floor((availH-(size+1)*5)/size);
-    STATE._cellSize=Math.max(24,Math.min(cellByW,cellByH,80));
+    const f=fitBoard(size,cols2);
+    STATE._cellSize=f.cs;STATE._gap=f.gap;STATE._tr=f.tr;
     STATE._gridSize=size;STATE._gridCols=cols2;
   }
-  const cellSize=STATE._cellSize;
-  // DOM ของช่องถูกสร้างใหม่เฉพาะเมื่อขนาดกระดานเปลี่ยน — ปกติ diff ทีละช่อง (paintCell) ช่องที่ไม่เปลี่ยนจึงไม่ถูกแตะ
-  const total=size*cols2;
-  if(g._n!==total||g._cs!==cellSize||g._cols!==cols2||g.childElementCount!==total){
-    g.style.gridTemplateColumns=`repeat(${cols2},${cellSize}px)`;g.innerHTML='';
-    for(let r=0;r<size;r++)for(let c=0;c<cols2;c++){const div=document.createElement('div');div.className='cell';div.dataset.r=r;div.dataset.c=c;div.addEventListener('click',handleCellClick);g.appendChild(div);}
-    g._n=total;g._cs=cellSize;g._cols=cols2;
+  const cellSize=STATE._cellSize,gap=STATE._gap||5,tr=!!STATE._tr;
+  // DOM ของช่องถูกสร้างใหม่เฉพาะเมื่อขนาด/การวางของกระดานเปลี่ยน — ปกติ diff ทีละช่อง (paintCell) ช่องที่ไม่เปลี่ยนจึงไม่ถูกแตะ
+  const total=size*cols2,vcols=tr?size:cols2,vrows=tr?cols2:size;
+  if(g._n!==total||g._cs!==cellSize||g._cols!==cols2||g._tr!==tr||g._gap!==gap||g.childElementCount!==total){
+    g.style.gridTemplateColumns=`repeat(${vcols},${cellSize}px)`;g.style.gap=gap+'px';
+    g.style.setProperty('--cr',Math.max(3,Math.min(10,Math.round(cellSize*.26)))+'px');g.innerHTML='';
+    for(let vr=0;vr<vrows;vr++)for(let vc=0;vc<vcols;vc++){const r=tr?vc:vr,c=tr?vr:vc;const div=document.createElement('div');div.className='cell';div.dataset.r=r;div.dataset.c=c;div.addEventListener('click',handleCellClick);g.appendChild(div);}
+    g._n=total;g._cs=cellSize;g._cols=cols2;g._tr=tr;g._gap=gap;
   }
   const ch=g.children;
-  for(let r=0;r<size;r++)for(let c=0;c<cols2;c++)paintCell(ch[r*cols2+c],r,c,cellSize);
+  for(let r=0;r<size;r++)for(let c=0;c<cols2;c++)paintCell(ch[cellIndex(r,c)],r,c,cellSize);
   FX.afterRender();
 }
 
@@ -3323,8 +3331,8 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
       const el3=document.createElement('div');el3.className='annihilate-vfx';
       el3.style.cssText=`left:${cx}px;top:${cy}px;font-size:4rem;`;el3.textContent='⚖️';
       document.body.appendChild(el3);
-      const sz2=STATE.size,mid=sz2/2;
-      for(let ro=0;ro<sz2;ro++)for(let co=0;co<sz2;co++){const dist=Math.abs(ro-mid)+Math.abs(co-mid);flashCell(ro,co,'#5577ffbb',dist*40);}
+      const sz2=STATE.size,cl2=STATE.cols||sz2,mid=sz2/2,midc=cl2/2;
+      for(let ro=0;ro<sz2;ro++)for(let co=0;co<cl2;co++){const dist=Math.abs(ro-mid)+Math.abs(co-midc);flashCell(ro,co,'#5577ffbb',dist*40);}
       await delay(900);el3.remove();
     }break;
     case 'ep4':spawnCellEmoji(r,c,'🕐',{size:'2.5rem'});flashCell(r,c,'#6666ffcc');await delay(500);break;
@@ -3516,7 +3524,7 @@ async function executeCardInner(cardDef,playerIdx,cardIdx,targets){
     case 'u7':{
       const zone=[];
       for(let ro=Math.max(0,r-1);ro<=Math.min(size-1,r+1);ro++)
-        for(let co=Math.max(0,c-1);co<=Math.min(size-1,c+1);co++)
+        for(let co=Math.max(0,c-1);co<=Math.min(cols-1,c+1);co++)
           zone.push([ro,co]);
       // แยกช่องของแต่ละเจ้าของ
       const byOwner={};
@@ -3544,7 +3552,7 @@ async function executeCardInner(cardDef,playerIdx,cardIdx,targets){
       });
       vfxData={zone};resultText='สลับตำแหน่ง บอลรวมเท่าเดิม!';}break;
     case 'u8':if(STATE.cells[r][c].owner!==cur&&STATE.cells[r][c].count>0){let bd=999,br=-1,bc=-1;for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===cur){const d=Math.abs(ro-r)+Math.abs(co-c);if(d<bd){bd=d;br=ro;bc=co;}}if(br>=0){STATE.cells[br][bc].count=STATE.cells[r][c].count;vfxData={moves:[{from:[r,c],to:[br,bc]}]};resultText='คัดลอกลูกบอล!';}}break;
-    case 'r1':{const area=[];for(let ro=Math.max(0,r-1);ro<=Math.min(size-1,r+1);ro++)for(let co=Math.max(0,c-1);co<=Math.min(size-1,c+1);co++)if(STATE.cells[ro][co].owner===cur||STATE.cells[ro][co].owner===-1){STATE.cells[ro][co].count++;STATE.cells[ro][co].owner=cur;area.push([ro,co]);}vfxData={area};resultText='3×3 area +1!';}break;
+    case 'r1':{const area=[];for(let ro=Math.max(0,r-1);ro<=Math.min(size-1,r+1);ro++)for(let co=Math.max(0,c-1);co<=Math.min(cols-1,c+1);co++)if(STATE.cells[ro][co].owner===cur||STATE.cells[ro][co].owner===-1){STATE.cells[ro][co].count++;STATE.cells[ro][co].owner=cur;area.push([ro,co]);}vfxData={area};resultText='3×3 area +1!';}break;
     case 'r2':{const absorbed=neighbors(r,c,size,STATE.cols).filter(([nr,nc])=>STATE.cells[nr][nc].count>0).map(x=>[...x]);neighbors(r,c,size,STATE.cols).forEach(([nr,nc])=>{STATE.cells[r][c].count+=STATE.cells[nr][nc].count;STATE.cells[r][c].owner=cur;STATE.cells[nr][nc].count=0;STATE.cells[nr][nc].owner=-1;});vfxData={pulled:absorbed,to:[r,c]};resultText='ดูดทุกอย่าง!';}break;
     case 'r3':{const others=STATE.alive.filter(i=>i!==cur);if(others.length>0){const t=others[Math.floor(Math.random()*others.length)];STATE.frozen[t]=Math.max(STATE.frozen[t],1);vfxData={frozenPlayer:t};resultText=`${PLAYER_NAMES[t]} ถูก Freeze!`;}}break;
     case 'r4':{const others=STATE.alive.filter(i=>i!==cur);if(others.length>0){const t=others[Math.floor(Math.random()*others.length)];const hit=[];for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===t&&STATE.shielded[ro][co]<=0)hit.push([ro,co]);vfxData={hit};resultText=`โจมตีทุกช่องของ ${PLAYER_NAMES[t]}!`;}}break;
@@ -3595,9 +3603,9 @@ async function executeCardInner(cardDef,playerIdx,cardIdx,targets){
     case 'l2':{// Big Bang: ทุกช่องระเบิดพร้อมกัน
     for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].count>0)STATE.cells[ro][co].count=STATE.cells[ro][co].cap;resultText='BIG BANG!';}break;
     case 'l3':{// Dominion: VFX จะ set owner ทีละช่อง
-    const empts=[];const mid3=STATE.size/2;
+    const empts=[];const mid3=STATE.size/2,mid3c=cols/2;
     for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===-1)empts.push([ro,co]);
-    let md=0;empts.forEach(([ro,co])=>{const d=Math.abs(ro-mid3)+Math.abs(co-mid3);if(d>md)md=d;});
+    let md=0;empts.forEach(([ro,co])=>{const d=Math.abs(ro-mid3)+Math.abs(co-mid3c);if(d>md)md=d;});
     vfxData={empties:empts,maxDist:md,owner:cur};resultText='DOMINION!';}break;
     case 'l4':{// Invasion: สุ่มช่องศัตรู 3 ช่องเป็นของตัวเอง
     const enemyCells2=[];for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner!==cur&&STATE.cells[ro][co].owner!==-1)enemyCells2.push([ro,co]);for(let i=enemyCells2.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[enemyCells2[i],enemyCells2[j]]=[enemyCells2[j],enemyCells2[i]];}const invaded=enemyCells2.slice(0,3);invaded.forEach(([ro,co])=>{STATE.cells[ro][co].owner=cur;});vfxData={invaded};resultText="INVASION!";}break;
@@ -3897,7 +3905,7 @@ async function doBotPlace(playerIdx,size){
 
     if(!hasOwnCells){
       // ไม่วางติดขอบ
-      if(r<EDGE||r>=size-EDGE||c<EDGE||c>=size-EDGE){score-=100;}
+      if(r<EDGE||r>=size-EDGE||c<EDGE||c>=bCols-EDGE){score-=100;}
       // ลดคะแนนถ้าใกล้บอทอื่นเกินไป
       STATE.alive.forEach(pi=>{
         if(pi===playerIdx)return;
