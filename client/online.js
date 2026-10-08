@@ -354,6 +354,31 @@ function notifyMyTurn(turnKey) {
   document.head.appendChild(style);
 })();
 
+// ══ ตาใหม่เริ่มหลังเอฟเฟกต์จบ ══
+// ภาพของ update ล่าสุด (VFX การ์ด → ระเบิดทีละ wave → อนุภาคที่ค้าง) ต้องเล่นจบก่อน
+// แล้วค่อยประกาศตาใหม่ (เสียง / popup / ตัวนับเวลา) และรับ input ของเรา
+let _settling = false, _settleSeq = 0, _settleDeadline = 0;
+const isSettling = () => _settling && Date.now() < _settleDeadline; // deadline = กันค้างถ้ามีอะไรพังกลางทาง
+function announceTurn(room) {
+  if (!onlineMode || !room || !room.state || room.phase !== 'playing') return;
+  if (room.state.current === mySlot) {
+    startCountdown(TURN_LIMIT, '#5bc4e0', () => { socket.emit('place_timeout', {}, () => {}); });
+    notifyMyTurn(room.code + ':' + (room.state.turnCount || 0));
+  } else {
+    // เสียงเปลี่ยนเทิร์นสำหรับตาคนอื่น (เบา, โน้ตประจำตัวของคนนั้น) — ครั้งเดียวต่อเทิร์น
+    const otherKey = room.code + ':' + (room.state.turnCount || 0) + ':' + room.state.current;
+    if (_lastOtherTurn !== otherKey) { _lastOtherTurn = otherKey; SFX.turnChange(room.state.current); }
+  }
+}
+function settleThenAnnounce() {
+  const token = ++_settleSeq;
+  FX.whenIdle(() => {
+    if (token !== _settleSeq || _waveAnimating) return; // มี update ใหม่กว่า หรือ wave ยังเล่นอยู่ — ตัวนั้นจะประกาศเอง
+    _settling = false;
+    announceTurn(currentRoom);
+  });
+}
+
 function initSocket() {
   if (socket && socket.connected) return;
   socket = io({ autoConnect: true, reconnection: true, reconnectionDelay: 1000 });
@@ -404,20 +429,31 @@ function initSocket() {
           });
         }
 
-        if (wasInRoom) return; // render แล้ว ไม่ต้องทำซ้ำ
-
+        // ออกจากช่วงเลือกการ์ดแล้ว: ปิดหน้าเลือกการ์ด "ก่อน" เริ่มนับเวลา
+        // (ของเดิมเรียกทีหลัง → clearAllTimers ในนั้นฆ่าตัวนับเวลาของตาเราทิ้งทุกครั้ง ตัวนับเวลาจึงไม่เคยขึ้น)
+        if (room.phase !== 'group_pick') {
+          const gp = document.getElementById('group-pick-overlay');
+          if (gp && gp.style.display === 'flex') closeGroupPickOverlay();
+          clearAllTimers();
+        }
         const waves = room.state.explosionWaves;
+        _settling = true;
+        _settleDeadline = Date.now() + (waves ? waves.length * 520 : 0) + 6000;
+
+        if (wasInRoom) { settleThenAnnounce(); return; } // render แล้ว ไม่ต้องทำซ้ำ
+
         const finalRender = () => {
-          if (_waveAnimating) return; // รอ wave animation เสร็จก่อน
+          if (_waveAnimating) return; // wave ชุดก่อนยังเล่นอยู่ — ตอนจบมันจะ sync ด้วย state ล่าสุดเอง
           syncStateFromServer(room.state);
           renderGrid(true); // render ทันทีไม่มี wave
           renderHandBar();
           renderScoreboard();
           updateTurnLabel();
+          settleThenAnnounce();
         };
 
         const doRender = () => {
-          if (waves && waves.length > 0) {
+          if (waves && waves.length > 0 && !_waveAnimating) {
             const totalWaves = waves.length;
             _animFinishTime = Date.now() + totalWaves * 520 + 200;
             _pendingExplosionWaves = totalWaves;
@@ -435,15 +471,18 @@ function initSocket() {
               renderGrid(false);
             }
 
-            playExplosionWavesIncremental(waves, room.state).then(() => {
+            playExplosionWavesIncremental(waves, room.state).catch(e => console.error('[waves]', e)).then(() => {
               _pendingExplosionWaves = 0;
               _animFinishTime = 0;
               _waveAnimating = false;
-              syncStateFromServer(room.state);
+              if (!onlineMode) return;
+              // ระหว่างเล่น wave อาจมี update ใหม่กว่าเข้ามา → จบด้วย state ล่าสุดเสมอ (ของเดิมจบด้วย state ของ update ที่เริ่มเล่น)
+              syncStateFromServer((currentRoom && currentRoom.state) || room.state);
               renderGrid(true);
               renderHandBar();
               renderScoreboard();
               updateTurnLabel();
+              settleThenAnnounce();
             });
           } else {
             finalRender();
@@ -476,23 +515,6 @@ function initSocket() {
           doRender();
         }
 
-        if (room.phase === 'playing' && room.state.current === mySlot) {
-          startCountdown(TURN_LIMIT, '#5bc4e0', () => {
-            socket.emit('place_timeout', {}, () => {});
-          });
-          // แจ้งเตือนว่าถึงตาเราแล้ว
-          notifyMyTurn(room.code + ':' + (room.state.turnCount || 0));
-        } else if (room.phase !== 'group_pick') {
-          clearAllTimers();
-          // เสียงเปลี่ยนเทิร์นสำหรับตาคนอื่น (เบา, โน้ตประจำตัวของคนนั้น) — ครั้งเดียวต่อเทิร์น
-          const otherKey = room.code + ':' + (room.state.turnCount || 0) + ':' + room.state.current;
-          if (room.phase === 'playing' && _lastOtherTurn !== otherKey) { _lastOtherTurn = otherKey; SFX.turnChange(room.state.current); }
-        }
-
-        // ถ้าออกจาก group_pick แล้วกลับมา playing
-        if (room.phase === 'playing') {
-          closeGroupPickOverlay();
-        }
       }
     } else if (room.phase === 'lobby') {
       // อัปเดตชื่อในห้องรอด้วย
@@ -579,9 +601,10 @@ function initSocket() {
       const baseDur = (vfxData && (vfxData.dur || vfxData.novaDur)) || vfxDur[cardId] || 500;
       const extraDur = cardId === 'l3' ? ((vfxData && vfxData.maxDist) || 0) * 55 + 900 : 0;
       _vfxFinishTime = Date.now() + baseDur + extraDur;
-      spawnCardVfx(cardId, targets || {}, playerIdx, vfxData || {})
+      FX.hold(baseDur + extraDur);
+      FX.track(spawnCardVfx(cardId, targets || {}, playerIdx, vfxData || {})
         .catch(() => {})
-        .finally(() => { _cardVfxPlaying = false; });
+        .finally(() => { _cardVfxPlaying = false; }));
     } else {
       _cardVfxPlaying = false;
       _vfxFinishTime = 0;
@@ -710,6 +733,7 @@ function syncStateFromServer(serverState) {
 function onlineCellClick(r, c) {
   if (!onlineMode || !socket) return false;
   if (STATE.current !== mySlot) { showToast('⏳ ยังไม่ถึงตาคุณ'); return true; }
+  if (isSettling()) return true; // เอฟเฟกต์ของตาก่อนหน้ายังเล่นไม่จบ
 
   if (selectedHandCard) {
     const { playerIdx, cardIdx } = selectedHandCard;
@@ -776,6 +800,7 @@ function onlineActivateCard(pi, ci, cardDef) {
   if (!onlineMode || !socket) return false;
   if (pi !== mySlot) { showToast('❌ ไม่ใช่การ์ดของคุณ'); return true; }
   if (STATE.current !== mySlot) { showToast('⏳ ยังไม่ถึงตาของคุณ'); return true; }
+  if (isSettling()) return true;
   // anyTarget และ !needTarget → ใช้ทันที ไม่ต้องรอ click
   if (!cardDef.needTarget || cardDef.anyTarget) {
     selectedHandCard = null;

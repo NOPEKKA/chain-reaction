@@ -475,34 +475,15 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);min-height:100vh;displ
 /* ช่องบนกระดานอยู่ถาวรแล้ว (renderGrid อัปเดตเฉพาะที่เปลี่ยน) → ไม่ transition สี/เงา เพื่อไม่ให้เกิด paint บน main thread */
 .cell{transition:transform .15s;will-change:auto;}
 
-/* ── ลูกบอลในช่อง: หมุนวนรอบกัน + สั่นเมื่อใกล้ระเบิด ── */
+/* ── ลูกบอลในช่อง: อยู่นิ่ง (2 ลูกเคียงกัน · 3 ลูกเป็นสามเหลี่ยม) ไม่หมุน ไม่สั่น — ช่องที่ใกล้ระเบิดเต้นเบาๆ พร้อมวงแหวนเตือน ── */
 .orbs-wrap.orbit{display:block;position:relative;padding:0;}
-/* หมุน (rotate) กับสั่น (translate) เป็น property แยกกันบน element เดียว → 1 layer ต่อช่อง และยังรันบน compositor ทั้งคู่ */
-.orbs-wrap.orbit .orbs-spin{position:absolute;inset:0;animation:orbSpin var(--sp,4s) linear var(--ph,0s) infinite;}
-.orbs-wrap.orbit .orbs-spin.n1{animation:orbBreathe var(--sp,2.8s) ease-in-out var(--ph,0s) infinite alternate;}
+.orbs-wrap.orbit .orbs-spin{position:absolute;inset:0;}
+.orbs-wrap.orbit .orbs-spin.n1{animation:orbBreathe 2.8s ease-in-out var(--ph,0s) infinite alternate;}
 .orbs-wrap.orbit .orb{position:absolute;left:50%;top:50%;}
 .orbs-wrap.orbit .orb::after{display:none;}
-@keyframes orbSpin{to{rotate:360deg;}}
 @keyframes orbBreathe{from{scale:.92;}to{scale:1.1;}}
-@keyframes orbJitter{
-  0%{translate:0 0;}
-  20%{translate:calc(var(--j,1px)*-1.3) calc(var(--j,1px)*.9);}
-  40%{translate:calc(var(--j,1px)*1.1) calc(var(--j,1px)*-1.2);}
-  60%{translate:calc(var(--j,1px)*-.9) calc(var(--j,1px)*-.7);}
-  80%{translate:calc(var(--j,1px)*1.3) calc(var(--j,1px)*.7);}
-  100%{translate:0 0;}
-}
-.cell.warm .orbs-spin{animation:orbSpin var(--sp,4s) linear var(--ph,0s) infinite,orbJitter .52s linear infinite;}
-.cell.crit .orbs-spin{animation:orbSpin var(--sp,4s) linear var(--ph,0s) infinite,orbJitter .13s linear infinite;}
-.cell.warm .orbs-spin.n1{animation:orbBreathe var(--sp,2.8s) ease-in-out var(--ph,0s) infinite alternate,orbJitter .52s linear infinite;}
-.cell.crit .orbs-spin.n1{animation:orbBreathe var(--sp,2.8s) ease-in-out var(--ph,0s) infinite alternate,orbJitter .13s linear infinite;}
-/* ≥4 ลูก (ค้างเกินความจุเพราะโล่/หมุด) ไม่มีวงโคจร → สั่นทั้งกลุ่ม */
-.cell.crit .orbs-wrap:not(.orbit){animation:orbJitter .13s linear infinite;}
-/* เบราว์เซอร์เก่าที่ยังไม่มี rotate/translate แยก property: ยังหมุนได้ (ไม่สั่น) */
-@supports not (rotate:1deg){
-  .orbs-wrap.orbit .orbs-spin:not(.n1){animation:orbSpinT var(--sp,4s) linear var(--ph,0s) infinite!important;}
-  @keyframes orbSpinT{to{transform:rotate(360deg);}}
-}
+@keyframes orbBeat{from{scale:.92;}to{scale:1.1;}}
+.cell.crit .orbs-spin,.cell.crit .orbs-wrap:not(.orbit){animation:orbBeat .62s ease-in-out infinite alternate;}
 
 /* ชั้นแสงของช่อง (::before) ใช้ร่วมกัน: วงแหวนเตือนใกล้ระเบิด / แสงวาบตอนระเบิด / แสงตอนรับบอล · สี = --pc (สีเจ้าของช่อง) */
 .cell::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;z-index:1;}
@@ -585,7 +566,6 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);min-height:100vh;displ
 @keyframes trophyBob{from{transform:translateY(0) rotate(-6deg) scale(1);}to{transform:translateY(-8px) rotate(6deg) scale(1.12);}}
 
 /* ── ระดับคุณภาพ ── */
-body.fx-low .cell.warm .orbs-spin:not(.n1){animation:orbSpin var(--sp,4s) linear var(--ph,0s) infinite;}
 body.fx-low .orbs-wrap.orbit .orbs-spin.n1{animation:none;}
 body.fx-low .cell.crit::before{animation:none;opacity:.8;}
 /* เครื่องยังตามไม่ทันแม้อยู่ระดับประหยัด: เหลือเฉพาะช่องที่ใกล้ระเบิดที่ยังขยับ */
@@ -1135,6 +1115,13 @@ const FX=(()=>{
   // จึงจำเวลาหมดอายุไว้ แล้วเก็บ element คืนตอนมีคนขอใช้ครั้งถัดไป (ระหว่างนั้นมันโปร่งใสอยู่แล้ว)
   const CAP=[110,220,380];
   let layer=null,busy=[];const free=[];
+  // เอฟเฟกต์ของตานี้เล่นจบหรือยัง: play() จดเวลาจบไว้ + track() นับ promise ของ VFX การ์ด → เกมใช้ whenIdle() รอก่อนเปลี่ยนตา
+  let busyUntil=0,pending=0,noHold=false;
+  function hold(ms){const t=performance.now()+Math.min(ms||0,4500);if(t>busyUntil)busyUntil=t;}
+  function track(p){pending++;const done=()=>{pending=Math.max(0,pending-1);};Promise.resolve(p).then(done,done);return p;}
+  function idle(){return pending===0&&performance.now()>=busyUntil;}
+  // ไม่ใช้ rAF (ดูเหตุผลที่ monitorLand) — timer 50ms พอ · max กันรอไม่สิ้นสุด
+  function whenIdle(cb,max=6000){const t0=performance.now();const tick=()=>{if(idle()||performance.now()-t0>max)cb();else setTimeout(tick,50);};tick();}
   function ensureLayer(){if(!layer){layer=document.createElement('div');layer.id='fx-layer';document.body.appendChild(layer);}return layer;}
   function sweep(now){
     const keep=[];
@@ -1154,10 +1141,10 @@ const FX=(()=>{
   // สร้าง element ของ pool ไว้ล่วงหน้าตอนเริ่มเกม จะได้ไม่ไปสร้างกลางการระเบิดครั้งแรก
   let warmed=false;
   function prewarm(){if(warmed||!canAnim)return;warmed=true;const L=ensureLayer(),n=tier()===2?96:64;for(let i=free.length+busy.length;i<n;i++){const el=document.createElement('div');el.className='fxp';L.appendChild(el);free.push(el);}}
-  function play(el,frames,opts){el._a=el.animate(frames,opts);el._until=performance.now()+(opts.delay||0)+opts.duration+40;return el._a;}
+  function play(el,frames,opts){el._a=el.animate(frames,opts);el._until=performance.now()+(opts.delay||0)+opts.duration+40;if(!noHold)hold((opts.delay||0)+opts.duration+40);return el._a;}
   function clear(){
     busy.forEach(el=>{if(el._a){try{el._a.cancel();}catch(e){}}el._a=null;el._big=false;el.style.cssText='';free.push(el);});busy=[];
-    depth=0;wasEmpty=false;turnKey='';waveAt=0;
+    depth=0;wasEmpty=false;turnKey='';waveAt=0;busyUntil=0;pending=0;
     if(shakeA){try{shakeA.cancel();}catch(e){}shakeA=null;}
   }
 
@@ -1310,7 +1297,7 @@ const FX=(()=>{
   function wave(list,d){
     if(!list||!list.length)return;
     const n=list.length,t=tier(),k=Math.min(1,(d-1)/9);
-    waveSound(d,n,list[0].owner);
+    waveSound(d,n,list[0].owner);hold(560);
     const g=G();if(!g)return;
     waveAt=document.hidden?0:performance.now();
     const rows=STATE.size,cols=STATE.cols||STATE.size;
@@ -1354,13 +1341,14 @@ const FX=(()=>{
         const el=cell(nr,nc);if(el)els.push(el);
       });
     });
-    tok(els,'nb',320);
+    tok(els,'nb',320);hold(340);
   }
 
   // ── วางบอล ──
   function place(r,c,owner,first){
     const col=PC(owner),el=cell(r,c);
     if(el)tok([el],first?'first':'placed',first?720:480);
+    hold(first?700:440);
     // เสียงเตือน: วางแล้วช่องนี้เหลืออีกลูกเดียวจะระเบิด
     const ce=STATE.cells&&STATE.cells[r]&&STATE.cells[r][c];
     if(ce&&!first&&ce.count===((STATE.catalyzed&&STATE.catalyzed[`${r},${c}`])?2:(ce.cap||4))-1)SFX.critTick(owner);
@@ -1396,8 +1384,8 @@ const FX=(()=>{
     el.className='fxp t fx-turnchip';el.style.cssText=`--c:${col};`;
     el.innerHTML='<i></i>';el.appendChild(document.createTextNode(`${frozen?'❄️ ':(!online&&isBot(cur))?'🤖 ':''}ตาของ ${getPlayerName(cur)}`));
     const base=T(g.wx+g.ww/2,g.wy+14);
-    play(el,[{transform:base+' translate(-50%,-150%) scale(.8)',opacity:0},{transform:base+' translate(-50%,-50%) scale(1)',opacity:1,offset:.18},
-      {transform:base+' translate(-50%,-50%) scale(1)',opacity:1,offset:.74},{transform:base+' translate(-50%,-90%) scale(.94)',opacity:0}],{duration:1150,easing:'ease-out'});
+    noHold=true;play(el,[{transform:base+' translate(-50%,-150%) scale(.8)',opacity:0},{transform:base+' translate(-50%,-50%) scale(1)',opacity:1,offset:.18},
+      {transform:base+' translate(-50%,-50%) scale(1)',opacity:1,offset:.74},{transform:base+' translate(-50%,-90%) scale(.94)',opacity:0}],{duration:1150,easing:'ease-out'});noHold=false;
   }
 
   // ── การ์ด: เอฟเฟกต์ตอนใช้ ไล่ระดับตามความหายาก ──
@@ -1416,7 +1404,7 @@ const FX=(()=>{
     castEl.querySelector('.fxc-rar').textContent=(RARITY_LABEL[def.rarity]||'').replace(/^[^A-Za-z]+/,'');castEl.querySelector('.fxc-who b').textContent=getPlayerName(playerIdx);
     const card=castEl.querySelector('.fxc-card'),rays=castEl.querySelector('.fxc-rays'),rg=castEl.querySelector('.fxc-ring');
     [card,rays,rg].forEach(e=>e.getAnimations&&e.getAnimations().forEach(a=>a.cancel()));
-    const dur=[760,820,920,1020,1180,1420,1680][rk],C='translate(-50%,-50%)';
+    const dur=[760,820,920,1020,1180,1420,1680][rk],C='translate(-50%,-50%)';hold(dur*1.1+40);
     if(t===0){card.animate([{transform:C,opacity:0},{transform:C,opacity:1,offset:.2},{transform:C,opacity:1,offset:.8},{transform:C,opacity:0}],{duration:dur});return;}
     card.animate([{transform:`translate(-50%,${rk<2?'-190%':'170%'}) scale(.5) rotate(${rk<2?0:-9}deg)`,opacity:0},
       {transform:C+` scale(${rk<2?1.06:1.16}) rotate(${rk<2?0:2}deg)`,opacity:1,offset:.2},{transform:C+' scale(1) rotate(0deg)',opacity:1,offset:.32},
@@ -1591,6 +1579,7 @@ const FX=(()=>{
 
   const api={S,save,tier,syncFlags,clear,center,cell,G,flash,flashCell,emoji,number,arrow,ripple,flyOrbs,sparks,ring,
     wave,land,chainReset,chainStep,shake,place,turn,cardCast,revealCards,HL,afterRender,init,stats,onRender:null,
+    hold,track,idle,whenIdle,
     setWaveSound(fn){waveSound=fn;},
     setShake(v){S.shake=v;save();},setQuality(q){S.quality=q;save();syncFlags();},
     get reduced(){return reduced;},get depth(){return depth;},
@@ -1598,7 +1587,7 @@ const FX=(()=>{
   return api;
 })();
 
-// ลูกบอลในช่อง: 1–3 ลูกหมุนวนรอบกัน, ใกล้ระเบิด (≥75% ของความจุ) หมุนเร็ว + สั่นถี่ + วงแหวนเตือน (class crit/warm มาจาก paintCell)
+// ลูกบอลในช่อง: 1–3 ลูกวางนิ่งเป็นรูป (ไม่หมุน) · ใกล้ระเบิด (≥75% ของความจุ) เต้นเบาๆ + วงแหวนเตือน (class crit/warm มาจาก paintCell)
 const ORB_BG=PLAYER_COLORS.map(col=>{const p=[1,3,5].map(i=>parseInt(col.slice(i,i+2),16));const dk='#'+p.map(v=>Math.round(v*.62).toString(16).padStart(2,'0')).join('');return `radial-gradient(circle at 50% 42%,rgba(255,255,255,.92) 0%,rgba(255,255,255,.5) 12%,${col} 46%,${dk} 100%)`;});
 function buildOrbs(el,cell,cellSize,r,c,hideCount,cap){
   const old=el.querySelector('.orbs-wrap');if(old)old.remove();
@@ -1611,14 +1600,12 @@ function buildOrbs(el,cell,cellSize,r,c,hideCount,cap){
     wrap.appendChild(mk('#888',false));wrap.appendChild(label('?','#888'));el.appendChild(wrap);return;
   }
   if(cell.count<=3){
-    const n=cell.count,crit=cell.count/(cap||4)>=.75;
-    const R=n===1?0:orbSize*(n===2?.62:.74),per=n===1?2.8:crit?1.15:n===2?4.2:3.2;
+    const n=cell.count,R=n===1?0:orbSize*(n===2?.62:.74);
     const spin=document.createElement('div');spin.className='orbs-spin n'+n;
-    // เฟสอิงนาฬิกากลาง → ช่องที่ถูกสร้างใหม่หมุนต่อจากจังหวะเดิม ไม่กระตุก
-    const ph=(performance.now()/1000+((r*7+c*13)%10)*per/10)%(per*2);
-    spin.style.setProperty('--sp',per+'s');spin.style.setProperty('--ph',(-ph).toFixed(2)+'s');
+    if(n===1)spin.style.setProperty('--ph',(-(((r*7+c*13)%10)*.28)).toFixed(2)+'s'); // ลูกเดี่ยว "หายใจ" เหลื่อมจังหวะกันเล็กน้อย
     const m=-orbSize/2;
-    for(let k=0;k<n;k++){const a=(k/n)*6.2832-1.5708,o=mk(ORB_BG[cell.owner]||color,true);o.style.margin=`${m}px 0 0 ${m}px`;if(R)o.style.transform=`translate(${(Math.cos(a)*R).toFixed(1)}px,${(Math.sin(a)*R).toFixed(1)}px)`;spin.appendChild(o);}
+    // 2 ลูก = ซ้าย/ขวา · 3 ลูก = สามเหลี่ยมหัวตั้ง
+    for(let k=0;k<n;k++){const a=n===2?k*3.1416+3.1416:(k/n)*6.2832-1.5708,o=mk(ORB_BG[cell.owner]||color,true);o.style.margin=`${m}px 0 0 ${m}px`;if(R)o.style.transform=`translate(${(Math.cos(a)*R).toFixed(1)}px,${(Math.sin(a)*R).toFixed(1)}px)`;spin.appendChild(o);}
     wrap.classList.add('orbit');wrap.appendChild(spin);
   }else{
     const show=Math.min(cell.count,8);
@@ -1665,7 +1652,7 @@ function paintCell(div,r,c,cellSize){
   if(div.className!==cls)div.className=cls;
   const hex=own?PLAYER_COLORS[cell.owner]:null;
   if(hex)div._pc=hex; // จำสีเจ้าของล่าสุดไว้ให้แสงวาบตอนระเบิด (ช่องว่างแล้วก็ยังวาบสีเดิม)
-  const css=`width:${cellSize}px;height:${cellSize}px;`+(hex?`background:${hexToRgba(hex,0.22)};box-shadow:0 4px 0 ${hexToRgba(hex,0.25)};`:'')+(div._pc?`--pc:${div._pc};`:'')+`--j:${(cellSize/40).toFixed(2)}px;`;
+  const css=`width:${cellSize}px;height:${cellSize}px;`+(hex?`background:${hexToRgba(hex,0.22)};box-shadow:0 4px 0 ${hexToRgba(hex,0.25)};`:'')+(div._pc?`--pc:${div._pc};`:'');
   if(div._c!==css||div.style.cssText!==div._s){div.style.cssText=css;div._c=css;div._s=div.style.cssText;}
   const sig=own?`${cell.owner}|${cell.count}|${hide?1:0}|${cap}|${cellSize}`:'';
   if(div._o!==sig||(!!sig)!==(!!div.firstElementChild)){buildOrbs(div,cell,cellSize,r,c,hide,cap);div._o=sig;}
@@ -2440,7 +2427,7 @@ function draw3UniqueCards(){const chosen=[];const useKey=STATE&&STATE.keyActive>
 function startGame(){
   applyTheme(cfg.theme);
   FX.clear();
-  animating=false;selectedHandCard=null;targetingCard=null;pendingPickPlayer=-1;rerollsLeft=999;vfxFinishTime=0;
+  animating=false;turnEnding=false;selectedHandCard=null;targetingCard=null;pendingPickPlayer=-1;rerollsLeft=999;vfxFinishTime=0;
   if(STATE)STATE._dead=false;
   document.getElementById('blocker').classList.remove('on');
   ['winner-overlay','card-pick-overlay','target-banner','card-result-banner','bot-thinking','card-info-popup','menu-overlay'].forEach(id=>document.getElementById(id).classList.remove('show'));
@@ -3653,9 +3640,10 @@ async function executeCardInner(cardDef,playerIdx,cardIdx,targets){
   const extraDur=cardDef.id==='l3'?(vfxData.maxDist||0)*55+900:0;
   vfxFinishTime=Date.now()+baseDur+extraDur;
   animating=true;document.getElementById('blocker').classList.add('on');
-  spawnCardVfx(cardDef.id,targets,cur,vfxData).finally(()=>{
-    animating=false;document.getElementById('blocker').classList.remove('on');
-  });
+  // VFX ของการ์ดถูกนับไว้ใน FX — endTurn จะรอจนเล่นจบก่อนเปลี่ยนตา
+  // (ของเดิมปลดล็อก animating ตอน VFX จบ ซึ่งอาจตรงกับกลางการระเบิดของตาถัดไป)
+  FX.hold(baseDur+extraDur);
+  FX.track(spawnCardVfx(cardDef.id,targets,cur,vfxData).catch(e=>console.error('[vfx]',cardDef.id,e)));
   renderGrid();renderHandBar();renderScoreboard();
   [[r,c],[r2,c2]].filter(([ro,co])=>ro!==undefined).forEach(([ro,co])=>{const el=document.querySelector(`.cell[data-r="${ro}"][data-c="${co}"]`);if(el){el.classList.add('card-fx');setTimeout(()=>el.classList.remove('card-fx'),700);}});
   // รอ VFX ก่อน processExplosions สำหรับการ์ดที่บวกใน VFX
@@ -3669,6 +3657,7 @@ async function executeCardInner(cardDef,playerIdx,cardIdx,targets){
   }
   // Delay: endTurn ทันที
   if(cardDef.id==='ep4'){
+    animating=false;document.getElementById('blocker').classList.remove('on');
     renderGrid();renderHandBar();renderScoreboard();
     if(!tickTimeBombs()){checkEliminations();if(!checkWin())endTurn();}
     return;
@@ -3693,7 +3682,20 @@ async function executeCardInner(cardDef,playerIdx,cardIdx,targets){
 
 let vfxFinishTime=0;
 
+// เอฟเฟกต์ของตานี้ (วางบอล / ระเบิด / การ์ด) ต้องเล่นจบก่อน แล้วค่อยเปลี่ยนตา — ระหว่างรอ กระดานยังล็อกอยู่
+let turnEnding=false;
 function endTurn(){
+  if(STATE._dead||turnEnding)return;
+  const gid=STATE._gameId||0,bl=document.getElementById('blocker');
+  turnEnding=true;animating=true;bl.classList.add('on');
+  FX.hold(vfxFinishTime-Date.now());
+  FX.whenIdle(()=>{
+    if((STATE._gameId||0)!==gid||STATE._dead)return; // เริ่มเกมใหม่/ออกเมนูไปแล้ว (startGame/goMenu รีเซ็ต turnEnding เอง)
+    turnEnding=false;animating=false;bl.classList.remove('on');
+    endTurnNow();
+  });
+}
+function endTurnNow(){
   if(STATE._dead)return;
   const justPlayed=STATE.current;
 
@@ -3703,7 +3705,7 @@ function endTurn(){
     STATE.moved[justPlayed]=false;
     showToast('⏰ Delay! ยังเหลืออีก 1 action');
     updateTurnLabel();renderHandBar();renderScoreboard();
-    if(isBot(justPlayed))scheduleBot(700);
+    if(isBot(justPlayed))scheduleBot(400);
     return;
   }
 
@@ -3722,7 +3724,7 @@ function endTurn(){
   if(cardDue){
     if(isBot(justPlayed)){
       if(STATE.hands[justPlayed].length<HAND_LIMIT)STATE.hands[justPlayed].push({...draw3UniqueCards()[0]});
-      renderHandBar();renderScoreboard();if(isBot(STATE.current))scheduleBot(700);
+      renderHandBar();renderScoreboard();if(isBot(STATE.current))scheduleBot(400);
     } else {
       const waitMs=Math.max(0,vfxFinishTime-Date.now());
       pendingPickPlayer=justPlayed;
@@ -3731,7 +3733,7 @@ function endTurn(){
           showCardPickOverlay(justPlayed,draw3UniqueCards());
       },waitMs);
     }
-  } else {renderHandBar();renderScoreboard();if(isBot(STATE.current))scheduleBot(700);}
+  } else {renderHandBar();renderScoreboard();if(isBot(STATE.current))scheduleBot(400);}
 }
 
 function showCardPickOverlay(playerIdx,cards,rollsLeft=999){
@@ -3788,7 +3790,7 @@ document.getElementById('reroll-btn').addEventListener('click',()=>{
   showCardPickOverlay(pendingPickPlayer,draw3UniqueCards(),999);
 });
 document.getElementById('skip-pick-btn').addEventListener('click',()=>{showToast('⏭️ ข้ามการรับการ์ด');closePick();});
-function closePick(){pendingPickPlayer=-1;document.getElementById('card-pick-overlay').classList.remove('show');renderHandBar();renderScoreboard();if(isBot(STATE.current))scheduleBot(700);}
+function closePick(){pendingPickPlayer=-1;document.getElementById('card-pick-overlay').classList.remove('show');renderHandBar();renderScoreboard();if(isBot(STATE.current))scheduleBot(400);}
 
 // ── Bot ──
 // ตัวจับเวลาของบอทมีตัวเดียว: นัดใหม่ = ยกเลิกของเก่า และผูกกับ _gameId (เริ่มเกมใหม่/ออกเมนู = ยกเลิก)
@@ -4080,7 +4082,7 @@ function updateTurnLabel(){
 
 function goMenu(){
   // หยุดทุกอย่างทันที
-  animating=false;
+  animating=false;turnEnding=false;
   vfxFinishTime=0;
   selectedHandCard=null;targetingCard=null;
   pendingPickPlayer=-1;
