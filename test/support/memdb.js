@@ -26,10 +26,22 @@ class MemDB {
       setTimeout(() => { this.synced = true; }, 300); // ไม่มีใครตอบ = ฐานข้อมูลว่างอยู่
     }
   }
+  // หน่วงแบบเข้าคิว: ส่งตามลำดับเดิมเสมอ (ตั้ง setTimeout แยกรายข้อความไม่ได้ — เวลาที่ถูกปัดเป็น ms ทำให้ลำดับสลับ ซึ่ง Firebase จริงไม่เป็น)
   _later(fn) {
     if (!this.delay) return later(fn);
     const now = Date.now(), due = Math.max(this._due, now + this.delay());
-    this._due = due; setTimeout(fn, due - now);
+    this._due = due;
+    (this._q || (this._q = [])).push({ due, fn });
+    if (!this._pumping) this._pump();
+  }
+  _pump() {
+    const q = this._q;
+    if (!q.length) { this._pumping = false; return; }
+    this._pumping = true;
+    setTimeout(() => {
+      while (q.length && q[0].due <= Date.now()) q.shift().fn();
+      this._pump();
+    }, Math.max(0, q[0].due - Date.now()));
   }
   whenSynced() { return new Promise(r => { const t = () => (this.synced ? r() : setTimeout(t, 20)); t(); }); }
   get(path) {
