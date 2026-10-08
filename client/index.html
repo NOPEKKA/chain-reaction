@@ -2468,7 +2468,7 @@ function startGame(){
   };
   STATE._cellSize=null;STATE._gridSize=null; // reset grid size cache
   renderScoreboard();renderGrid(true);renderHandBar();updateTurnLabel();
-  if(isBot(STATE.current))setTimeout(()=>doBotTurn(),800);
+  if(isBot(STATE.current))scheduleBot(800);
 }
 
 function renderScoreboard(){
@@ -2737,8 +2737,7 @@ function handleCellClick(){
   // การวางบอลปกติ
   if(isBot(STATE.current))return;
   const cur=STATE.current;
-  const hasRebirth=STATE.hands[cur]&&STATE.hands[cur].some(d=>d.id==='l5');
-  if(!STATE.alive.includes(cur)&&!hasRebirth)return;
+  if(!STATE.alive.includes(cur)){if(rebirthUsable(cur))showToast('🔮 กดการ์ด Rebirth แล้วเลือกช่องว่างเพื่อคืนชีพ');return;}
   if(STATE.moved[cur]){showToast('❌ ใช้ action ไปแล้วในเทิร์นนี้');return;}
   if(STATE.frozen[cur]>0){showToast('❄️ Frozen! ข้ามเทิร์น');SFX.frozen();endTurn();return;}
   const cell=STATE.cells[r][c];
@@ -2841,6 +2840,13 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
 
     // ── c7 Poke: กดระเบิด ──
     case 'c7':spawnCellEmoji(r,c,'💢',{size:'2rem'});flashCell(r,c,'#ff888888');await delay(400);break;
+    case 'u9':{
+      const u9r=vfxData.target?vfxData.target[0]:r,u9c=vfxData.target?vfxData.target[1]:c;
+      spawnCellEmoji(u9r,u9c,'📌',{size:'2rem'});
+      flashCell(u9r,u9c,'#ff88ffbb');flashCell(u9r,u9c,'rgba(255,100,255,0.3)',200,400);
+      const pinEl=FX.cell(u9r,u9c);if(pinEl)pinEl.classList.add('pinned');
+      await delay(600);
+    }break;
 
     // ── c8/u4/r6 Shield ──
     case 'c8':case 'u4':case 'r6':{const cells=vfxData.shielded||[[r,c]];cells.forEach(([ro,co],i)=>{spawnCellEmoji(ro,co,'🛡️',{size:'1.8rem',delay:i*0.06});flashCell(ro,co,'#00ff88aa',i*60);});await delay(700);}break;
@@ -3444,8 +3450,29 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
   }
 }
 
+// จบเทิร์นแบบมาตรฐาน: ระเบิดที่ค้าง → time bomb → ตกรอบ → ชนะ/เปลี่ยนตา
+function finishTurn(){processExplosions(()=>{if(!tickTimeBombs()){checkEliminations();if(!checkWin())endTurn();}});}
+function hasEmptyCell(){return STATE.cells.some(row=>row.some(ce=>ce.owner===-1));}
+// ผู้เล่นที่ตายแล้วจะได้ตาก็ต่อเมื่อ Rebirth ในมือ "ใช้ได้จริง" (ยังไม่ชนเพดาน Legendary และมีช่องว่าง) — ไม่งั้นเกมจะวนรอคนที่ไม่มีวันฟื้น
+function rebirthUsable(i){return !!(STATE.hands[i]&&STATE.hands[i].some(d=>d.id==='l5'))&&(STATE.legendaryUsedBy[i]||0)<2&&hasEmptyCell();}
 async function executeCard(cardDef,playerIdx,cardIdx,targets){
+  const gid=STATE._gameId||0,turn0=STATE.turnCount,cur0=STATE.current;
+  try{return await executeCardInner(cardDef,playerIdx,cardIdx,targets||{});}
+  catch(err){
+    // การ์ดพังกลางทาง: ห้ามปล่อยเทิร์นค้าง — ปลดล็อก วาดใหม่ แล้วจบเทิร์นให้
+    console.error('[card]',cardDef&&cardDef.id,err);
+    if((STATE._gameId||0)!==gid||STATE._dead)return;
+    animating=false;document.getElementById('blocker').classList.remove('on');
+    try{renderGrid();renderHandBar();renderScoreboard();}catch(e){}
+    if(STATE.turnCount===turn0&&STATE.current===cur0&&STATE.moved[cur0])finishTurn();
+  }
+}
+async function executeCardInner(cardDef,playerIdx,cardIdx,targets){
   const cur=playerIdx;
+  if(cardDef.rebirthOnly){
+    if(STATE.alive.includes(cur)){showToast('🔮 Rebirth ใช้ได้เมื่อตายแล้วเท่านั้น');selectedHandCard=null;updateHandHighlight();renderGridHighlight();return;}
+    if(targets.r===undefined||STATE.cells[targets.r][targets.c].owner!==-1){showToast('❌ วางได้เฉพาะช่องว่าง');return;}
+  }
   if(cardDef.rarity==='legendary'&&STATE.legendaryUsedBy[cur]>=2){showToast('💀 Legendary ใช้ได้แค่ 2 ครั้งต่อเกม!');selectedHandCard=null;updateHandHighlight();return;}
   if(cardDef.rarity==='mythical'&&STATE.mythicalUsedBy[cur]){showToast('🌌 Mythical ใช้ได้แค่ 1 ครั้งต่อเกม!');selectedHandCard=null;updateHandHighlight();return;}
   if(cardDef.id!=='r8')takeSnapshot();
@@ -3516,26 +3543,6 @@ async function executeCard(cardDef,playerIdx,cardIdx,targets){
         });
       });
       vfxData={zone};resultText='สลับตำแหน่ง บอลรวมเท่าเดิม!';}break;
-    case 'u9':{
-      const u9r=vfxData.target?vfxData.target[0]:r;
-      const u9c=vfxData.target?vfxData.target[1]:c;
-      spawnCellEmoji(u9r,u9c,'📌',{size:'2rem'});
-      flashCell(u9r,u9c,'#ff88ffbb');
-      flashCell(u9r,u9c,'rgba(255,100,255,0.3)',200,400);
-      if(_onlineMode){
-        // แสดง 📌 ทันทีโดยเพิ่ม class ก่อน room_update มา
-        const pinEl=document.querySelector(`.cell[data-r="${u9r}"][data-c="${u9c}"]`);
-        if(pinEl)pinEl.classList.add('pinned');
-      } else {
-        const pk=`${u9r},${u9c}`;
-        if(!STATE.pinned)STATE.pinned={};
-        STATE.pinned[pk]=2;
-        const pinEl2=document.querySelector(`.cell[data-r="${u9r}"][data-c="${u9c}"]`);
-        if(pinEl2)pinEl2.classList.add('pinned');
-      }
-      await delay(700);
-    }break;
-    case 'u9':spawnCellEmoji(r,c,'📌',{size:'2.5rem'});flashCell(r,c,'#ff4400bb');await delay(500);break;
     case 'u8':if(STATE.cells[r][c].owner!==cur&&STATE.cells[r][c].count>0){let bd=999,br=-1,bc=-1;for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===cur){const d=Math.abs(ro-r)+Math.abs(co-c);if(d<bd){bd=d;br=ro;bc=co;}}if(br>=0){STATE.cells[br][bc].count=STATE.cells[r][c].count;vfxData={moves:[{from:[r,c],to:[br,bc]}]};resultText='คัดลอกลูกบอล!';}}break;
     case 'r1':{const area=[];for(let ro=Math.max(0,r-1);ro<=Math.min(size-1,r+1);ro++)for(let co=Math.max(0,c-1);co<=Math.min(size-1,c+1);co++)if(STATE.cells[ro][co].owner===cur||STATE.cells[ro][co].owner===-1){STATE.cells[ro][co].count++;STATE.cells[ro][co].owner=cur;area.push([ro,co]);}vfxData={area};resultText='3×3 area +1!';}break;
     case 'r2':{const absorbed=neighbors(r,c,size,STATE.cols).filter(([nr,nc])=>STATE.cells[nr][nc].count>0).map(x=>[...x]);neighbors(r,c,size,STATE.cols).forEach(([nr,nc])=>{STATE.cells[r][c].count+=STATE.cells[nr][nc].count;STATE.cells[r][c].owner=cur;STATE.cells[nr][nc].count=0;STATE.cells[nr][nc].owner=-1;});vfxData={pulled:absorbed,to:[r,c]};resultText='ดูดทุกอย่าง!';}break;
@@ -3688,7 +3695,7 @@ function endTurn(){
     STATE.moved[justPlayed]=false;
     showToast('⏰ Delay! ยังเหลืออีก 1 action');
     updateTurnLabel();renderHandBar();renderScoreboard();
-    if(isBot(justPlayed))setTimeout(()=>doBotTurn(),700);
+    if(isBot(justPlayed))scheduleBot(700);
     return;
   }
 
@@ -3707,7 +3714,7 @@ function endTurn(){
   if(cardDue){
     if(isBot(justPlayed)){
       if(STATE.hands[justPlayed].length<HAND_LIMIT)STATE.hands[justPlayed].push({...draw3UniqueCards()[0]});
-      renderHandBar();renderScoreboard();if(isBot(STATE.current))setTimeout(()=>doBotTurn(),700);
+      renderHandBar();renderScoreboard();if(isBot(STATE.current))scheduleBot(700);
     } else {
       const waitMs=Math.max(0,vfxFinishTime-Date.now());
       pendingPickPlayer=justPlayed;
@@ -3716,7 +3723,7 @@ function endTurn(){
           showCardPickOverlay(justPlayed,draw3UniqueCards());
       },waitMs);
     }
-  } else {renderHandBar();renderScoreboard();if(isBot(STATE.current))setTimeout(()=>doBotTurn(),700);}
+  } else {renderHandBar();renderScoreboard();if(isBot(STATE.current))scheduleBot(700);}
 }
 
 function showCardPickOverlay(playerIdx,cards,rollsLeft=999){
@@ -3773,27 +3780,97 @@ document.getElementById('reroll-btn').addEventListener('click',()=>{
   showCardPickOverlay(pendingPickPlayer,draw3UniqueCards(),999);
 });
 document.getElementById('skip-pick-btn').addEventListener('click',()=>{showToast('⏭️ ข้ามการรับการ์ด');closePick();});
-function closePick(){pendingPickPlayer=-1;document.getElementById('card-pick-overlay').classList.remove('show');renderHandBar();renderScoreboard();if(isBot(STATE.current))setTimeout(()=>doBotTurn(),700);}
+function closePick(){pendingPickPlayer=-1;document.getElementById('card-pick-overlay').classList.remove('show');renderHandBar();renderScoreboard();if(isBot(STATE.current))scheduleBot(700);}
 
-async function doBotTurn(){
-  if(STATE._dead)return;
-  if(!isBot(STATE.current)||animating)return;
-  if(!STATE.alive.includes(STATE.current))return;
-  const myGameId=STATE._gameId||0;
-  document.getElementById('bot-thinking').classList.add('show');
-  await delay(600+Math.random()*600);
-  if((STATE._gameId||0)!==myGameId){document.getElementById('bot-thinking').classList.remove('show');return;}
-  const cur=STATE.current,size=STATE.size,hand=STATE.hands[cur];
-  if(hand.length>0&&Math.random()<0.45){
-    const sorted=[...hand].sort((a,b)=>({legendary:5,epic:4,rare:3,uncommon:2,common:1}[b.rarity]||0)-({legendary:5,epic:4,rare:3,uncommon:2,common:1}[a.rarity]||0));
-    const cardDef=sorted[0],cardIdx=hand.indexOf(cardDef);
-    document.getElementById('bot-thinking').classList.remove('show');
-    let targets={};
-    if(cardDef.needTarget){const t=botPickTarget(cardDef,cur,size);if(t)targets={r:t[0],c:t[1]};else{await doBotPlace(cur,size);return;}}
-    if(cardDef.twoTarget){const t1=botPickTarget(cardDef,cur,size),t2=botPickTarget(cardDef,cur,size,t1);if(t1&&t2)targets={r:t1[0],c:t1[1],r2:t2[0],c2:t2[1]};else{await doBotPlace(cur,size);return;}}
-    await executeCard(cardDef,cur,cardIdx,targets);
-  } else {document.getElementById('bot-thinking').classList.remove('show');await doBotPlace(cur,size);}
+// ── Bot ──
+// ตัวจับเวลาของบอทมีตัวเดียว: นัดใหม่ = ยกเลิกของเก่า และผูกกับ _gameId (เริ่มเกมใหม่/ออกเมนู = ยกเลิก)
+let botTimer=0,botBusy=false;
+function scheduleBot(ms=700){
+  clearTimeout(botTimer);const gid=STATE._gameId||0;
+  botTimer=setTimeout(()=>{if((STATE._gameId||0)===gid)doBotTurn();},ms);
 }
+const BOT_RANK={mythical:7,legendary:6,epic:5,super_rare:4,rare:3,uncommon:2,common:1};
+function botCanUse(d,pi){
+  if(d.rebirthOnly)return false; // ใช้ตอนตายเท่านั้น — จัดการแยกใน doBotTurn
+  if(d.rarity==='legendary'&&(STATE.legendaryUsedBy[pi]||0)>=2)return false;
+  if(d.rarity==='mythical'&&STATE.mythicalUsedBy[pi])return false;
+  return true;
+}
+// คืน targets ของการ์ด หรือ null ถ้าหาเป้าไม่ได้
+function botTargets(cardDef,cur,size){
+  if(cardDef.twoTarget){
+    const t1=botPickTarget(cardDef,cur,size);if(!t1)return null;
+    let t2=null;
+    if(cardDef.id==='c5'){const nb=neighbors(t1[0],t1[1],size,STATE.cols);t2=nb.length?nb[Math.floor(Math.random()*nb.length)]:null;} // Spin: ช่องที่ 2 ต้องติดกับช่องแรก
+    else t2=botPickTarget(cardDef,cur,size,t1);
+    return t2?{r:t1[0],c:t1[1],r2:t2[0],c2:t2[1]}:null;
+  }
+  if(cardDef.needTarget){const t=botPickTarget(cardDef,cur,size);return t?{r:t[0],c:t[1]}:null;}
+  // anyTarget (เช่น Pillar ใช้ column ของช่องที่กด): คนเล่นต้องกดช่อง บอทก็ต้องมีช่องเหมือนกัน — ของเดิมส่ง {} แล้วพัง
+  if(cardDef.anyTarget){const t=botPickTarget({targetSelf:true},cur,size)||[0,0];return{r:t[0],c:t[1]};}
+  return {};
+}
+// ช่องว่างสำหรับคืนชีพ: ไกลศัตรูที่สุด (+สุ่มเล็กน้อย)
+function botRebirthSpot(cur){
+  if(!rebirthUsable(cur))return null;
+  const size=STATE.size,cols=STATE.cols||size,foes=[];let best=null,bs=-1;
+  for(let r=0;r<size;r++)for(let c=0;c<cols;c++)if(STATE.cells[r][c].owner>=0&&STATE.cells[r][c].owner!==cur)foes.push([r,c]);
+  for(let r=0;r<size;r++)for(let c=0;c<cols;c++){
+    if(STATE.cells[r][c].owner!==-1)continue;
+    let d=99;foes.forEach(([fr,fc])=>{d=Math.min(d,Math.abs(fr-r)+Math.abs(fc-c));});
+    const s=d+Math.random();if(s>bs){bs=s;best=[r,c];}
+  }
+  return best;
+}
+async function doBotTurn(){
+  if(STATE._dead||botBusy)return;
+  if(window._getOnlineMode&&window._getOnlineMode())return;
+  if(!STATE.cells||!isBot(STATE.current))return;
+  if(document.getElementById('winner-overlay').classList.contains('show'))return;
+  // ยังมีแอนิเมชัน/หน้าเลือกการ์ดค้างอยู่: รอแล้วลองใหม่ (ของเดิม return ทิ้งเลย → บอทค้างถาวร)
+  if(animating||pendingPickPlayer>=0){scheduleBot(250);return;}
+  const myGameId=STATE._gameId||0,cur=STATE.current,turn=STATE.turnCount,size=STATE.size;
+  const stale=()=>(STATE._gameId||0)!==myGameId||STATE._dead||STATE.current!==cur||STATE.turnCount!==turn;
+  const think=document.getElementById('bot-thinking');
+  botBusy=true;
+  try{
+    if(STATE.moved[cur]){finishTurn();return;} // เดินไปแล้วแต่เทิร์นไม่ปิด
+    // บอทที่ตายแล้วได้ตาเพราะถือ Rebirth: ใช้เลย (ของเดิม return เฉยๆ → เกมค้าง)
+    if(!STATE.alive.includes(cur)){
+      const ri=STATE.hands[cur].findIndex(d=>d.id==='l5'),spot=botRebirthSpot(cur);
+      if(ri<0||!spot){endTurn();return;}
+      await delay(500);if(stale())return;
+      await executeCard(STATE.hands[cur][ri],cur,ri,{r:spot[0],c:spot[1]});
+      return;
+    }
+    think.classList.add('show');
+    await delay(600+Math.random()*600);
+    think.classList.remove('show');
+    if(stale())return;
+    const hand=STATE.hands[cur],usable=hand.filter(d=>botCanUse(d,cur));
+    if(STATE.frozen[cur]<=0&&usable.length>0&&Math.random()<0.45){
+      const cardDef=usable.slice().sort((a,b)=>(BOT_RANK[b.rarity]||0)-(BOT_RANK[a.rarity]||0))[0];
+      const targets=botTargets(cardDef,cur,size);
+      if(targets){await executeCard(cardDef,cur,hand.indexOf(cardDef),targets);return;}
+    }
+    await doBotPlace(cur,size);
+  }catch(err){
+    console.error('[bot]',err);think.classList.remove('show');
+    if(!stale()){animating=false;document.getElementById('blocker').classList.remove('on');if(STATE.moved[cur])finishTurn();else endTurn();}
+  }finally{botBusy=false;}
+}
+// กันเหนียว: ถึงตาบอทแล้วไม่มีอะไรขยับเลย 5 วินาที → ปลุกบอท (หรือปิดเทิร์นที่ค้าง)
+let wdKey='',wdAt=0;
+setInterval(()=>{
+  if(!STATE.cells||STATE._dead||(window._getOnlineMode&&window._getOnlineMode()))return;
+  if(document.getElementById('game-screen').style.display==='none')return;
+  const cur=STATE.current,key=[STATE._gameId,STATE.turnCount,cur,STATE.moved[cur]].join('|'),now=Date.now();
+  const idle=isBot(cur)&&!animating&&!botBusy&&pendingPickPlayer<0&&!document.getElementById('winner-overlay').classList.contains('show');
+  if(key!==wdKey||!idle){wdKey=key;wdAt=now;return;}
+  if(now-wdAt<5000)return;
+  wdAt=now;console.warn('[bot] watchdog',key);
+  if(STATE.moved[cur])finishTurn();else scheduleBot(0);
+},1000);
 function botPickTarget(cardDef,playerIdx,size,exclude=null){
   const cols=STATE.cols||size;
   if(cardDef.targetSelf){let best=null,bestScore=-1;for(let r=0;r<size;r++)for(let c=0;c<cols;c++){if(exclude&&exclude[0]===r&&exclude[1]===c)continue;const cell=STATE.cells[r][c];if(cell.owner===playerIdx||cell.owner===-1){const score=cell.count/cell.cap;if(score>bestScore){bestScore=score;best=[r,c];}}}return best;}
@@ -3926,7 +4003,7 @@ function checkWin(){
   if(STATE._dead)return false;
   if(STATE.alive.length===1&&STATE.moved.some(Boolean)){
     const deadWithRebirth=[];
-    for(let i=0;i<STATE.players;i++){if(!STATE.alive.includes(i)&&STATE.moved[i]&&STATE.hands[i]&&STATE.hands[i].some(d=>d.id==='l5'))deadWithRebirth.push(i);}
+    for(let i=0;i<STATE.players;i++){if(!STATE.alive.includes(i)&&STATE.moved[i]&&rebirthUsable(i))deadWithRebirth.push(i);}
     if(deadWithRebirth.length>0){showToast(`🔮 ${deadWithRebirth.map(i=>getPlayerName(i)).join(', ')} ยังมี Rebirth!`);return false;}
     const winner=STATE.alive[0],color=PLAYER_COLORS[winner];
     STATE.scores[winner]=(STATE.scores[winner]||0)+1;
@@ -3941,7 +4018,7 @@ function checkWin(){
 }
 function nextTurn(){
   let next=(STATE.current+1)%STATE.players,guard=0;
-  const canPlay=i=>STATE.alive.includes(i)||(STATE.hands[i]&&STATE.hands[i].some(d=>d.id==='l5'));
+  const canPlay=i=>STATE.alive.includes(i)||rebirthUsable(i);
   while(!canPlay(next)){next=(next+1)%STATE.players;if(++guard>STATE.players)break;}
   STATE.current=next;
   STATE.moved[next]=false;
@@ -4003,6 +4080,7 @@ function goMenu(){
   const gid=(STATE._gameId||0)+1;
   STATE._gameId=gid;
   STATE._dead=true; // flag หยุด callback ทุกตัว
+  clearTimeout(botTimer);
   document.getElementById('blocker').classList.remove('on');
   ['winner-overlay','card-pick-overlay','target-banner','card-result-banner','bot-thinking','menu-overlay'].forEach(id=>document.getElementById(id).classList.remove('show'));
   // ลบ VFX elements ทั้งหมดที่ค้างอยู่
