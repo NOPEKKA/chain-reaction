@@ -838,6 +838,7 @@ function onlineCellClick(r, c) {
   if (!onlineMode || !socket) return false;
   if (!socket.connected) { showToast('⚠️ กำลังเชื่อมต่อใหม่…'); return true; } // socket.io จะ buffer คำสั่งไว้ส่งทีหลัง — ไม่เอา
   if (STATE.current !== mySlot) { showToast('⏳ ยังไม่ถึงตาคุณ'); return true; }
+  if (currentRoom && currentRoom.phase === 'group_pick') { showToast('🎴 กำลังเลือกการ์ดอยู่'); return true; }
   if (isSettling()) return true; // เอฟเฟกต์ของตาก่อนหน้ายังเล่นไม่จบ
 
   if (selectedHandCard) {
@@ -906,6 +907,7 @@ function onlineActivateCard(pi, ci, cardDef) {
   if (!socket.connected) { showToast('⚠️ กำลังเชื่อมต่อใหม่…'); return true; }
   if (pi !== mySlot) { showToast('❌ ไม่ใช่การ์ดของคุณ'); return true; }
   if (STATE.current !== mySlot) { showToast('⏳ ยังไม่ถึงตาของคุณ'); return true; }
+  if (currentRoom && currentRoom.phase === 'group_pick') { showToast('🎴 กำลังเลือกการ์ดอยู่'); return true; }
   if (isSettling()) return true;
   // anyTarget และ !needTarget → ใช้ทันที ไม่ต้องรอ click
   if (!cardDef.needTarget || cardDef.anyTarget) {

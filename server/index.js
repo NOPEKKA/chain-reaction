@@ -98,6 +98,8 @@ function sanitizeState(state) {
   const allWaves = state._allWaves || null;
   s.explosionWaves = allWaves ? allWaves.slice(0, 20) : null;
   s.explosions = state._lastExplosions || null;
+  state._allWaves = null;
+  state._lastExplosions = null;
   return s;
 }
 
@@ -199,15 +201,16 @@ function startGroupPick(room) {
     timeout:   null,
     endsAt:    0,
   };
+  // B1: room.phase ต้องเป็น 'group_pick' จริง — ของเดิมตั้งแค่ state.phase ส่วน room.phase ยังเป็น 'playing'
+  // ทำให้ระหว่างเลือกการ์ด use_card ใช้ได้, group_pick_skip ไม่ทำอะไร, place_timeout ข้ามตาได้
+  room.phase  = 'group_pick';
   state.phase = 'group_pick';
-  state._allWaves = null; // clear waves หลัง broadcast ไปแล้ว
-  state._lastExplosions = null;
 
+  // B2: client ต้องเล่นระเบิด/VFX ของเทิร์นนี้ให้จบก่อนเห็นการ์ด — คิดเวลาจาก wave จริง แล้ว broadcast "พร้อม" waves
+  // (ของเดิมล้าง _allWaves ก่อน broadcast: ระเบิดของเทิร์นที่ทริกเกอร์การเลือกการ์ดหายไป และ delay เป็น 300ms เสมอ)
+  const animMs = animMsOf(state);
+  const waveDelay = animMs > 0 ? animMs + 200 : 300;
   broadcastRoom(room);
-
-  // ส่งการ์ดให้แต่ละคน - delay เล็กน้อยเพื่อให้ client process room_update และ wave animation ก่อน
-  const waveCount = (state._allWaves || []).length;
-  const waveDelay = waveCount > 0 ? waveCount * 520 + 500 : 300;
   room.groupPick.endsAt = Date.now() + waveDelay + PICK_MS;
   const gp = room.groupPick;
   setTimeout(() => {
@@ -258,9 +261,8 @@ function finalizeGroupPick(room) {
   });
 
   room.groupPick = null;
+  room.phase  = 'playing';
   state.phase = 'playing';
-  state._allWaves = null; // ไม่ replay waves หลังเลือกการ์ด
-  state._lastExplosions = null;
   armTurnTimer(room);
   broadcastRoom(room);
   sendAllHands(room);
@@ -566,7 +568,7 @@ io.on('connection', (socket) => {
   socket.on('place', ({ r, c }, cb) => {
     const room = getRoomBySocket(socket.id);
     if (!room) return cb?.({ ok: false, msg: 'ไม่พบห้อง' });
-    if (room.phase !== 'playing') return cb?.({ ok: false, msg: 'ยังไม่ถึงเวลาเล่น' });
+    if (room.phase !== 'playing') return cb?.({ ok: false, msg: room.phase === 'group_pick' ? 'กำลังเลือกการ์ดอยู่' : 'ยังไม่ถึงเวลาเล่น' });
     const member = room.members.find(m => m.socketId === socket.id);
     if (!member) return cb?.({ ok: false, msg: 'ไม่พบผู้เล่น' });
     const state = room.state;
@@ -603,7 +605,7 @@ io.on('connection', (socket) => {
   // (ของเดิมเชื่อ client ทันที → ส่ง event นี้เมื่อไรก็ข้ามตาได้)
   socket.on('place_timeout', (_, cb) => {
     const room = getRoomBySocket(socket.id);
-    if (!room || !isPlaying(room)) return cb?.({ ok: true }); // phase changed, ignore
+    if (!room || !isPlaying(room)) return cb?.({ ok: true }); // ไม่ใช่ช่วงเดิน (เช่น กำลังเลือกการ์ด): ไม่มีผล
     const member = room.members.find(m => m.socketId === socket.id);
     if (!member || room.state.current !== member.slot) return cb?.({ ok: false });
     const msLeft = room.turnDeadline - Date.now();
@@ -615,11 +617,12 @@ io.on('connection', (socket) => {
   socket.on('use_card', ({ cardId, targets }, cb) => {
     const room = getRoomBySocket(socket.id);
     if (!room) return cb?.({ ok: false, msg: 'ไม่พบห้อง' });
-    if (room.phase !== 'playing') return cb?.({ ok: false, msg: `phase ผิด: ${room.phase}` });
+    if (room.phase !== 'playing') return cb?.({ ok: false, msg: room.phase === 'group_pick' ? 'กำลังเลือกการ์ดอยู่' : 'ยังไม่ถึงเวลาเล่น' });
     const member = room.members.find(m => m.socketId === socket.id);
     if (!member) return cb?.({ ok: false, msg: 'ไม่พบผู้เล่น' });
     const state = room.state;
     if (!state) return cb?.({ ok: false, msg: 'ไม่มี state' });
+    if (state.phase !== 'playing') return cb?.({ ok: false, msg: 'รอก่อน' });
     if (state.current !== member.slot) return cb?.({ ok: false, msg: 'ยังไม่ใช่ตาของคุณ' });
     if (state.moved[member.slot]) return cb?.({ ok: false, msg: 'ใช้ action ไปแล้ว' });
     const cardDef = state.hands[member.slot]?.find(d => d.id === cardId);
