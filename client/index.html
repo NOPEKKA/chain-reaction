@@ -811,7 +811,9 @@ button.mode-card{width:100%;border:1px solid rgba(255,255,255,.14);color:#fff;te
   body.scr-out #main-menu,body.scr-out .sub-screen.active{transition:none;}
 }
 </style>
-<script src="/socket.io/socket.io.js"></script>
+<script src="/socket.io/socket.io.js"></script> <!-- มีเฉพาะเมื่อเปิดจาก server ของเกม · GitHub Pages ไม่มี → ใช้ Firebase -->
+<script src="fb-config.js"></script>
+<script src="fb-transport.js"></script>
 </head>
 <body>
 
@@ -4487,6 +4489,6 @@ window.addEventListener('resize',()=>{if(document.getElementById('game-screen').
 FX.init();
 </script>
 
-<script src="/online.js"></script>
+<script src="online.js"></script>
 </body>
 </html>

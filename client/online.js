@@ -458,10 +458,18 @@ function enterLobby() {
   renderCardFilter();
 }
 
+// มี backend ให้ต่อไหม: socket.io (server ของเกม) หรือ Firebase (ตั้งค่าไว้ใน fb-config.js)
+function hasBackend() {
+  return typeof io === 'function' || (typeof window.CRFirebaseAvailable === 'function' && window.CRFirebaseAvailable());
+}
+
 function initSocket() {
   // socket เดียวตลอด (ของเดิมสร้างใหม่ทุกครั้งที่ยังต่อไม่ติด → handler ซ้อนกัน)
   if (socket) { if (!socket.connected) socket.connect(); return; }
-  socket = io({ autoConnect: true, reconnection: true, reconnectionDelay: 1000 });
+  // มี socket.io (เปิดเกมจาก server ของเกม) ใช้ตัวนั้น · ไม่มี (เช่น GitHub Pages) ใช้โหมด Firebase จาก fb-transport.js
+  socket = (typeof io === 'function' && !window.CR_FORCE_FIREBASE)
+    ? io({ autoConnect: true, reconnection: true, reconnectionDelay: 1000 })
+    : window.CRFirebaseIO({ autoConnect: true });
 
   socket.on('connect', () => {
     console.log('[online] connected:', socket.id);
@@ -492,12 +500,12 @@ function initSocket() {
       : reason === 'disconnected' ? `⏭️ ${who} หลุดการเชื่อมต่อ — ข้ามตา` : `⏰ ${who} หมดเวลา — ข้ามตา`);
   });
   // server ปิดห้องรอที่ไม่มีความเคลื่อนไหวนานเกินไป
-  socket.on('room_closed', () => {
+  socket.on('room_closed', (info) => {
     clearAllTimers(); closeGroupPickOverlay(); clearSession(); setNetBanner(false);
     onlineMode = false; mySlot = -1; isHost = false; currentRoom = null; myHand = [];
     document.getElementById('game-screen').style.display = 'none';
     showScreen('main-menu');
-    showToast('⌛ ห้องถูกปิดเพราะไม่มีความเคลื่อนไหว');
+    showToast(info && info.reason === 'host_left' ? '🚪 โฮสต์ออกจากเกมแล้ว ห้องนี้ถูกปิด' : '⌛ ห้องถูกปิดเพราะไม่มีความเคลื่อนไหว');
   });
 
   socket.on('room_update', (room) => {
@@ -1237,6 +1245,7 @@ function setupRoomPills() {
 
 // ── Event bindings ──
 document.getElementById('btn-online').addEventListener('click', () => {
+  if (!hasBackend()) { showToast('🌐 ยังไม่ได้ตั้งค่าออนไลน์ (ต้องรัน npm start หรือใส่ค่า Firebase ใน fb-config.js)'); return; }
   initSocket();
   // reset any stuck state from local game
   if (typeof animating !== 'undefined') animating = false;
@@ -1253,6 +1262,8 @@ document.getElementById('btn-create-room').addEventListener('click', () => {
     if (!res?.ok) return showToast(res?.msg || 'เกิดข้อผิดพลาด');
     mySlot = res.slot; isHost = true; myHand = [];
     if (res.token) saveSession({ code: res.code, token: res.token });
+    // โหมด Firebase: ห้องรันอยู่ในแท็บของคนสร้าง — บอกให้รู้ตัวตั้งแต่แรก
+    if (typeof io !== 'function' || window.CR_FORCE_FIREBASE) showToast('📡 แท็บนี้คือเซิร์ฟเวอร์ของห้อง — อย่าปิดหรือรีเฟรชระหว่างเล่น');
     document.getElementById('online-screen').classList.remove('active');
     enterLobby();
   });
@@ -1315,7 +1326,7 @@ document.getElementById('winner-menu').addEventListener('click', () => {
 // renderHandBar handled in index.html directly
 
 // เปิดหน้ามาแล้วมีที่นั่งค้างอยู่ (รีเฟรช / ปิดแท็บแล้วเปิดใหม่): ต่อ socket แล้วลองกลับเข้าห้องเดิมเอง
-if (typeof io !== 'undefined' && storedSession()) initSocket();
+if (hasBackend() && storedSession()) initSocket();
 
 window._onlineCellClick    = onlineCellClick;
 window.openCardFilter      = openCardFilter;
