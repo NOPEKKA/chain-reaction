@@ -12,12 +12,17 @@
   if (root) root.CRLogic = api;
 })(typeof window !== 'undefined' ? window : null, function () {
 
+// นิยามการ์ดทั้งหมด — ที่เดียวของทั้งเกม (client/index.html ใช้ชุดนี้ผ่าน CRLogic.CARD_DEFS)
+//   ownOnly      ใช้ได้เฉพาะช่องของตัวเองที่มีลูก          twoTarget   ต้องเลือก 2 ช่อง
+//   rebirthOnly  ใช้ได้เมื่อตายแล้ว                        anyTarget   ไม่ต้องเลือกช่อง (กดใช้ได้เลย)
+//   offlineOnly  มีเฉพาะโหมดออฟไลน์ — server ไม่สุ่มแจก (ดู drawRandomCard)
+// ขีดจำกัดต่อเกม (ตรวจใน applyCard): rarity legendary 2 ครั้ง · mythical 1 ครั้ง · ใบอื่นไม่จำกัด
 const CARD_DEFS = [
   {id:'c1',emoji:'⚡',name:'Overload',rarity:'uncommon',cat:'burst',desc:'เพิ่มลูกบอล +2 ในช่องของตัวเองที่เลือก',needTarget:true,targetSelf:true,ownOnly:true},
   {id:'c2',emoji:'💠',name:'Pulse',rarity:'uncommon',cat:'burst',desc:'ช่องรอบๆ ที่เลือก +1 ทุกช่อง',needTarget:true,targetSelf:true},
   {id:'c3',emoji:'🎯',name:'Sniper',rarity:'common',cat:'attack',desc:'เลือกช่องศัตรู -1 ลูกบอล',needTarget:true,targetSelf:false},
   {id:'c4',emoji:'⚖️',name:'Exchange',rarity:'uncommon',cat:'chaos',desc:'+2 ช่องตัวเองที่เลือก แล้วสุ่มช่องศัตรู -2',needTarget:true,targetSelf:true},
-  {id:'c5',emoji:'🌀',name:'Spin',rarity:'common',cat:'chaos',desc:'ย้ายลูกบอล 1 ช่องไปข้างๆ สุ่ม',needTarget:true,targetSelf:true,twoTarget:true},
+  {id:'c5',emoji:'🌀',name:'Spin',rarity:'common',cat:'chaos',desc:'เลือกช่องตัวเองที่มีลูก แล้วเลือกช่องติดกันที่จะย้ายลูกทั้งหมดไป',needTarget:true,targetSelf:true,twoTarget:true},
   {id:'c6',emoji:'🧲',name:'Attract',rarity:'common',cat:'burst',desc:'ดึงลูกบอลจากข้างๆ มารวม',needTarget:true,targetSelf:true},
   {id:'c7',emoji:'💢',name:'Poke',rarity:'common',cat:'attack',desc:'เพิ่มลูกบอลศัตรู +1 (ใกล้ระเบิด!)',needTarget:true,targetSelf:false},
   {id:'c8',emoji:'🛡️',name:'Shield',rarity:'common',cat:'defense',desc:'ช่องนั้นไม่ระเบิด 1 เทิร์น',needTarget:true,targetSelf:true},
@@ -31,35 +36,38 @@ const CARD_DEFS = [
   {id:'u4',anyTarget:true,emoji:'🧱',name:'Wall',rarity:'uncommon',cat:'defense',desc:'ป้องกัน 3 ช่องของตัวเอง 1 เทิร์น',needTarget:false},
   {id:'u5',emoji:'⏳',name:'Time Bomb',rarity:'super_rare',cat:'chaos',desc:'อีก 2 เทิร์น ช่องนั้นระเบิดเอง',needTarget:true,targetSelf:false},
   {id:'u6',emoji:'⚔️',name:'Raid',rarity:'uncommon',cat:'attack',desc:'ลบลูกบอลศัตรู -2',needTarget:true,targetSelf:false},
-  {id:'u7',emoji:'🎪',name:'Shuffle Zone',rarity:'uncommon',cat:'chaos',desc:'สุ่มตำแหน่งช่องใน 3×3',needTarget:true,targetSelf:true},
-  {id:'u8',emoji:'🔃',name:'Mirror',rarity:'uncommon',cat:'chaos',desc:'คัดลอกจำนวนลูกบอลจากช่องศัตรู',needTarget:true,targetSelf:false},
-  {id:'u9',emoji:'📌',name:'Pin',rarity:'uncommon',cat:'defense',desc:'ช่องศัตรูที่เลือกระเบิดออกไม่ได้ 1 เทิร์น',needTarget:true,targetSelf:false},
-  {id:'u10',emoji:'🎁',name:'Gift',rarity:'common',cat:'chaos',desc:'ช่องตัวเองที่เลือก +2 แล้วสุ่มช่องศัตรู +1',needTarget:true,targetSelf:true},
+  {id:'u7',emoji:'🎪',name:'Shuffle Zone',rarity:'uncommon',cat:'chaos',desc:'สุ่มตำแหน่งช่องใน 3×3 แต่รวมบอลแต่ละฝ่ายเท่าเดิม',needTarget:true,targetSelf:true},
+  {id:'u9',emoji:'📌',name:'Pin',rarity:'uncommon',cat:'defense',desc:'ช่องศัตรูที่เลือกระเบิดไม่ได้ ตลอดตาถัดไปของเจ้าของช่อง',needTarget:true,targetSelf:false},
+  {id:'u8',emoji:'🔃',name:'Mirror',rarity:'uncommon',cat:'chaos',desc:'คัดลอกจำนวนลูกบอลของช่องศัตรู มาใส่ช่องตัวเองที่ใกล้ที่สุด',needTarget:true,targetSelf:false},
   {id:'r1',emoji:'🌋',name:'Mega Burst',rarity:'rare',cat:'burst',desc:'เพิ่มลูกบอล +1 พื้นที่ 3×3',needTarget:true,targetSelf:true},
   {id:'r2',emoji:'🕳️',name:'Black Hole',rarity:'rare',cat:'chaos',desc:'ดูดลูกบอลรอบๆ ทั้งหมดมารวม',needTarget:true,targetSelf:true},
   {id:'r3',anyTarget:true,emoji:'🧊',name:'Freeze',rarity:'rare',cat:'defense',desc:'คู่ต่อสู้สุ่มข้ามเทิร์นถัดไป',needTarget:false},
   {id:'r4',anyTarget:true,emoji:'🏹',name:'Barrage',rarity:'epic',cat:'attack',desc:'ทุกช่องของศัตรูสุ่ม -1',needTarget:false},
   {id:'r5',anyTarget:true,emoji:'🌪️',name:'Tornado',rarity:'rare',cat:'chaos',desc:'สุ่มย้ายลูกบอล 20% ของแผนที่',needTarget:false},
   {id:'r6',anyTarget:true,emoji:'🪞',name:'Reflect',rarity:'super_rare',cat:'defense',desc:'ป้องกันทุกช่องของตัวเอง 1 เทิร์น',needTarget:false},
-  {id:'r7',emoji:'⬛',name:'Void',rarity:'rare',cat:'chaos',desc:'ช่องที่เลือกหายไปจากกระดาน 2 เทิร์น',needTarget:true,targetSelf:true},
-  {id:'r8',anyTarget:true,emoji:'🔙',name:'Rewind',rarity:'epic',cat:'strategy',desc:'ย้อนกลับกระดานไปสภาพก่อนหน้า 1 เทิร์น',needTarget:false},
   {id:'e1',emoji:'☄️',name:'Meteor',rarity:'epic',cat:'burst',desc:'ช่องนั้นระเบิด 2 รอบ',needTarget:true,targetSelf:true},
   {id:'e2',emoji:'🌊',name:'Tsunami',rarity:'super_rare',cat:'chaos',desc:'ทุกช่องใน row เดียวกัน +1',needTarget:true,targetSelf:true},
-  {id:'e3',emoji:'🎭',name:'Steal',rarity:'epic',cat:'attack',desc:'ขโมยช่องศัตรู 1 ช่อง',needTarget:true,targetSelf:false},
-  {id:'e4',anyTarget:true,emoji:'🏛️',name:'Pillar',rarity:'super_rare',cat:'chaos',desc:'เพิ่ม +1 ทุกช่องใน column เดียวกัน',needTarget:false},
-  {id:'ep3',anyTarget:true,emoji:'⚖️',name:'Balance',rarity:'epic',cat:'chaos',desc:'เฉลี่ยจำนวนลูกบอลทุกช่องบนกระดานให้เท่ากัน',needTarget:false},
-  {id:'ep5',emoji:'💫',name:'Nova',rarity:'super_rare',cat:'burst',desc:'เพิ่ม +2 รอบๆ ช่องตัวเองที่ใกล้ระเบิดที่สุด',needTarget:false,anyTarget:true},
-  {id:'ep6',anyTarget:true,emoji:'🔥',name:'Inferno',rarity:'epic',cat:'burst',desc:'ทุกช่องตัวเองที่มีลูกบอล +1 พร้อมกัน',needTarget:false},
-  {id:'sr1',emoji:'🪓',name:'Sever',rarity:'rare',cat:'defense',desc:'เลือก 2 ช่อง ระเบิดออกไปข้างๆ ไม่ได้ 4 เทิร์น',needTarget:true,targetSelf:true,twoTarget:true},
+  {id:'e3',emoji:'🎭',name:'Steal',rarity:'epic',cat:'attack',desc:'ขโมยช่องศัตรู 1 ช่อง (ทะลุโล่)',needTarget:true,targetSelf:false},
+  {id:'c13',emoji:'🎲',name:'Gamble',rarity:'common',cat:'chaos',desc:'สุ่ม -2 ถึง +2 ในช่องที่เลือก',needTarget:true,targetSelf:true,offlineOnly:true},
+  {id:'c14',emoji:'🪄',name:'Boost',rarity:'uncommon',cat:'burst',desc:'ช่องที่เลือก +1 และช่องตัวเองข้างๆ +1 ด้วย',needTarget:true,targetSelf:true,offlineOnly:true},
+  {id:'u10',emoji:'🎁',name:'Gift',rarity:'common',cat:'chaos',desc:'ช่องตัวเองที่เลือก +2 แล้วสุ่ม 2 ช่องของศัตรู +1',needTarget:true,targetSelf:true},
+  {id:'r7',emoji:'⬛',name:'Void',rarity:'rare',cat:'chaos',desc:'ช่องตัวเองที่เลือกหายไปจากกระดานจนถึงตาที่ 2 ของเรา ไม่มีใครวางหรือส่งลูกเข้าได้ แล้วกลับมาพร้อมลูกเดิม',needTarget:true,targetSelf:true},
+  {id:'r8',anyTarget:true,emoji:'🔙',name:'Rewind',rarity:'epic',cat:'strategy',desc:'ย้อนกระดานกลับไปก่อน action ล่าสุด (ผู้เล่นที่เพิ่งตกรอบกลับมาด้วย)',needTarget:false},
+  {id:'sr1',emoji:'🪓',name:'Sever',rarity:'rare',cat:'defense',desc:'เลือก 2 ช่องของตัวเอง ระเบิดออกไม่ได้ 4 ตาของเรา',needTarget:true,targetSelf:true,twoTarget:true},
   {id:'sr2',anyTarget:true,emoji:'🌑',name:'Eclipse',rarity:'super_rare',cat:'chaos',desc:'ทุกคนมองไม่เห็นจำนวนลูกบอลของกันและกัน 2 เทิร์น',needTarget:false},
-  {id:'sr3',anyTarget:true,emoji:'🔑',name:'Key',rarity:'rare',cat:'strategy',desc:'การ์ดถัดไปที่จั่วได้จะเป็น rare ขึ้นไปแน่นอน',needTarget:false},
-  {id:'l1',anyTarget:true,emoji:'💀',name:'Annihilate',rarity:'mythical',cat:'legendary',desc:'ลบลูกบอลทั้งหมดของคู่ต่อสู้สุ่ม (1ครั้ง/เกม)',needTarget:false},
-  {id:'l2',anyTarget:true,emoji:'☢️',name:'Nuclear',rarity:'legendary',cat:'legendary',desc:'ทุกช่องที่มีลูกบอลระเบิดพร้อมกัน (1ครั้ง/เกม)',needTarget:false},
-  {id:'l3',anyTarget:true,emoji:'👑',name:'Dominion',rarity:'legendary',cat:'legendary',desc:'ทุกช่องว่างบนกระดานกลายเป็นของตัวเองพร้อม 1 ลูกบอล (1ครั้ง/เกม)',needTarget:false},
-  {id:'l4',anyTarget:true,emoji:'🛸',name:'Invasion',rarity:'super_rare',cat:'legendary',desc:'แปลงช่องศัตรูสุ่ม 3 ช่องเป็นช่องตัวเอง',needTarget:false},
-  {id:'l5',emoji:'🔮',name:'Rebirth',rarity:'legendary',cat:'legendary',desc:'คืนชีพ! วางบอล 3 ลูก ใช้ได้เมื่อตายแล้วเท่านั้น',needTarget:true,targetSelf:true,rebirthOnly:true},
-  {id:'m1',emoji:'🪐',name:'Singularity',rarity:'legendary',cat:'mythical',desc:'ดูด 50% ของลูกบอลทุกช่องมารวมที่ช่องที่เลือก',needTarget:true,targetSelf:true},
-  {id:'m2',anyTarget:true,emoji:'🌌',name:'Big Bang',rarity:'mythical',cat:'mythical',desc:'ทุกช่องตัวเองระเบิดพร้อมกัน แล้ว +2 คืนมา',needTarget:false},
+  {id:'sr3',anyTarget:true,emoji:'🔑',name:'Key',rarity:'rare',cat:'strategy',desc:'การ์ดถัดไปที่เราจั่วได้จะเป็น rare ขึ้นไปแน่นอน',needTarget:false},
+  {id:'ep3',anyTarget:true,emoji:'⚖️',name:'Balance',rarity:'epic',cat:'chaos',desc:'เฉลี่ยจำนวนลูกบอลทุกช่องบนกระดานให้เท่ากัน',needTarget:false},
+  {id:'ep4',anyTarget:true,emoji:'🕐',name:'Delay',rarity:'super_rare',cat:'strategy',desc:'ข้ามตาเราไป 1 ตา แต่ตาต่อไปทำได้ 2 action (วางบอล/ใช้การ์ดรวมกัน)',needTarget:false,offlineOnly:true},
+  {id:'ep5',anyTarget:true,emoji:'💫',name:'Nova',rarity:'super_rare',cat:'burst',desc:'เพิ่ม +2 รอบๆ ช่องตัวเองที่ใกล้ระเบิดที่สุด',needTarget:false},
+  {id:'ep6',anyTarget:true,emoji:'🔥',name:'Inferno',rarity:'epic',cat:'burst',desc:'ทุกช่องตัวเองที่มีลูกบอล +1 พร้อมกัน',needTarget:false},
+  {id:'l1',anyTarget:true,emoji:'💀',name:'Annihilate',rarity:'mythical',cat:'legendary',desc:'ลบลูกบอลทั้งหมดของคู่ต่อสู้สุ่ม (Mythical ใช้ได้ 1 ครั้ง/เกม)',needTarget:false},
+  {id:'l2',anyTarget:true,emoji:'☢️',name:'Nuclear',rarity:'legendary',cat:'legendary',desc:'ทุกช่องที่มีลูกบอลระเบิดพร้อมกัน (Legendary ใช้ได้ 2 ครั้ง/เกม)',needTarget:false},
+  {id:'l3',anyTarget:true,emoji:'👑',name:'Dominion',rarity:'legendary',cat:'legendary',desc:'ทุกช่องว่างบนกระดานกลายเป็นของตัวเองพร้อม 1 ลูกบอล (Legendary ใช้ได้ 2 ครั้ง/เกม)',needTarget:false},
+  {id:'l4',anyTarget:true,emoji:'🛸',name:'Invasion',rarity:'super_rare',cat:'legendary',desc:'แปลงช่องศัตรูสุ่ม 3 ช่องเป็นช่องตัวเอง (ทะลุโล่)',needTarget:false},
+  {id:'m1',emoji:'🪐',name:'Singularity',rarity:'legendary',cat:'mythical',desc:'ดูด 50% ของลูกบอลทุกช่องบนกระดานมารวมที่ช่องตัวเองที่เลือก (Legendary ใช้ได้ 2 ครั้ง/เกม)',needTarget:true,targetSelf:true},
+  {id:'m2',anyTarget:true,emoji:'🌌',name:'Big Bang',rarity:'mythical',cat:'mythical',desc:'ทุกช่องตัวเองระเบิดพร้อมกัน แล้วทุกช่องที่ระเบิดได้ +2 คืนมา (Mythical ใช้ได้ 1 ครั้ง/เกม)',needTarget:false},
+  {id:'l5',emoji:'🔮',name:'Rebirth',rarity:'legendary',cat:'legendary',desc:'คืนชีพ! เลือกช่องว่างแล้ววางบอล 3 ลูก ใช้ได้เมื่อตายแล้วเท่านั้น (Legendary ใช้ได้ 2 ครั้ง/เกม)',needTarget:true,targetSelf:true,rebirthOnly:true},
+  {id:'e4',anyTarget:true,emoji:'🏛️',name:'Pillar',rarity:'super_rare',cat:'chaos',desc:'เพิ่ม +1 ทุกช่องในแนวตั้ง (column) เดียวกัน กดช่องไหนก็ได้',needTarget:false},
 ];
 
 const RARITY_WEIGHTS = {common:50,uncommon:25,rare:12,super_rare:7,epic:4,legendary:1.5,mythical:0.5};
@@ -78,12 +86,16 @@ function neighbors(r, c, rows, cols) {
   return nb;
 }
 
-function drawRandomCard(keyActive = 0, disabledCards = []) {
+// opts.offline = true: โหมดออฟไลน์ — จั่วการ์ด offlineOnly ได้ด้วย · ค่าเริ่มต้น (server) ไม่แจกใบพวกนั้น
+// (ของเดิม 3 ใบนั้นมีแต่ใน client: ออนไลน์ไม่มีทางได้อยู่แล้ว แต่พอรวมนิยามเป็นชุดเดียวต้องกันไว้ตรงนี้)
+function drawRandomCard(keyActive = 0, disabledCards = [], opts) {
   const disabled = new Set(disabledCards);
+  const offline = !!(opts && opts.offline);
   const pool = [];
   const forceRare = keyActive > 0;
   CARD_DEFS.forEach(def => {
     if (disabled.has(def.id)) return; // ข้ามการ์ดที่ปิดไว้
+    if (def.offlineOnly && !offline) return;
     if (forceRare) {
       if (['rare','super_rare','epic','legendary','mythical'].includes(def.rarity)) pool.push(def);
     } else {
@@ -95,10 +107,10 @@ function drawRandomCard(keyActive = 0, disabledCards = []) {
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
-function draw3UniqueCards(keyActive = 0, disabledCards = []) {
+function draw3UniqueCards(keyActive = 0, disabledCards = [], opts) {
   const chosen = [];
   for (let i = 0; i < 40 && chosen.length < 3; i++) {
-    const card = drawRandomCard(keyActive, disabledCards);
+    const card = drawRandomCard(keyActive, disabledCards, opts);
     if (!chosen.find(x => x.id === card.id)) chosen.push(card);
   }
   return chosen;

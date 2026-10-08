@@ -63,7 +63,7 @@ function cleanName(name, fallback) {
 // rate limit ต่อ socket ต่อ event: [จำนวนครั้งสูงสุด, ภายในกี่ ms]
 const RATE = {
   create_room: [5, 10000], join_room: [10, 10000], rejoin_room: [10, 10000],
-  update_cfg: [40, 5000], place: [30, 5000], use_card: [30, 5000], place_timeout: [20, 5000],
+  update_cfg: [40, 5000], place: [30, 5000], use_card: [30, 5000], discard_card: [20, 5000], place_timeout: [20, 5000],
   group_pick_response: [20, 5000], group_pick_skip: [20, 5000], start_game: [10, 10000], restart_game: [10, 10000],
 };
 const NO_PAYLOAD = new Set(['start_game', 'restart_game']); // event ที่ client ส่งแค่ callback
@@ -704,6 +704,26 @@ io.on('connection', (socket) => {
     state._last = { card: { cardId, targets: targets || {}, playerIdx: member.slot, vfxData: result.vfxData || {} } };
     state._lastCardVfxData = result.vfxData || {};
     processTurnEnd(room);
+  });
+
+  // ทิ้งการ์ดในมือ: ในตาของตัวเอง ไม่เสีย action
+  // (การ์ดที่ใช้ไม่ได้แล้ว เช่น Legendary ใบที่ 3 ค้างในมือได้ตลอด — มือเต็ม 4 ใบแล้วจะไม่ได้การ์ดใหม่อีกเลย)
+  socket.on('discard_card', ({ cardId }, cb) => {
+    const room = getRoomBySocket(socket.id);
+    if (!room) return cb?.({ ok: false, msg: 'ไม่พบห้อง' });
+    if (!isPlaying(room)) return cb?.({ ok: false, msg: room.phase === 'group_pick' ? 'กำลังเลือกการ์ดอยู่' : 'ยังไม่ถึงเวลาเล่น' });
+    const member = room.members.find(m => m.socketId === socket.id);
+    if (!member) return cb?.({ ok: false, msg: 'ไม่พบผู้เล่น' });
+    const state = room.state;
+    if (state.current !== member.slot) return cb?.({ ok: false, msg: 'ทิ้งการ์ดได้เฉพาะในตาของตัวเอง' });
+    const hand = state.hands[member.slot] || [];
+    const idx = typeof cardId === 'string' ? hand.findIndex(d => d.id === cardId) : -1;
+    if (idx < 0) return cb?.({ ok: false, msg: 'ไม่มีการ์ดนี้ในมือ' });
+    hand.splice(idx, 1);
+    touch(room);
+    cb?.({ ok: true });
+    broadcastRoom(room);              // คนอื่นเห็นจำนวนการ์ดในมือลดลง
+    sendPrivateHand(room, member.slot);
   });
 
   // ── Group pick: เลือกการ์ด ──

@@ -560,6 +560,10 @@ function notifyMyTurn(turnKey) {
       75%  { opacity:1; transform:translate(-50%,-50%) scale(1.05); }
       100% { opacity:0; transform:translate(-50%,-68%) scale(0.85); }
     }
+    .hand-card .discard-hint { display: none; }
+    .hand-card.selected-card .discard-hint { display: block; margin-top: 6px; width: 100%; min-height: 32px; padding: 6px 4px; border: 0; border-radius: 10px;
+      background: rgba(0,0,0,.06); color: #8a3b3b; font: 700 .58rem/1.2 Nunito, 'Noto Sans Thai', sans-serif; cursor: pointer; }
+    .hand-card.selected-card .discard-hint.armed { background: #e05c5c; color: #fff; }
     @keyframes myTurnFlash {
       0%   { opacity:1; }
       100% { opacity:0; }
@@ -953,10 +957,22 @@ function onlineRenderHandBar() {
       <span class="card-rarity-badge ${RARITY_COLORS[cardDef.rarity]}">${RARITY_LABEL[cardDef.rarity]}</span>
       <span class="card-desc">${cardDef.desc}</span>
       <div class="use-hint">${hint}</div>
+      ${isMyTurn ? '<button type="button" class="discard-hint">🗑 ทิ้งการ์ดใบนี้</button>' : ''}
     `;
     if (isMyTurn) {
+      // ทิ้งการ์ด (ไม่เสีย action): กดครั้งแรกเพื่อยืนยัน กดอีกครั้งภายใน 3 วินาทีจึงทิ้งจริง
+      const dis = el.querySelector('.discard-hint');
+      let armed = 0;
+      dis.addEventListener('click', e => {
+        e.stopPropagation();
+        if (isSettling()) return;
+        if (Date.now() - armed > 3000) { armed = Date.now(); dis.textContent = '🗑 กดอีกครั้งเพื่อทิ้ง'; dis.classList.add('armed'); setTimeout(() => { if (dis.isConnected && Date.now() - armed >= 3000) { dis.textContent = '🗑 ทิ้งการ์ดใบนี้'; dis.classList.remove('armed'); } }, 3100); return; }
+        selectedHandCard = null; targetData = {};
+        document.getElementById('target-banner').classList.remove('show');
+        socket.emit('discard_card', { cardId: cardDef.id }, res => { if (!res?.ok) showToast(res?.msg || 'ทิ้งการ์ดไม่ได้'); else showToast(`🗑 ทิ้ง ${cardDef.name} แล้ว`); });
+      });
       el.addEventListener('click', e => {
-        if (e.target.closest('.use-hint')) return;
+        if (e.target.closest('.use-hint') || e.target.closest('.discard-hint')) return;
         onHandCardClick(mySlot, ci, cardDef);
       });
       el.querySelector('.use-hint').addEventListener('click', e => {
@@ -1004,7 +1020,7 @@ function renderRoomScreen(room) {
   // สรุปการตั้งค่า (ทุกคนเห็น — ของเดิมคนที่ไม่ใช่ host ไม่รู้เลยว่าจะเล่นแมพอะไร)
   const cfg2 = room.cfg || {};
   const rows = cfg2.mapSize || 8, cols = cfg2.mapCols || rows, iv = cfg2.cardInterval ?? 2;
-  const total = (window.CARD_DEFS || (typeof CARD_DEFS !== 'undefined' ? CARD_DEFS : [])).length, off = (cfg2.disabledCards || []).length;
+  const total = (window.CARD_DEFS || (typeof CARD_DEFS !== 'undefined' ? CARD_DEFS : [])).filter(c => !c.offlineOnly).length, off = (cfg2.disabledCards || []).length;
   const sum = document.getElementById('room-summary');
   if (sum) sum.textContent = `แมพ ${rows}×${cols} · ` + (iv > 0 ? `ได้การ์ดทุก ${iv} เทิร์น` : 'ไม่ใช้การ์ด') + (iv > 0 && off ? ` · เปิดการ์ด ${total - off}/${total} ใบ` : '');
   // ปุ่มตัวเลือกของ host ตรงกับค่าจริงของห้องเสมอ (เช่น หลังรีเฟรชแล้วกลับเข้าห้อง)
@@ -1072,8 +1088,9 @@ function renderCardFilter() {
   if (!list) return;
 
   // ดึง CARD_DEFS จาก gameLogic ที่โหลดใน index.html
-  const cards = (typeof CARD_DEFS !== 'undefined' ? CARD_DEFS : null)
-    || window.CARD_DEFS || [];
+  // การ์ดเฉพาะโหมดออฟไลน์ (offlineOnly) ไม่ถูกแจกในห้องออนไลน์ จึงไม่ต้องให้เลือกเปิด/ปิด
+  const cards = ((typeof CARD_DEFS !== 'undefined' ? CARD_DEFS : null)
+    || window.CARD_DEFS || []).filter(c => !c.offlineOnly);
 
   if (!cards.length) {
     list.innerHTML = '<div style="text-align:center;opacity:.5;padding:20px;">โหลดข้อมูลการ์ดไม่สำเร็จ</div>';
@@ -1144,7 +1161,7 @@ function renderCardFilter() {
 function updateCardFilterSummary() {
   const el = document.getElementById('card-filter-summary');
   if (!el) return;
-  const total = (window.CARD_DEFS || []).length;
+  const total = (window.CARD_DEFS || []).filter(c => !c.offlineOnly).length;
   const disabled = disabledCards.size;
   if (disabled === 0) el.textContent = `การ์ดทั้งหมด (เปิดทั้งหมด)`;
   else if (disabled === total) el.textContent = `ไม่มีการ์ด (ปิดทั้งหมด)`;
@@ -1153,7 +1170,7 @@ function updateCardFilterSummary() {
 
 function setAllCards(enable) {
   if (enable) disabledCards.clear();
-  else { (window.CARD_DEFS || []).forEach(c => disabledCards.add(c.id)); }
+  else { (window.CARD_DEFS || []).filter(c => !c.offlineOnly).forEach(c => disabledCards.add(c.id)); }
   renderCardFilter();
   updateCardFilterSummary();
   emitCardFilter();
