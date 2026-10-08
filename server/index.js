@@ -11,13 +11,16 @@ const {
 } = require('../shared/gameLogic');
 
 // Global error handler - prevent Railway restart
-process.on('uncaughtException', (err) => {
-  console.error('[UNCAUGHT EXCEPTION]', err.message, err.stack);
-  // ไม่ crash server
-});
-process.on('unhandledRejection', (reason) => {
-  console.error('[UNHANDLED REJECTION]', reason);
-});
+// (เฉพาะตอนรันเป็น server จริง — ตอนถูก require จากชุดทดสอบ ปล่อยให้ error โผล่ตามปกติ)
+if (require.main === module) {
+  process.on('uncaughtException', (err) => {
+    console.error('[UNCAUGHT EXCEPTION]', err.message, err.stack);
+    // ไม่ crash server
+  });
+  process.on('unhandledRejection', (reason) => {
+    console.error('[UNHANDLED REJECTION]', reason);
+  });
+}
 
 const app    = express();
 const server = http.createServer(app);
@@ -532,4 +535,19 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`\n🚀 Chain Reaction at http://localhost:${PORT}\n`));
+// start(0) = port สุ่ม (ชุดทดสอบใช้) · คืน port ที่เปิดจริง
+function start(port = PORT) {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, () => resolve(server.address().port));
+  });
+}
+function stop() {
+  return new Promise(resolve => io.close(() => resolve()));
+}
+
+if (require.main === module) {
+  start().then(port => console.log(`\n🚀 Chain Reaction at http://localhost:${port}\n`));
+}
+
+module.exports = { app, server, io, rooms, socketRoom, start, stop };
