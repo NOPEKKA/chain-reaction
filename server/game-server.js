@@ -8,7 +8,7 @@ const crypto = require('crypto');
 const {
   createInitialState, applyPlace, applyCard,
   processExplosionsWithWaves, checkEliminations, checkWin,
-  nextTurn, tickTimeBombs, draw3UniqueCards,
+  nextTurn, tickTimeBombs, drawPickChoices,
   PLAYER_NAMES, HAND_LIMIT, CARD_DEFS, animMs,
 } = require('../shared/gameLogic');
 
@@ -233,7 +233,7 @@ function startGroupPick(room) {
 
   const choices = {};
   eligible.forEach(slot => {
-    choices[slot] = draw3UniqueCards(state.keyActive, state.disabledCards || []);
+    choices[slot] = drawPickChoices(state, slot); // Key ของผู้เล่นคนนั้นเท่านั้น และถูกใช้ไปตรงนี้
   });
 
   room.groupPick = {

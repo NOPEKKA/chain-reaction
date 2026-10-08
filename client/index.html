@@ -2775,15 +2775,17 @@ function showToast(msg){const old=document.querySelector('.toast');if(old)old.re
 function isBot(i){return cfg.bots.includes(i);}
 function delay(ms){return new Promise(r=>setTimeout(r,ms));}
 
-function drawRandomCard(){
+// จั่วการ์ด — pi = ผู้เล่นที่จั่ว: ถ้าเขามี Key จะได้ rare ขึ้นไป แล้ว Key ของเขาถูกใช้ไป (ของเดิม Key เป็นค่ากลาง ใครจั่วก่อนได้ไป)
+const RARE_UP=['rare','super_rare','epic','legendary','mythical'];
+function useKey(pi){if(pi>=0&&Array.isArray(STATE.keyActive)&&STATE.keyActive[pi]>0){STATE.keyActive[pi]--;return true;}return false;}
+function drawFromPool(rareOnly){
   const pool=[];
-  const forceRare=STATE.keyActive&&STATE.keyActive>0;
-  if(forceRare){STATE.keyActive--;CARD_DEFS.forEach(def=>{if(['rare','super_rare','epic','legendary','mythical'].includes(def.rarity))pool.push(def);});}
-  else{CARD_DEFS.forEach(def=>{const w=RARITY_WEIGHTS[def.rarity]||0;for(let i=0;i<w;i++)pool.push(def);});}
+  if(rareOnly)CARD_DEFS.forEach(def=>{if(RARE_UP.includes(def.rarity))pool.push(def);});
+  else CARD_DEFS.forEach(def=>{const w=RARITY_WEIGHTS[def.rarity]||0;for(let i=0;i<w;i++)pool.push(def);});
   return pool[Math.floor(Math.random()*pool.length)];
 }
-function drawRareCard(){const pool=[];CARD_DEFS.forEach(def=>{if(['rare','super_rare','epic','legendary','mythical'].includes(def.rarity))pool.push(def);});return pool[Math.floor(Math.random()*pool.length)];}
-function draw3UniqueCards(){const chosen=[];const useKey=STATE&&STATE.keyActive>0;if(useKey)STATE.keyActive--;for(let i=0;i<40&&chosen.length<3;i++){const card=useKey?drawRareCard():drawRandomCard();if(!chosen.find(x=>x.id===card.id))chosen.push(card);}return chosen;}
+function drawRandomCard(pi){return drawFromPool(useKey(pi));}
+function draw3UniqueCards(pi){const rare=useKey(pi),chosen=[];for(let i=0;i<40&&chosen.length<3;i++){const card=drawFromPool(rare);if(!chosen.find(x=>x.id===card.id))chosen.push(card);}return chosen;}
 
 function startGame(){
   applyTheme(cfg.theme);
@@ -2804,9 +2806,10 @@ function startGame(){
     hands:Array.from({length:players},()=>[]),
     legendaryUsedBy:Array(players).fill(0),
     mythicalUsedBy:Array(players).fill(false),
-    eclipse:0,keyActive:0,delayFor:-1,_pendingDelayFor:-1,
+    rows:size, // ชื่อเดียวกับ state ของ shared/gameLogic.js (ฟังก์ชันกติกาที่ใช้ร่วมกันอ่านค่านี้)
+    eclipse:0,keyActive:Array(players).fill(0),delayFor:-1,_pendingDelayFor:-1,
     voidCells:{},voidSnapshot:{},severed:{},catalyzed:{},
-    pinned:{},
+    pinned:{},voidOwner:{},severedOwner:{},pinnedOwner:{},pinnedBy:{},
     _snapshot:null,
     _gameId:(STATE&&STATE._gameId||0)+1,
     shielded:Array.from({length:size},()=>Array(cols).fill(0)),
@@ -3069,6 +3072,7 @@ function handleCellClick(){
   if(!STATE.alive.includes(cur)){if(rebirthUsable(cur))showToast('🔮 กดการ์ด Rebirth แล้วเลือกช่องว่างเพื่อคืนชีพ');return;}
   if(STATE.moved[cur]){showToast('❌ ใช้ action ไปแล้วในเทิร์นนี้');return;}
   if(STATE.frozen[cur]>0){showToast('❄️ Frozen! ข้ามเทิร์น');SFX.frozen();endTurn();return;}
+  if(STATE.voidCells&&STATE.voidCells[`${r},${c}`]>0){showToast('⬛ ช่องนั้นหายไปจากกระดานอยู่ (Void)');return;}
   const cell=STATE.cells[r][c];
   const hasOwnCells=STATE.cells.some(row=>row.some(ce=>ce.owner===cur));
   if(hasOwnCells){if(cell.owner!==cur){showToast('❌ วางได้เฉพาะช่องของตัวเองเท่านั้น');return;}}
@@ -3834,7 +3838,7 @@ async function executeCardInner(cardDef,playerIdx,cardIdx,targets){
     case 'c7':if(STATE.cells[r][c].owner!==cur){STATE.cells[r][c].count++;resultText='ศัตรู +1 (ใกล้ระเบิด!)';}break;
     case 'c8':STATE.shielded[r][c]=1;STATE.shieldOwner[r][c]=cur;resultText='ป้องกัน 1 เทิร์น!';break;
     case 'c9':if(STATE.cells[r][c].owner!==cur&&STATE.cells[r][c].count>0&&STATE.shielded[r][c]<=0){const own=[];for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===cur)own.push([ro,co]);const bonusCell=own.length?own[Math.floor(Math.random()*own.length)]:null;vfxData={target:[r,c],bonusCell};resultText='ดูด -1 ลูกบอล!';}else if(STATE.shielded[r][c]>0)resultText='❌ ช่องนั้นมีเกราะ!';break;
-    case 'c10':{STATE.hands[playerIdx]=[];const nc2=drawRandomCard();STATE.hands[playerIdx].push({...nc2});resultText=`จั่ว ${nc2.emoji} ${nc2.name}!`;}break;
+    case 'c10':{STATE.hands[playerIdx]=[];const nc2=drawRandomCard(playerIdx);STATE.hands[playerIdx].push({...nc2});resultText=`จั่ว ${nc2.emoji} ${nc2.name}!`;}break;
     case 'c11':{const own=[];for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===cur)own.push([ro,co]);const picked=own.sort(()=>Math.random()-.5).slice(0,2);picked.forEach(([ro,co])=>STATE.cells[ro][co].count++);vfxData={boosted:picked};resultText='+1 สองช่อง!';}break;
     case 'c12':{const others=STATE.alive.filter(i=>i!==cur);if(others.length>0){const t=others[Math.floor(Math.random()*others.length)];const names=STATE.hands[t].map(x=>x.name).join(', ')||'ไม่มีการ์ด';resultText=`${PLAYER_NAMES[t]}: ${names}`;}}break;
     case 'u1':STATE.cells[r][c].count=STATE.cells[r][c].cap;STATE.cells[r][c].owner=cur;resultText='ระเบิดทันที!';break;
@@ -3887,21 +3891,22 @@ async function executeCardInner(cardDef,playerIdx,cardIdx,targets){
     // ── การ์ดใหม่ ──
     case 'c13':{const vals=[-2,-1,0,1,2];const v=vals[Math.floor(Math.random()*vals.length)];STATE.cells[r][c].count=Math.max(0,STATE.cells[r][c].count+v);if(STATE.cells[r][c].count>0)STATE.cells[r][c].owner=cur;vfxData={value:v};resultText=`Gamble: ${v>=0?'+':''}${v}!`;}break;
     case 'c14':{STATE.cells[r][c].count++;STATE.cells[r][c].owner=cur;const boosted=[[r,c]];neighbors(r,c,size,STATE.cols).forEach(([nr,nc])=>{if(STATE.cells[nr][nc].owner===cur){STATE.cells[nr][nc].count++;boosted.push([nr,nc]);}});vfxData={boosted};resultText='Boost!';}break;
-    case 'u9':{if(STATE.cells[r][c].owner!==cur&&STATE.cells[r][c].owner!==-1){if(!STATE.pinned)STATE.pinned={};STATE.pinned[`${r},${c}`]=1;resultText='Pin!';}else{resultText='❌ เลือกช่องศัตรูที่มีบอล';}break;}
+    case 'u9':{if(STATE.cells[r][c].owner!==cur&&STATE.cells[r][c].owner!==-1){if(!STATE.pinned)STATE.pinned={};STATE.pinned[`${r},${c}`]=1;(STATE.pinnedOwner||(STATE.pinnedOwner={}))[`${r},${c}`]=STATE.cells[r][c].owner;(STATE.pinnedBy||(STATE.pinnedBy={}))[`${r},${c}`]=cur;resultText='Pin!';}else{resultText='❌ เลือกช่องศัตรูที่มีบอล';}break;}
     case 'u10':{STATE.cells[r][c].count+=2;STATE.cells[r][c].owner=cur;const boosted_u10=[[r,c]];const others_u10=STATE.alive.filter(i=>i!==cur);if(others_u10.length){const t_u10=others_u10[Math.floor(Math.random()*others_u10.length)];const tcells_u10=[];for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===t_u10)tcells_u10.push([ro,co]);tcells_u10.sort(()=>Math.random()-.5);tcells_u10.slice(0,2).forEach(([ro,co])=>{STATE.cells[ro][co].count++;boosted_u10.push([ro,co]);});}vfxData={boosted:boosted_u10};resultText='Gift!';}break;
-    case 'r7':{if(!STATE.voidCells)STATE.voidCells={};if(!STATE.voidSnapshot)STATE.voidSnapshot={};STATE.voidCells[`${r},${c}`]=2;STATE.voidSnapshot[`${r},${c}`]={count:STATE.cells[r][c].count,owner:STATE.cells[r][c].owner};STATE.cells[r][c].count=0;STATE.cells[r][c].owner=-1;resultText='Void!';}break;
+    case 'r7':{if(!STATE.voidCells)STATE.voidCells={};if(!STATE.voidSnapshot)STATE.voidSnapshot={};STATE.voidCells[`${r},${c}`]=2;(STATE.voidOwner||(STATE.voidOwner={}))[`${r},${c}`]=cur;STATE.voidSnapshot[`${r},${c}`]={count:STATE.cells[r][c].count,owner:STATE.cells[r][c].owner};STATE.cells[r][c].count=0;STATE.cells[r][c].owner=-1;resultText='Void!';}break;
     case 'r8':{ // Rewind: คืนกระดาน + ผู้เล่นที่ถูกคัดออก + เอฟเฟกต์ของกระดาน (shared/gameLogic.js)
     if(!STATE.rows)STATE.rows=STATE.size;
     vfxData={diff:CRLogic.restoreSnapshot(STATE)||[]};resultText='Rewind!';}break;
     case 'sr1':{// Sever: เลือก 2 ช่อง ระเบิดออกไม่ได้ 4 เทิร์น
     if(!STATE.severed)STATE.severed={};
-    STATE.severed[`${r},${c}`]=4;
-    if(r2!==undefined&&c2!==undefined)STATE.severed[`${r2},${c2}`]=4;
+    if(!STATE.severedOwner)STATE.severedOwner={};
+    STATE.severed[`${r},${c}`]=4;STATE.severedOwner[`${r},${c}`]=cur;
+    if(r2!==undefined&&c2!==undefined){STATE.severed[`${r2},${c2}`]=4;STATE.severedOwner[`${r2},${c2}`]=cur;}
     resultText='Sever! 2 ช่อง';}break;
     case 'sr2':{// Eclipse: ซ่อนจำนวนลูกบอล 2 เทิร์น
     STATE.eclipse=(STATE.eclipse||0)+2;resultText='Eclipse! 2 เทิร์น';}break;
     case 'sr3':{// Key: การ์ดถัดไปเป็น rare+
-    STATE.keyActive=(STATE.keyActive||0)+1;resultText='Key! การ์ดถัดไป rare+!';}break;
+    if(!Array.isArray(STATE.keyActive))STATE.keyActive=Array(STATE.players).fill(0);STATE.keyActive[cur]=(STATE.keyActive[cur]||0)+1;resultText='Key! การ์ดถัดไป rare+!';}break;
     case 'ep2':{// Cascade: ทุกช่องตัวเอง +1
     const cascaded=[];for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===cur&&STATE.cells[ro][co].count>0){STATE.cells[ro][co].count++;cascaded.push([ro,co]);}vfxData={cascaded};resultText='Cascade!';}break;
     case 'ep3':{// Balance: เฉลี่ยทุกช่อง
@@ -4031,14 +4036,14 @@ function endTurnNow(){
   const cardDue=!delayStillActive&&cfg.cardInterval>0&&STATE.playerTurns[justPlayed]%cfg.cardInterval===0;
   if(cardDue){
     if(isBot(justPlayed)){
-      if(STATE.hands[justPlayed].length<HAND_LIMIT)STATE.hands[justPlayed].push({...draw3UniqueCards()[0]});
+      if(STATE.hands[justPlayed].length<HAND_LIMIT)STATE.hands[justPlayed].push({...draw3UniqueCards(justPlayed)[0]});
       renderHandBar();renderScoreboard();if(isBot(STATE.current))scheduleBot(400);
     } else {
       const waitMs=Math.max(0,vfxFinishTime-Date.now());
       pendingPickPlayer=justPlayed;
       setTimeout(()=>{
         if(pendingPickPlayer===justPlayed) // กัน duplicate
-          showCardPickOverlay(justPlayed,draw3UniqueCards());
+          showCardPickOverlay(justPlayed,draw3UniqueCards(justPlayed));
       },waitMs);
     }
   } else {renderHandBar();renderScoreboard();if(isBot(STATE.current))scheduleBot(400);}
@@ -4070,7 +4075,7 @@ function showCardPickOverlay(playerIdx,cards,rollsLeft=999){
           STATE.hands[playerIdx].splice(ci,1);
           showToast(`🗑️ ทิ้ง ${cardInHand.name} แล้ว`);
           SFX.select();
-          showCardPickOverlay(playerIdx,draw3UniqueCards(),999);
+          showCardPickOverlay(playerIdx,draw3UniqueCards(playerIdx),999);
         } else {
           // กดครั้งแรก = expand
           row.querySelectorAll('.pick-card').forEach(c=>c.classList.remove('expanded'));
@@ -4095,7 +4100,7 @@ function showCardPickOverlay(playerIdx,cards,rollsLeft=999){
 function pickCard(def){if(pendingPickPlayer<0)return;STATE.hands[pendingPickPlayer].push({...def});SFX.pickCard();showToast(`✅ ${def.emoji} ${def.name} เพิ่มในมือ!`);closePick();}
 document.getElementById('reroll-btn').addEventListener('click',()=>{
   showToast('🎲 สุ่มใหม่!');
-  showCardPickOverlay(pendingPickPlayer,draw3UniqueCards(),999);
+  showCardPickOverlay(pendingPickPlayer,draw3UniqueCards(pendingPickPlayer),999);
 });
 document.getElementById('skip-pick-btn').addEventListener('click',()=>{showToast('⏭️ ข้ามการรับการ์ด');closePick();});
 function closePick(){pendingPickPlayer=-1;document.getElementById('card-pick-overlay').classList.remove('show');renderHandBar();renderScoreboard();if(isBot(STATE.current))scheduleBot(400);}
@@ -4248,41 +4253,18 @@ async function doBotPlace(playerIdx,size){
   processExplosions(()=>{if(!tickTimeBombs()){checkEliminations();if(!checkWin())endTurn();}});
 }
 
+// ระเบิดทีละ wave พร้อมแอนิเมชัน — กติกาของแต่ละ wave มาจาก shared/gameLogic.js (explodeWave) ตัวเดียวกับ server และบอท
 async function processExplosions(done){
   animating=true;document.getElementById('blocker').classList.add('on');
-  let safety=0;
-  while(true){
-    const toExplode=[];for(let r=0;r<STATE.size;r++)for(let c=0;c<(STATE.cols||STATE.size);c++){
-      const cell=STATE.cells[r][c];
-      const effectiveCap=(STATE.catalyzed&&STATE.catalyzed[`${r},${c}`])?2:cell.cap;
-      const isVoid=STATE.voidCells&&STATE.voidCells[`${r},${c}`]>0;
-      const isSevered=STATE.severed&&STATE.severed[`${r},${c}`]>0;
-      const isPinned=STATE.pinned&&(STATE.pinned[`${r},${c}`]||0)>0;
-      if(!isVoid&&!isSevered&&!isPinned&&cell.count>=effectiveCap&&STATE.shielded[r][c]<=0)toExplode.push([r,c]);
-    }
-    if(!toExplode.length)break;await explodeWave(toExplode);if(++safety>STATE.size*STATE.size*4)break;
-  }
+  if(!STATE.rows)STATE.rows=STATE.size;
+  const max=STATE.size*(STATE.cols||STATE.size)*4;let safety=0,w;
+  while((w=CRLogic.explodeWave(STATE))){await playWave(w.explosions);if(++safety>max)break;}
   animating=false;document.getElementById('blocker').classList.remove('on');
   if(!STATE._dead)done();
 }
-function explodeWave(cells){
+function playWave(list){
   return new Promise(resolve=>{
-    const changes=[];
-    cells.forEach(([r,c])=>{if(STATE.cells[r][c].count<STATE.cells[r][c].cap||STATE.shielded[r][c]>0)return;const cell=STATE.cells[r][c],owner=cell.owner;changes.push([r,c,owner]);});
-    if(!changes.length){resolve();return;}
-    changes.forEach(([r,c])=>{const cell=STATE.cells[r][c];cell.count-=cell.cap;if(cell.count<=0){cell.count=0;cell.owner=-1;}});
-    changes.forEach(([r2,c2,owner2])=>{
-      const validNbs=neighbors(r2,c2,STATE.size,STATE.cols).filter(([nr,nc])=>{
-        if(STATE.shielded[nr][nc]<=0)return true;
-        if(STATE.shieldOwner[nr][nc]===owner2)return true;
-        return false;
-      });
-      validNbs.forEach(([nr,nc])=>{
-        STATE.cells[nr][nc].count++;STATE.cells[nr][nc].owner=owner2;
-      });
-    });
     // เอฟเฟกต์ + เสียงของ wave นี้ (แรงขึ้นตามลำดับใน chain) — ไม่กระทบจังหวะ STEP_DELAY
-    const list=changes.map(([r,c,owner])=>({r,c,owner}));
     FX.wave(list,FX.chainStep());
     setTimeout(()=>{renderGrid();FX.land(list);setTimeout(resolve,STEP_DELAY*.55);},STEP_DELAY*.45);
   });
@@ -4335,31 +4317,17 @@ function checkWin(){
   }return false;
 }
 function nextTurn(){
+  const prev=STATE.current;
   let next=(STATE.current+1)%STATE.players,guard=0;
   const canPlay=i=>STATE.alive.includes(i)||rebirthUsable(i);
   while(!canPlay(next)){next=(next+1)%STATE.players;if(++guard>STATE.players)break;}
   STATE.current=next;
   STATE.moved[next]=false;
-  for(let r=0;r<STATE.size;r++)for(let c=0;c<(STATE.cols||STATE.size);c++)if(STATE.shielded[r][c]>0&&STATE.shieldOwner[r][c]===next){STATE.shielded[r][c]--;if(STATE.shielded[r][c]<=0)STATE.shieldOwner[r][c]=-1;}
-  // Eclipse tick
-  if(STATE.eclipse>0){STATE.eclipse--;if(STATE.eclipse===0)showToast('☀️ Eclipse หมดแล้ว!');}
-  // Void/Sever tick
-  if(STATE.voidCells)Object.keys(STATE.voidCells).forEach(k=>{
-    STATE.voidCells[k]--;
-    if(STATE.voidCells[k]<=0){
-      // คืนช่องกลับ
-      if(STATE.voidSnapshot&&STATE.voidSnapshot[k]){
-        const[ro,co]=k.split(',').map(Number);
-        STATE.cells[ro][co].count=STATE.voidSnapshot[k].count;
-        STATE.cells[ro][co].owner=STATE.voidSnapshot[k].owner;
-        delete STATE.voidSnapshot[k];
-      }
-      delete STATE.voidCells[k];
-    }
-  });
-  if(STATE.severed)Object.keys(STATE.severed).forEach(k=>{STATE.severed[k]--;if(STATE.severed[k]<=0)delete STATE.severed[k];});
-  if(STATE.pinned)Object.keys(STATE.pinned).forEach(k=>{STATE.pinned[k]--;if(STATE.pinned[k]<=0)delete STATE.pinned[k];});
-  if(STATE.catalyzed)Object.keys(STATE.catalyzed).forEach(k=>{STATE.catalyzed[k]--;if(STATE.catalyzed[k]<=0)delete STATE.catalyzed[k];});
+  // โล่ / Eclipse / Void / Sever / Pin นับถอยหลังด้วยกติกาเดียวกับ server (shared/gameLogic.js: tickEffects)
+  if(!STATE.rows)STATE.rows=STATE.size;
+  const hadEclipse=STATE.eclipse>0;
+  CRLogic.tickEffects(STATE,next,prev);
+  if(hadEclipse&&!(STATE.eclipse>0))showToast('☀️ Eclipse หมดแล้ว!');
   updateScoreboard();updateTurnLabel();
   // Online: เล่นเสียงเฉพาะตาเรา (notifyMyTurn จัดการแทน)
   if(!(window._getOnlineMode&&window._getOnlineMode())){
