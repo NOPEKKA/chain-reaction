@@ -45,7 +45,7 @@ function setNetBanner(on) {
   if (!el) {
     el = document.createElement('div');
     el.id = 'net-banner';
-    el.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:1100;background:rgba(40,16,16,.94);color:#fff;border:1px solid rgba(255,140,120,.6);border-radius:999px;padding:8px 18px;font-family:"Fredoka One",cursive;font-size:.9rem;box-shadow:0 8px 24px rgba(0,0,0,.4);white-space:nowrap;';
+    el.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:1100;background:rgba(40,16,16,.94);color:#fff;border:1px solid rgba(255,140,120,.6);border-radius:999px;padding:8px 18px;font-family:"Fredoka One","Mitr",cursive;font-size:.9rem;box-shadow:0 8px 24px rgba(0,0,0,.4);white-space:nowrap;';
     el.textContent = '⚠️ หลุดการเชื่อมต่อ — กำลังเชื่อมใหม่…';
     document.body.appendChild(el);
   }
@@ -62,7 +62,7 @@ function createTimerEl() {
     el.id = 'online-timer-el';
     el.style.cssText = [
       'position:fixed;top:8px;left:50%;transform:translateX(-50%)',
-      'font-family:"Fredoka One",cursive;font-size:1.4rem;font-weight:900',
+      'font-family:"Fredoka One","Mitr",cursive;font-size:1.4rem;font-weight:900',
       'color:#fff;text-shadow:0 0 12px rgba(0,0,0,0.6)',
       'background:rgba(0,0,0,0.55);border-radius:999px',
       'padding:4px 18px;z-index:998;pointer-events:none',
@@ -124,7 +124,7 @@ function showGroupPickOverlay(cards, handSize, timeLimit, mySlotName) {
   const hdr = document.createElement('div');
   hdr.style.cssText = 'text-align:center;';
   hdr.innerHTML = `
-    <div style="font-family:'Fredoka One',cursive;font-size:1.5rem;color:#fff;">🎴 เลือกการ์ด</div>
+    <div style="font-family:'Fredoka One','Mitr',cursive;font-size:1.5rem;color:#fff;">🎴 เลือกการ์ด</div>
     <div style="font-size:.82rem;color:rgba(255,255,255,0.6);margin-top:4px;">มือ ${handSize}/4 ใบ</div>
   `;
   ov.appendChild(hdr);
@@ -132,9 +132,15 @@ function showGroupPickOverlay(cards, handSize, timeLimit, mySlotName) {
   // Progress + timer
   const progRow = document.createElement('div');
   progRow.id = 'gp-prog-row';
-  progRow.style.cssText = 'font-family:"Fredoka One",cursive;font-size:.9rem;color:rgba(255,255,255,0.6);text-align:center;';
+  progRow.style.cssText = 'font-family:"Fredoka One","Mitr",cursive;font-size:.9rem;color:rgba(255,255,255,0.6);text-align:center;';
   progRow.textContent = 'รอผู้เล่นอื่น...';
   ov.appendChild(progRow);
+  const bar = document.createElement('div');
+  bar.className = 'gp-bar'; bar.id = 'gp-bar';
+  bar.innerHTML = '<i></i>';
+  bar.firstChild.style.animationDuration = timeLimit + 's';
+  ov.appendChild(bar);
+  setTimeout(() => { if (bar.isConnected) bar.classList.add('low'); }, Math.max(0, timeLimit - 5) * 1000);
 
   // Cards row
   const row = document.createElement('div');
@@ -172,6 +178,7 @@ function showGroupPickOverlay(cards, handSize, timeLimit, mySlotName) {
       el.style.border = '3px solid rgba(255,255,255,0.8)';
       el.style.boxShadow = '0 0 20px rgba(255,255,255,0.3)';
       progRow.textContent = '✅ เลือกแล้ว — รอผู้เล่นอื่น...';
+      bar.firstChild.style.animationPlayState = 'paused'; bar.style.opacity = '.4';
       SFX.pickCard && SFX.pickCard();
     };
     el.addEventListener('click', doPickCard);
@@ -306,8 +313,8 @@ function handleServerReset() {
   ov.id = 'server-reset-ov';
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(10px);z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;';
   ov.innerHTML = `
-    <div style="font-family:'Fredoka One',cursive;font-size:1.4rem;color:#fff;text-align:center;">⚠️ ห้องนี้ไม่อยู่แล้ว<br><span style="font-size:.9rem;color:rgba(255,255,255,0.6);font-family:Nunito,sans-serif;">Server ถูก restart หรือห้องหมดอายุ</span></div>
-    <button id="server-reset-btn" style="background:#fff;border:none;border-radius:999px;padding:12px 32px;font-family:'Fredoka One',cursive;font-size:1.1rem;color:#2a1a4e;cursor:pointer;">กลับหน้าหลัก</button>
+    <div style="font-family:'Fredoka One','Mitr',cursive;font-size:1.4rem;color:#fff;text-align:center;">⚠️ ห้องนี้ไม่อยู่แล้ว<br><span style="font-size:.9rem;color:rgba(255,255,255,0.6);font-family:Nunito,sans-serif;">Server ถูก restart หรือห้องหมดอายุ</span></div>
+    <button id="server-reset-btn" style="background:#fff;border:none;border-radius:999px;padding:12px 32px;font-family:'Fredoka One','Mitr',cursive;font-size:1.1rem;color:#2a1a4e;cursor:pointer;">กลับหน้าหลัก</button>
   `;
   document.body.appendChild(ov);
   document.getElementById('server-reset-btn').addEventListener('click', () => {
@@ -361,7 +368,7 @@ function notifyMyTurn(turnKey) {
   }
   popup.style.cssText = [
     'position:fixed;top:44%;left:50%;transform:translate(-50%,-50%)',
-    'font-family:"Fredoka One",cursive;font-size:2.4rem;font-weight:900',
+    'font-family:"Fredoka One","Mitr",cursive;font-size:2.4rem;font-weight:900',
     `color:${color};pointer-events:none;z-index:950`,
     `text-shadow:0 0 40px ${color}, 0 0 80px ${color}88, 0 4px 0 rgba(0,0,0,0.4)`,
     'opacity:0;',
@@ -953,7 +960,7 @@ function onlineRenderHandBar() {
   nameTag.style.cssText = [
     `background:${color}22;border:2px solid ${color}88`,
     'border-radius:999px;padding:3px 14px',
-    'font-family:"Fredoka One",cursive',
+    'font-family:"Fredoka One","Mitr",cursive',
     `font-size:.78rem;color:${color}`,
     'white-space:nowrap;flex-shrink:0;align-self:center',
     'text-shadow:0 0 8px ' + color + '66',
@@ -963,7 +970,7 @@ function onlineRenderHandBar() {
 
   if (hand.length === 0) {
     const empty = document.createElement('div');
-    empty.style.cssText = 'color:rgba(255,255,255,0.4);font-size:.82rem;font-family:"Fredoka One",cursive;padding:8px 0;';
+    empty.style.cssText = 'color:rgba(255,255,255,0.4);font-size:.82rem;font-family:"Fredoka One","Mitr",cursive;padding:8px 0;';
     empty.textContent = '🎴 ไม่มีการ์ดในมือ';
     cardsRow.appendChild(empty);
     bar.appendChild(cardsRow);
@@ -1014,32 +1021,71 @@ function renderRoomScreen(room) {
   document.getElementById('room-code-display').textContent = room.code;
   document.getElementById('room-code-big').textContent = room.code;
 
+  // รายชื่อผู้เล่น — สร้างด้วย DOM + textContent เท่านั้น (ชื่อมาจากผู้เล่นคนอื่น ห้ามประกอบเป็น HTML)
   const list = document.getElementById('room-members-list');
   list.innerHTML = '';
-  room.members.forEach(m => {
-    const div = document.createElement('div');
-    div.style.cssText = `display:flex;align-items:center;gap:10px;padding:9px 14px;background:${m.connected ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.04)'};border-radius:12px;border:1px solid rgba(255,255,255,${m.connected ? '0.15' : '0.05'});`;
-    const mk = (tag, css, text) => { const e = document.createElement(tag); e.style.cssText = css; if (text !== undefined) e.textContent = text; return e; };
-    div.appendChild(mk('div', `width:13px;height:13px;border-radius:50%;background:${PLAYER_COLORS_O[m.slot]};flex-shrink:0;box-shadow:0 0 6px ${PLAYER_COLORS_O[m.slot]};`));
-    // ชื่อมาจากผู้เล่นคนอื่น → textContent เท่านั้น (ของเดิมใส่ลง innerHTML ตรงๆ: ชื่อ <img onerror=…> รันสคริปต์ในเครื่องคนอื่นได้)
-    div.appendChild(mk('span', `font-family:'Fredoka One',cursive;color:${m.connected ? '#fff' : 'rgba(255,255,255,0.3)'};font-size:.95rem;flex:1;`, m.name + (m.slot === mySlot ? ' (คุณ)' : '')));
-    if (m.isHost) div.appendChild(mk('span', 'font-size:.62rem;background:rgba(255,200,0,0.18);color:#ffd700;border-radius:6px;padding:2px 8px;border:1px solid rgba(255,200,0,0.3);', '👑 Host'));
-    if (!m.connected) div.appendChild(mk('span', 'font-size:.62rem;color:rgba(255,255,255,0.3);', 'หลุด'));
-    list.appendChild(div);
+  const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+  room.members.forEach((m, i) => {
+    const row = mk('div', 'lm-row' + (m.connected ? '' : ' off'));
+    row.style.animationDelay = (i * 0.05) + 's';
+    const orb = mk('div', 'lm-orb'); orb.style.setProperty('--c', PLAYER_COLORS_O[m.slot] || '#fff');
+    row.appendChild(orb);
+    row.appendChild(mk('span', 'lm-name', m.name));
+    if (m.slot === mySlot) row.appendChild(mk('span', 'lm-chip you', 'คุณ'));
+    if (m.isHost) row.appendChild(mk('span', 'lm-chip host', '👑 Host'));
+    row.appendChild(mk('span', 'lm-stat', m.connected ? 'ออนไลน์' : 'หลุด…'));
+    list.appendChild(row);
   });
+  if (room.members.length < 6) list.appendChild(mk('div', 'lm-row empty', room.members.length < 2 ? 'รอเพื่อนเข้าห้อง…' : 'ยังเข้าได้อีก ' + (6 - room.members.length) + ' คน'));
+  const count = document.getElementById('room-count');
+  if (count) count.textContent = room.members.length + '/6';
+
+  // สรุปการตั้งค่า (ทุกคนเห็น — ของเดิมคนที่ไม่ใช่ host ไม่รู้เลยว่าจะเล่นแมพอะไร)
+  const cfg2 = room.cfg || {};
+  const rows = cfg2.mapSize || 8, cols = cfg2.mapCols || rows, iv = cfg2.cardInterval ?? 2;
+  const total = (window.CARD_DEFS || (typeof CARD_DEFS !== 'undefined' ? CARD_DEFS : [])).length, off = (cfg2.disabledCards || []).length;
+  const sum = document.getElementById('room-summary');
+  if (sum) sum.textContent = `แมพ ${rows}×${cols} · ` + (iv > 0 ? `ได้การ์ดทุก ${iv} เทิร์น` : 'ไม่ใช้การ์ด') + (iv > 0 && off ? ` · เปิดการ์ด ${total - off}/${total} ใบ` : '');
+  // ปุ่มตัวเลือกของ host ตรงกับค่าจริงของห้องเสมอ (เช่น หลังรีเฟรชแล้วกลับเข้าห้อง)
+  document.querySelectorAll('#room-map-pills .pill').forEach(p => p.classList.toggle('active', rows === cols && +p.dataset.val === rows));
+  document.querySelectorAll('#room-map-rect-pills .pill').forEach(p => p.classList.toggle('active', rows !== cols && +p.dataset.rows === rows && +p.dataset.cols === cols));
+  document.querySelectorAll('#room-card-pills .pill').forEach(p => p.classList.toggle('active', +p.dataset.val === iv));
 
   const hostPanel = document.getElementById('host-cfg-panel');
   const startBtn  = document.getElementById('btn-start-online');
   const waitMsg   = document.getElementById('waiting-msg');
+  const hint      = document.getElementById('start-hint');
+  const ready     = room.members.filter(m => m.connected).length >= 2;
   if (isHost) {
     hostPanel.style.display = 'block';
     startBtn.style.display  = 'flex';
+    startBtn.disabled       = !ready;
     waitMsg.style.display   = 'none';
+    if (hint) hint.textContent = ready ? '' : 'ต้องมีผู้เล่นอย่างน้อย 2 คนจึงจะเริ่มได้';
   } else {
     hostPanel.style.display = 'none';
     startBtn.style.display  = 'none';
     waitMsg.style.display   = 'block';
+    if (hint) hint.textContent = '';
   }
+}
+
+// คัดลอกรหัสห้อง — clipboard API ใช้ไม่ได้ใน http ธรรมดา/บางเบราว์เซอร์ จึงมีทางสำรอง
+function copyRoomCode() {
+  const code = document.getElementById('room-code-big').textContent.trim();
+  const done = (ok) => {
+    const b = document.getElementById('btn-copy-code'), l = document.getElementById('copy-label');
+    if (!ok) { showToast('คัดลอกไม่ได้ — จดรหัส ' + code); return; }
+    if (b && l) { b.classList.add('done'); l.textContent = 'คัดลอกแล้ว ✓'; clearTimeout(copyRoomCode._t); copyRoomCode._t = setTimeout(() => { b.classList.remove('done'); l.textContent = 'คัดลอกรหัส'; }, 1600); }
+  };
+  const fallback = () => {
+    try {
+      const t = document.createElement('textarea'); t.value = code; t.setAttribute('readonly', ''); t.style.cssText = 'position:fixed;left:-9999px;top:0;';
+      document.body.appendChild(t); t.select(); const ok = document.execCommand('copy'); t.remove(); done(ok);
+    } catch (e) { done(false); }
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(code).then(() => done(true), fallback);
+  else fallback();
 }
 
 // ── Card Filter ──
@@ -1212,10 +1258,7 @@ document.getElementById('btn-create-room').addEventListener('click', () => {
   });
 });
 
-document.getElementById('btn-join-room').addEventListener('click', () => {
-  const row = document.getElementById('join-code-row');
-  row.style.display = row.style.display === 'none' ? 'block' : 'none';
-});
+// แท็บ สร้างห้อง / เข้าห้อง: index.html (setOnlineTab) เป็นคนสลับ
 
 document.getElementById('btn-confirm-join').addEventListener('click', () => {
   myName = document.getElementById('online-name').value.trim() || 'ผู้เล่น';
@@ -1231,10 +1274,8 @@ document.getElementById('btn-confirm-join').addEventListener('click', () => {
   });
 });
 
-document.getElementById('room-code-big').addEventListener('click', () => {
-  const code = document.getElementById('room-code-big').textContent;
-  navigator.clipboard?.writeText(code).then(() => showToast('📋 คัดลอกรหัสแล้ว!'));
-});
+document.getElementById('room-code-big').addEventListener('click', copyRoomCode);
+document.getElementById('btn-copy-code').addEventListener('click', copyRoomCode);
 
 document.getElementById('btn-start-online').addEventListener('click', () => {
   if (!isHost) return showToast('ไม่ใช่ host');

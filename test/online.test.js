@@ -448,7 +448,7 @@ function runOnlineClient() {
   const mkEl = (tag = 'div') => {
     const listeners = {};
     const el = {
-      tagName: String(tag).toUpperCase(), style: {}, dataset: {}, children: [], listeners, value: '',
+      tagName: String(tag).toUpperCase(), style: { setProperty() {}, removeProperty() {} }, dataset: {}, disabled: false, hidden: false, children: [], listeners, value: '',
       classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
       addEventListener(ev, fn) { (listeners[ev] = listeners[ev] || []).push(fn); },
       removeEventListener() {},
