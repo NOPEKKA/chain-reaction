@@ -487,6 +487,8 @@ function initSocket() {
   socket.on('room_update', (room) => {
     room._at = Date.now(); // เวลาที่ได้รับ — ใช้คำนวณเวลาที่เหลือของตา (turnEndsIn)
     currentRoom = room;
+    // slot และสถานะ host ของเรา: เชื่อ server ทุกครั้ง (ของเดิมจำจากตอน join แล้วคลาดเมื่อมีคนออกจาก lobby)
+    if (room.you) { mySlot = room.you.slot; isHost = !!room.you.isHost; }
     const me = room.members && room.members.find(m => m.slot === mySlot);
     if (me && me.name) myName = me.name;
 
@@ -910,7 +912,7 @@ function onlineActivateCard(pi, ci, cardDef) {
   if (currentRoom && currentRoom.phase === 'group_pick') { showToast('🎴 กำลังเลือกการ์ดอยู่'); return true; }
   if (isSettling()) return true;
   // anyTarget และ !needTarget → ใช้ทันที ไม่ต้องรอ click
-  if (!cardDef.needTarget || cardDef.anyTarget) {
+  if ((!cardDef.needTarget || cardDef.anyTarget) && cardDef.id !== 'e4') {
     selectedHandCard = null;
     clearAllTimers();
     socket.emit('use_card', { cardId: cardDef.id, targets: {} }, res => {
@@ -1008,12 +1010,12 @@ function renderRoomScreen(room) {
   room.members.forEach(m => {
     const div = document.createElement('div');
     div.style.cssText = `display:flex;align-items:center;gap:10px;padding:9px 14px;background:${m.connected ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.04)'};border-radius:12px;border:1px solid rgba(255,255,255,${m.connected ? '0.15' : '0.05'});`;
-    div.innerHTML = `
-      <div style="width:13px;height:13px;border-radius:50%;background:${PLAYER_COLORS_O[m.slot]};flex-shrink:0;box-shadow:0 0 6px ${PLAYER_COLORS_O[m.slot]};"></div>
-      <span style="font-family:'Fredoka One',cursive;color:${m.connected ? '#fff' : 'rgba(255,255,255,0.3)'};font-size:.95rem;flex:1;">${m.name}${m.slot === mySlot ? ' (คุณ)' : ''}</span>
-      ${m.isHost ? '<span style="font-size:.62rem;background:rgba(255,200,0,0.18);color:#ffd700;border-radius:6px;padding:2px 8px;border:1px solid rgba(255,200,0,0.3);">👑 Host</span>' : ''}
-      ${!m.connected ? '<span style="font-size:.62rem;color:rgba(255,255,255,0.3);">หลุด</span>' : ''}
-    `;
+    const mk = (tag, css, text) => { const e = document.createElement(tag); e.style.cssText = css; if (text !== undefined) e.textContent = text; return e; };
+    div.appendChild(mk('div', `width:13px;height:13px;border-radius:50%;background:${PLAYER_COLORS_O[m.slot]};flex-shrink:0;box-shadow:0 0 6px ${PLAYER_COLORS_O[m.slot]};`));
+    // ชื่อมาจากผู้เล่นคนอื่น → textContent เท่านั้น (ของเดิมใส่ลง innerHTML ตรงๆ: ชื่อ <img onerror=…> รันสคริปต์ในเครื่องคนอื่นได้)
+    div.appendChild(mk('span', `font-family:'Fredoka One',cursive;color:${m.connected ? '#fff' : 'rgba(255,255,255,0.3)'};font-size:.95rem;flex:1;`, m.name + (m.slot === mySlot ? ' (คุณ)' : '')));
+    if (m.isHost) div.appendChild(mk('span', 'font-size:.62rem;background:rgba(255,200,0,0.18);color:#ffd700;border-radius:6px;padding:2px 8px;border:1px solid rgba(255,200,0,0.3);', '👑 Host'));
+    if (!m.connected) div.appendChild(mk('span', 'font-size:.62rem;color:rgba(255,255,255,0.3);', 'หลุด'));
     list.appendChild(div);
   });
 

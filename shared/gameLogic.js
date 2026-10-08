@@ -7,7 +7,7 @@ const CARD_DEFS = [
   {id:'c2',emoji:'💠',name:'Pulse',rarity:'uncommon',cat:'burst',desc:'ช่องรอบๆ ที่เลือก +1 ทุกช่อง',needTarget:true,targetSelf:true},
   {id:'c3',emoji:'🎯',name:'Sniper',rarity:'common',cat:'attack',desc:'เลือกช่องศัตรู -1 ลูกบอล',needTarget:true,targetSelf:false},
   {id:'c4',emoji:'⚖️',name:'Exchange',rarity:'uncommon',cat:'chaos',desc:'+2 ช่องตัวเองที่เลือก แล้วสุ่มช่องศัตรู -2',needTarget:true,targetSelf:true},
-  {id:'c5',emoji:'🌀',name:'Spin',rarity:'common',cat:'chaos',desc:'ย้ายลูกบอล 1 ช่องไปข้างๆ สุ่ม',needTarget:true,targetSelf:true},
+  {id:'c5',emoji:'🌀',name:'Spin',rarity:'common',cat:'chaos',desc:'ย้ายลูกบอล 1 ช่องไปข้างๆ สุ่ม',needTarget:true,targetSelf:true,twoTarget:true},
   {id:'c6',emoji:'🧲',name:'Attract',rarity:'common',cat:'burst',desc:'ดึงลูกบอลจากข้างๆ มารวม',needTarget:true,targetSelf:true},
   {id:'c7',emoji:'💢',name:'Poke',rarity:'common',cat:'attack',desc:'เพิ่มลูกบอลศัตรู +1 (ใกล้ระเบิด!)',needTarget:true,targetSelf:false},
   {id:'c8',emoji:'🛡️',name:'Shield',rarity:'common',cat:'defense',desc:'ช่องนั้นไม่ระเบิด 1 เทิร์น',needTarget:true,targetSelf:true},
@@ -348,20 +348,29 @@ function tickTimeBombs(state) {
 function applyCard(state, playerIdx, cardDef, targets) {
   const { rows, cols, cells } = state;
   const cur = playerIdx;
-  const { r, c, r2, c2 } = targets || {};
+  const { r, c, r2, c2 } = (targets && typeof targets === 'object') ? targets : {};
   let resultText = '';
   let vfxData = {};
 
-  // Validate targets for cards that need them
-  if (cardDef.needTarget && !cardDef.anyTarget && r === undefined) {
-    return { ok: false, msg: 'ต้องเลือกช่องก่อน' };
-  }
-  if (cardDef.twoTarget && (r2 === undefined || c2 === undefined)) {
-    return { ok: false, msg: 'ต้องเลือก 2 ช่อง' };
-  }
-  // Validate r,c are in bounds
-  if (r !== undefined && (r < 0 || r >= state.rows || c < 0 || c >= state.cols)) {
+  // ── ตรวจเป้าหมายทั้งหมดให้ครบ "ก่อน" แก้ state ใดๆ ──
+  // (ของเดิมตรวจแค่ r,c — r2/c2 นอกกระดานจะ throw หลังจากกินการ์ดและ action ไปแล้ว ทำให้เทิร์นค้าง)
+  const inBoard = (a, b) => Number.isInteger(a) && Number.isInteger(b) && a >= 0 && a < rows && b >= 0 && b < cols;
+  const has1 = r !== undefined || c !== undefined;
+  const has2 = r2 !== undefined || c2 !== undefined;
+  const needsCell = cardDef.needTarget || cardDef.id === 'e4'; // Pillar ใช้ column ของช่องที่เลือก
+  if (needsCell && !has1) return { ok: false, msg: 'ต้องเลือกช่องก่อน' };
+  if (has1 && !inBoard(r, c)) return { ok: false, msg: 'ช่องอยู่นอกกระดาน' };
+  if (cardDef.twoTarget) {
+    if (!has2) return { ok: false, msg: 'ต้องเลือก 2 ช่อง' };
+    if (!inBoard(r2, c2)) return { ok: false, msg: 'ช่องอยู่นอกกระดาน' };
+    if (r === r2 && c === c2) return { ok: false, msg: 'ต้องเลือกช่องคนละช่อง' };
+  } else if (has2 && !inBoard(r2, c2)) {
     return { ok: false, msg: 'ช่องอยู่นอกกระดาน' };
+  }
+  // Rebirth: ใช้ได้เมื่อตายแล้วเท่านั้น และต้องเป็นช่องว่าง (ของเดิมไม่ตรวจว่ายังมีชีวิต และตรวจช่องว่างหลังกินการ์ดไปแล้ว)
+  if (cardDef.rebirthOnly) {
+    if (state.alive.includes(cur)) return { ok: false, msg: 'Rebirth ใช้ได้เมื่อตายแล้วเท่านั้น' };
+    if (cells[r][c].owner !== -1) return { ok: false, msg: 'วางได้เฉพาะช่องว่าง' };
   }
   // c1 Overload, u1 Instant Burst, u3 Double Shot: เฉพาะช่องตัวเองเท่านั้น
   if (['c1','u1','u3'].includes(cardDef.id) && r !== undefined) {
@@ -501,7 +510,7 @@ function applyCard(state, playerIdx, cardDef, targets) {
     case 'l2': { for(let ro=0;ro<rows;ro++) for(let co=0;co<cols;co++) if(cells[ro][co].count>0) cells[ro][co].count=cells[ro][co].cap; resultText='Nuclear!'; break; }
     case 'l3': { const empts=[]; for(let ro=0;ro<rows;ro++) for(let co=0;co<cols;co++) if(cells[ro][co].owner===-1) empts.push([ro,co]); empts.forEach(([ro,co])=>{cells[ro][co].owner=cur;cells[ro][co].count=1;}); const mid=rows/2; let md=0; empts.forEach(([ro,co])=>{const d=Math.abs(ro-mid)+Math.abs(co-cols/2);if(d>md)md=d;}); vfxData={empties:empts,maxDist:md,owner:cur};resultText='Dominion!'; break; }
     case 'l4': { const ec2=[]; for(let ro=0;ro<rows;ro++) for(let co=0;co<cols;co++) if(cells[ro][co].owner!==cur&&cells[ro][co].owner!==-1) ec2.push([ro,co]); ec2.sort(()=>Math.random()-.5); const invaded=ec2.slice(0,3); invaded.forEach(([ro,co])=>cells[ro][co].owner=cur); vfxData={invaded};resultText='Invasion!'; break; }
-    case 'l5': { if(cells[r][c].owner!==-1) return {ok:false,msg:'วางได้เฉพาะช่องว่าง'}; if(!state.alive.includes(cur)){state.alive.push(cur);state.alive.sort((a,b)=>a-b);} cells[r][c].count=3;cells[r][c].owner=cur;state.moved[cur]=true;vfxData={target:[r,c]};resultText='Rebirth!'; break; }
+    case 'l5': { if(!state.alive.includes(cur)){state.alive.push(cur);state.alive.sort((a,b)=>a-b);} cells[r][c].count=3;cells[r][c].owner=cur;state.moved[cur]=true;vfxData={target:[r,c]};resultText='Rebirth!'; break; }
     case 'm1': { let totalOrbs=0; for(let ro=0;ro<rows;ro++) for(let co=0;co<cols;co++){if(ro===r&&co===c)continue;if(cells[ro][co].count>0){const taken=Math.ceil(cells[ro][co].count/2);totalOrbs+=taken;cells[ro][co].count-=taken;if(!cells[ro][co].count)cells[ro][co].owner=-1;}} cells[r][c].count+=totalOrbs;cells[r][c].owner=cur;resultText='Singularity!'; break; }
     case 'm2': { const exploded=[]; for(let ro=0;ro<rows;ro++) for(let co=0;co<cols;co++) if(cells[ro][co].owner===cur){cells[ro][co].count=cells[ro][co].cap;exploded.push([ro,co]);} vfxData={exploded};resultText='Big Bang!'; break; }
   }

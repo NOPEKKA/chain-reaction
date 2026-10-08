@@ -8,7 +8,7 @@ const {
   createInitialState, applyPlace, applyCard,
   processExplosionsSync, processExplosionsWithWaves, checkEliminations, checkWin,
   nextTurn, tickTimeBombs, draw3UniqueCards,
-  PLAYER_NAMES, HAND_LIMIT,
+  PLAYER_NAMES, HAND_LIMIT, CARD_DEFS,
 } = require('../shared/gameLogic');
 
 // Global error handler - prevent Railway restart
@@ -49,6 +49,43 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, '../client/index.ht
 const rooms     = new Map();
 const socketRoom= new Map();
 
+// ══ ข้อมูลเข้าจาก client: เชื่อไม่ได้ทั้งหมด ══
+const CARD_IDS = new Set(CARD_DEFS.map(d => d.id));
+const isInt = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
+
+// cfg ของห้อง: รับเฉพาะคีย์ที่อนุญาตและค่าที่อยู่ในช่วง คืนเฉพาะส่วนที่ผ่าน (players / bots / คีย์อื่นจาก client ไม่รับเลย)
+// แถว 4–16 · คอลัมน์ 4–18 (แมพผืนผ้าใหญ่สุดที่เกมมีให้เลือกคือ 12×18) · การ์ดทุก 0–10 เทิร์น
+// ของเดิม Object.assign ตรงๆ: mapSize 1500 ทำให้ state ที่ broadcast แต่ละครั้งใหญ่ ~81 MB
+function cleanCfg(cfg) {
+  const out = {};
+  if (!cfg || typeof cfg !== 'object') return out;
+  if (isInt(cfg.mapSize, 4, 16)) out.mapSize = cfg.mapSize;
+  if (isInt(cfg.mapCols, 4, 18)) out.mapCols = cfg.mapCols;
+  if (isInt(cfg.cardInterval, 0, 10)) out.cardInterval = cfg.cardInterval;
+  const dc = cfg.disabledCards;
+  if (Array.isArray(dc) && dc.length <= CARD_IDS.size && dc.every(id => typeof id === 'string' && CARD_IDS.has(id))) out.disabledCards = [...new Set(dc)];
+  return out;
+}
+
+// ชื่อผู้เล่น: ตัดอักขระควบคุม / ตัวพลิกทิศทางข้อความ, ยุบช่องว่าง, จำกัด 20 ตัวอักษร, ห้ามว่าง
+// (ไม่ escape HTML ที่นี่ — เป็นหน้าที่ของ client ตอนแสดงผล ซึ่งใช้ textContent / esc())
+function cleanName(name, fallback) {
+  let s = (typeof name === 'string' || typeof name === 'number') ? String(name) : '';
+  s = s.replace(/[\t\n\r\f\v]+/g, ' ')
+       .replace(/[\u0000-\u001f\u007f-\u009f\u200b\u2028-\u202e\u2066-\u2069\ufeff]/g, '')
+       .replace(/\s+/g, ' ').trim();
+  s = Array.from(s).slice(0, 20).join('').trim();
+  return s || fallback;
+}
+
+// rate limit ต่อ socket ต่อ event: [จำนวนครั้งสูงสุด, ภายในกี่ ms]
+const RATE = {
+  create_room: [5, 10000], join_room: [10, 10000], rejoin_room: [10, 10000],
+  update_cfg: [40, 5000], place: [30, 5000], use_card: [30, 5000], place_timeout: [20, 5000],
+  group_pick_response: [20, 5000], group_pick_skip: [20, 5000], start_game: [10, 10000], restart_game: [10, 10000],
+};
+const NO_PAYLOAD = new Set(['start_game', 'restart_game']); // event ที่ client ส่งแค่ callback
+
 function genCode() {
   return String(Math.floor(1000 + Math.random() * 9000));
 }
@@ -62,9 +99,13 @@ const memberBySocket = (room, sid) => room.members.find(m => m.socketId === sid)
 const anyConnected   = room => room.members.some(m => m.connected);
 const isPlaying      = room => !!room.state && room.phase === 'playing' && room.state.phase === 'playing';
 
+// ส่งแยกรายคน: ทุกคนได้ slot / สถานะ host ของ "ตัวเอง" จาก server ทุกครั้ง (you)
+// ของเดิม client จำ slot จากตอน join — พอมีคนออกจาก lobby แล้ว server เลื่อน slot, client ก็เชื่อ slot ผิดไปตลอด
+// เลือกวิธีนี้ (แทนการเลิกเลื่อน slot) เพราะ slot ต้องเรียงต่อเนื่อง 0..n-1 ให้ตรงกับผู้เล่นใน state อยู่แล้ว
+// และ client จะคลาดไม่ได้อีก ไม่ว่า server จะจัดที่นั่งใหม่ตอนไหน
 function broadcastRoom(room) {
   if (!room) return;
-  io.to(room.code).emit('room_update', {
+  const payload = {
     code:    room.code,
     phase:   room.phase,
     members: room.members.map(m => ({
@@ -81,6 +122,9 @@ function broadcastRoom(room) {
     // นาฬิกาของตานี้อยู่ที่ server: client แค่แสดงเวลาที่เหลือ
     turnMs: TURN_MS,
     turnEndsIn: room.turnDeadline ? Math.max(0, room.turnDeadline - Date.now()) : null,
+  };
+  room.members.forEach(m => {
+    if (m.connected) io.to(m.socketId).emit('room_update', { ...payload, you: { slot: m.slot, isHost: m.socketId === room.host } });
   });
 }
 
@@ -426,18 +470,26 @@ sweeper.unref();
 // ══ Socket.IO ══
 io.on('connection', (socket) => {
   console.log(`[+] ${socket.id}`);
-  // Wrap all socket events to prevent crashes
+  // Wrap all socket events: กัน crash, จัดรูป payload/callback ให้แน่นอน, และ rate limit
   const origOn = socket.on.bind(socket);
+  const hits = {};
   socket.on = (event, handler) => {
+    if (event === 'disconnect') return origOn(event, (...args) => { try { handler(...args); } catch (err) { console.error('[SOCKET ERROR] disconnect', err.message); } });
     origOn(event, (...args) => {
-      try { handler(...args); }
+      // client ส่งอะไรมาก็ได้: handler จะได้ (object, function|undefined) เสมอ — ไม่มี TypeError จากการ destructure ของแปลกๆ
+      const cb = [...args].reverse().find(a => typeof a === 'function');
+      const data = (args[0] && typeof args[0] === 'object') ? args[0] : {};
+      const lim = RATE[event];
+      if (lim) {
+        const now = Date.now(), h = hits[event] || (hits[event] = []);
+        while (h.length && now - h[0] > lim[1]) h.shift();
+        if (h.length >= lim[0]) { try { cb?.({ ok: false, limited: true, msg: 'ส่งคำสั่งถี่เกินไป รอสักครู่' }); } catch (e) {} return; }
+        h.push(now);
+      }
+      try { NO_PAYLOAD.has(event) ? handler(cb) : handler(data, cb); }
       catch(err) {
         console.error(`[SOCKET ERROR] event=${event}`, err.message, err.stack);
-        // Try to send error back via callback
-        const cb = args[args.length-1];
-        if (typeof cb === 'function') {
-          try { cb({ ok: false, msg: 'Server error: ' + err.message }); } catch(e) {}
-        }
+        try { cb?.({ ok: false, msg: 'Server error: ' + err.message }); } catch(e) {}
       }
     });
   };
@@ -452,15 +504,16 @@ io.on('connection', (socket) => {
     do { code = genCode(); } while (rooms.has(code));
 
     const token = newToken();
+    const c = cleanCfg(cfg);
     const room = {
       code, host: socket.id,
       cfg: {
-        players: 2, mapSize: cfg?.mapSize||8,
-        mapCols: cfg?.mapCols||cfg?.mapSize||8,
-        cardInterval: cfg?.cardInterval??2, bots: [],
-        disabledCards: [],
+        players: 2, mapSize: c.mapSize ?? 8,
+        mapCols: c.mapCols ?? c.mapSize ?? 8,
+        cardInterval: c.cardInterval ?? 2, bots: [],
+        disabledCards: c.disabledCards ?? [],
       },
-      members: [{ socketId: socket.id, name: name||'ผู้เล่น', slot: 0, connected: true, token, leftAt: 0, missedTurns: 0 }],
+      members: [{ socketId: socket.id, name: cleanName(name, 'ผู้เล่น'), slot: 0, connected: true, token, leftAt: 0, missedTurns: 0 }],
       state: null, phase: 'lobby', groupPick: null,
       gameId: 0, turnTimer: null, turnDeadline: 0, emptySince: 0,
     };
@@ -472,7 +525,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('join_room', ({ code, name }, cb) => {
-    const room = rooms.get(code?.toString());
+    const room = (typeof code === 'string' || typeof code === 'number') ? rooms.get(String(code)) : null;
     if (!room) return cb?.({ ok: false, msg: 'ไม่พบห้องรหัสนี้' });
     if (room.phase !== 'lobby') return cb?.({ ok: false, msg: 'เกมเริ่มแล้ว' });
     if (room.members.length >= 6) return cb?.({ ok: false, msg: 'ห้องเต็ม' });
@@ -481,7 +534,7 @@ io.on('connection', (socket) => {
 
     const slot = room.members.length;
     const token = newToken();
-    room.members.push({ socketId: socket.id, name: name||`P${slot+1}`, slot, connected: true, token, leftAt: 0, missedTurns: 0 });
+    room.members.push({ socketId: socket.id, name: cleanName(name, `P${slot+1}`), slot, connected: true, token, leftAt: 0, missedTurns: 0 });
     socketRoom.set(socket.id, room.code);
     socket.join(room.code);
     room.emptySince = 0;
@@ -530,12 +583,14 @@ io.on('connection', (socket) => {
     sendPickChoices(room, member.slot); // กำลังเลือกการ์ดอยู่และยังไม่ได้ตอบ: ส่งตัวเลือกให้ใหม่
   });
 
-  socket.on('update_cfg', ({ cfg }) => {
+  socket.on('update_cfg', ({ cfg }, cb) => {
     const room = getRoomBySocket(socket.id);
-    console.log(`[update_cfg] received:`, JSON.stringify(cfg), `host=${room?.host === socket.id} phase=${room?.phase}`);
-    if (!room || room.host !== socket.id || room.phase !== 'lobby') return;
-    Object.assign(room.cfg, cfg);
+    if (!room || room.host !== socket.id || room.phase !== 'lobby') return cb?.({ ok: false });
+    const clean = cleanCfg(cfg);
+    if (!Object.keys(clean).length) return cb?.({ ok: false, msg: 'ค่าตั้งห้องไม่ถูกต้อง' });
+    Object.assign(room.cfg, clean);
     console.log(`[update_cfg] room.cfg now:`, JSON.stringify(room.cfg));
+    cb?.({ ok: true, cfg: clean });
     broadcastRoom(room);
   });
 
@@ -576,8 +631,8 @@ io.on('connection', (socket) => {
     if (state.current !== member.slot) return cb?.({ ok: false, msg: 'ยังไม่ใช่ตาของคุณ' });
     if (state.phase !== 'playing') return cb?.({ ok: false, msg: 'รอก่อน' });
     console.log(`[place] slot=${member.slot} r=${r} c=${c} rows=${state.rows} cols=${state.cols}`);
-    // Validate bounds explicitly for rect map
-    if (r < 0 || r >= state.rows || c < 0 || c >= state.cols) {
+    // Validate bounds explicitly for rect map (และต้องเป็นจำนวนเต็ม)
+    if (!isInt(r, 0, state.rows - 1) || !isInt(c, 0, state.cols - 1)) {
       console.log(`[place] OUT OF BOUNDS r=${r} c=${c} rows=${state.rows} cols=${state.cols}`);
       return cb?.({ ok: false, msg: 'ช่องอยู่นอกกระดาน' });
     }
@@ -637,11 +692,16 @@ io.on('connection', (socket) => {
       return;
     }
 
+    if (targets === null || typeof targets !== 'object') targets = {};
+    // applyCard ตรวจเป้าหมายครบก่อนแก้ state แล้ว — แต่ถ้ายัง throw กลางทางได้อีก ต้องย้อน state ทั้งก้อน
+    // (ของเดิมปล่อยค้าง: การ์ดหายจากมือ, ใช้ action ไปแล้ว, เทิร์นไม่จบ)
+    const backup = JSON.stringify(state);
     let result;
-    try { result = applyCard(state, member.slot, cardDef, targets||{}); }
+    try { result = applyCard(state, member.slot, cardDef, targets); }
     catch(err) {
       console.error('[applyCard CRASH]', cardId, err.message, err.stack);
-      return cb?.({ ok: false, msg: 'การ์ดเกิด error: ' + err.message });
+      room.state = JSON.parse(backup);
+      return cb?.({ ok: false, msg: 'การ์ดใบนี้ใช้ไม่ได้ตอนนี้ (ไม่มีอะไรเปลี่ยน)' });
     }
     if (!result.ok) return cb?.({ ok: false, msg: result.msg });
     cb?.({ ok: true, vfxData: result.vfxData, resultText: result.resultText });
