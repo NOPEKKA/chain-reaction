@@ -122,7 +122,7 @@ function emit(s, ev, data, ms = 3000) {
 }
 
 // ห้องใหม่ + หน้าใหม่ทุกเคส: A = หน้าเว็บ (host), B = socket
-async function game({ rows = 6, cols = 8, cardInterval = 0 } = {}) {
+async function game({ rows = 6, cols = 8, cardInterval = 0, players = 2 } = {}) {
   const P = await openPage(`http://localhost:${port}/`);
   await P.ev(INSTRUMENT);
   await P.ev(`document.getElementById('btn-online').click()`);
@@ -143,18 +143,27 @@ async function game({ rows = 6, cols = 8, cardInterval = 0 } = {}) {
   const j = await emit(B, 'join_room', { code, name: 'Bob' });
   assert.equal(j.ok, true, j.msg); B.token = j.token;
   const room = () => srv.rooms.get(code);
+  // ผู้เล่นคนที่ 3 ขึ้นไป (ถ้าขอ): socket เปล่าๆ ที่เทสต์สั่งเดินเอง
+  const extra = [];
+  for (let i = 2; i < players; i++) {
+    const X = ioc(`http://localhost:${port}`, { transports: ['websocket'], forceNew: true, reconnection: false });
+    socks.push(X);
+    await new Promise((res, rej) => { X.once('connect', res); X.once('connect_error', rej); });
+    assert.equal((await emit(X, 'join_room', { code, name: 'P' + (i + 1) })).ok, true);
+    extra.push(X);
+  }
   Object.assign(room().cfg, { mapSize: rows, mapCols: cols, cardInterval });
-  await until(() => room().members.length === 2, 2000, 'B เข้าห้อง');
+  await until(() => room().members.length === players, 2000, 'ทุกคนเข้าห้อง');
   await P.ev(`document.getElementById('btn-start-online').click()`);
   await until(() => P.ev(`!!(window._getOnlineMode() && STATE.cells && STATE.size === ${rows} && STATE.cols === ${cols})`), 6000, 'เกมเริ่มในหน้า');
-  const g = { P, B, code, room, S: () => room().state };
+  const g = { P, B, extra, code, room, S: () => room().state };
   // ยัดกระดาน: fn(set) โดย set(r, c, count, owner)
   // moved[i] = "เดินไปแล้วในรอบล่าสุด": คนที่ถึงตา = false (ยังเดินได้) · คนอื่น = true (ไม่มีช่องเหลือ = ตกรอบ) เว้นแต่บอกเป็นอย่างอื่น
-  g.board = async (fn, { current = 0, turnCount = 2, moved = [0, 1].map(i => i !== current) } = {}) => {
+  g.board = async (fn, { current = 0, turnCount = 2, moved = Array.from({ length: players }, (_, i) => i !== current) } = {}) => {
     const s = g.S();
     for (const row of s.cells) for (const c of row) { c.count = 0; c.owner = -1; }
     fn((r, c, n, o) => { s.cells[r][c].count = n; s.cells[r][c].owner = o; });
-    s.moved = moved.slice(); s.current = current; s.turnCount = turnCount; s.alive = [0, 1]; s.phase = 'playing';
+    s.moved = moved.slice(); s.current = current; s.turnCount = turnCount; s.alive = Array.from({ length: players }, (_, i) => i); s.phase = 'playing';
     await g.sync();
   };
   // บังคับ broadcast (B rejoin ด้วย token) แล้วรอจนหน้าแสดงกระดานเดียวกับ server และเอฟเฟกต์นิ่ง
@@ -415,6 +424,27 @@ test('6c จบเกมแล้วกด "เล่นใหม่": หน้
   await sleep(500);
   metrics['6c เล่นใหม่'] = { winnerShownTimesInSecondGame: await g.P.ev(`window.__shows`), wavesPlayed: m.waves.length };
   assert.equal(await g.P.ev(`window.__shows`), 1, 'เกมที่สองจบ: หน้าผู้ชนะขึ้นครั้งเดียว');
+  noErrors(g); g.P.close();
+});
+
+test('8 งานค้างสามชิ้น (ผู้เล่นอีกสองคนเดินทันที): เล่นครบทุก wave ตามลำดับ แต่เร่งความเร็ว', { skip: SKIP }, async () => {
+  const g = await game({ players: 3 });
+  // สามลูกโซ่ที่ไม่แตะกัน: A แถว 0 (8 wave) · B แถว 2 (6 wave) · C แถว 5 (6 wave)
+  await g.board(set => { for (let c = 0; c < 8; c++) set(0, c, 3, 0); for (let c = 0; c < 6; c++) set(3, c, 3, 1); for (let c = 0; c < 6; c++) set(5, c, 3, 2); });
+  let b = false, c = false;
+  g.B.on('room_update', r => { if (!b && r.state && r.state.current === 1 && r.state.turnCount === 3) { b = true; g.B.emit('place', { r: 3, c: 0 }); } });
+  g.extra[0].on('room_update', r => { if (!c && r.state && r.state.current === 2 && r.state.turnCount === 4) { c = true; g.extra[0].emit('place', { r: 5, c: 0 }); } });
+  const mark = await g.place(0, 0);
+  await until(() => g.S().turnCount === 5, 5000, 'B และ C เดินแล้ว');
+  const m = await g.settle({ quietMs: 1600 });
+  const sent = g.sent(mark), total = sent.reduce((x, y) => x + y, 0);
+  const span = m.waves[m.waves.length - 1].t - m.waves[0].t, stepGaps = gaps(m.waves);
+  metrics['8 งานค้างสามชิ้น'] = { wavesSent: sent, wavesPlayed: m.waves.length, chainsMs: Math.round(span), normalSpeedWouldBeMs: total * 520, fastestStepMs: Math.round(Math.min(...stepGaps)), warpCells: m.fx ? m.fx.warpCells : 'n/a' };
+  assert.equal(sent.length, 3, 'server ส่งสามลูกโซ่: ' + JSON.stringify(sent));
+  assert.equal(m.waves.length, total, `หน้าเล่น ${m.waves.length} wave จากที่ server ส่ง ${total}`);
+  assert.ok(span < total * 520 * 0.8, `เร่งความเร็วเมื่องานค้าง: ใช้ ${Math.round(span)}ms (ความเร็วปกติ ${total * 520}ms)`);
+  assert.equal(m.sig, sigOf(g.S()), 'กระดานสุดท้ายตรงกับ server');
+  if (m.fx) assert.equal(m.fx.warpCells, 0);
   noErrors(g); g.P.close();
 });
 
