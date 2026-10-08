@@ -1856,18 +1856,7 @@ function cellTargetClass(r,c){
   const aCard=targetingCard||(selectedHandCard&&STATE.hands[selectedHandCard.playerIdx][selectedHandCard.cardIdx]);
   const pi=targetingCard?targetData.playerIdx:selectedHandCard?selectedHandCard.playerIdx:STATE.current;
   if(!(aCard&&aCard.needTarget))return '';
-  const cellOwner=STATE.cells[r][c].owner,cellCount=STATE.cells[r][c].count;
-  let valid=false,type='own';
-  if(aCard.id==='l5'){valid=true;type='own';}
-  else if(aCard.targetSelf){
-    const emptyOk=['c1','c2','c4','c5','c6','c8','u1','u7','r1','r2','e1','e2','u2','u3'].includes(aCard.id);
-    if(emptyOk) valid=(cellOwner===pi||cellOwner===-1);
-    else valid=(cellOwner===pi&&cellCount>0);
-    type='own';
-  } else {
-    valid=(cellOwner!==pi&&cellOwner!==-1&&cellCount>0&&STATE.shielded[r][c]<=0);
-    type='enemy';
-  }
+  const valid=cardTargetOk(aCard,pi,r,c),type=(aCard.targetSelf||aCard.rebirthOnly)?'own':'enemy';
   // ไฮไลต์ช่องแรกที่เลือกใน twoTarget
   if(targetingCard&&targetingCard.twoTarget&&r===targetData.r1&&c===targetData.c1)return ' first-picked';
   return valid?(type==='own'?' target-own':' target-enemy'):' target-inactive';
@@ -2889,22 +2878,7 @@ function renderGridHighlight(){
       const aCard=targetingCard||(selectedHandCard&&STATE.hands[selectedHandCard.playerIdx][selectedHandCard.cardIdx]);
       const pi=targetingCard?targetData.playerIdx:selectedHandCard?selectedHandCard.playerIdx:STATE.current;
       if(aCard&&(aCard.needTarget||aCard.rebirthOnly)){
-        const cellOwner=STATE.cells[r][c].owner,cellCount=STATE.cells[r][c].count;
-        let valid=false,type='own';
-        if(aCard.rebirthOnly){
-          valid=(cellOwner===-1);
-          type='own';
-        } else if(aCard.ownOnly||aCard.id==='c5'){
-          valid=(cellOwner===pi&&cellCount>0);
-          type='own';
-        } else if(aCard.targetSelf){
-          const emptyOk=['c2','c4','c6','c8','u7','r1','r2','e1','e2','u2'].includes(aCard.id);
-          valid=emptyOk?(cellOwner===pi||cellOwner===-1):(cellOwner===pi&&cellCount>0);
-          type='own';
-        } else {
-          valid=(cellOwner!==pi&&cellOwner!==-1&&cellCount>0&&STATE.shielded[r][c]<=0);
-          type='enemy';
-        }
+        const valid=cardTargetOk(aCard,pi,r,c),type=(aCard.targetSelf||aCard.rebirthOnly||targetData.r1Done)?'own':'enemy';
         div.classList.add(valid?(type==='own'?'target-own':'target-enemy'):'target-inactive');
         // ไฮไลต์ช่องแรกที่เลือกใน twoTarget (ทั้ง offline และ online)
         const isTwoTargetFirst=(targetingCard&&targetingCard.twoTarget)||
@@ -2912,16 +2886,6 @@ function renderGridHighlight(){
         if(isTwoTargetFirst&&r===targetData.r1&&c===targetData.c1){
           div.classList.remove('target-own','target-enemy','target-inactive');
           div.classList.add('first-picked');
-        }
-        // c5 Spin: second pick เฉพาะ neighbors ของช่องแรก
-        if(aCard&&aCard.id==='c5'&&targetData.r1Done){
-          const nbs5=[];const r1=targetData.r1,c1=targetData.c1;
-          if(r1>0)nbs5.push([r1-1,c1]);if(r1<STATE.size-1)nbs5.push([r1+1,c1]);
-          if(c1>0)nbs5.push([r1,c1-1]);if(c1<(STATE.cols||STATE.size)-1)nbs5.push([r1,c1+1]);
-          const isNb=nbs5.some(([a,b])=>a===r&&b===c);
-          div.classList.remove('target-own','target-enemy','target-inactive','first-picked');
-          if(isNb)div.classList.add('target-own');
-          else div.classList.add('target-inactive');
         }
       }
     }
@@ -3127,7 +3091,7 @@ function handleCellClick(){
 }
 
 function initiateTarget(cardDef,playerIdx,cardIdx,firstR,firstC){
-  if(cardDef.id!=='l5'&&!isValidTarget(cardDef,firstR,firstC,playerIdx)){showToast('❌ เลือกช่องนั้นไม่ได้');return;}
+  {const v1=CRLogic.validateTargets(STATE,cardDef,playerIdx,{r:firstR,c:firstC},{partial:true});if(!v1.ok){showToast('❌ '+v1.msg);return;}}
   selectedHandCard=null;
   document.getElementById('target-banner').classList.remove('show');
   if(cardDef.twoTarget){targetingCard=cardDef;targetData={playerIdx,cardIdx,r1:firstR,c1:firstC,r1Done:true};document.getElementById('target-text').textContent=`✅ ช่อง 1 เลือกแล้ว — เลือกช่องที่ 2`;document.getElementById('target-banner').classList.add('show');renderGridHighlight();}
@@ -3135,19 +3099,19 @@ function initiateTarget(cardDef,playerIdx,cardIdx,firstR,firstC){
 }
 function handleTargetClick(r,c){
   const cardDef=targetingCard,{playerIdx,cardIdx}=targetData;
-  if(cardDef.twoTarget){if(r===targetData.r1&&c===targetData.c1){showToast('❌ เลือกช่องคนละช่อง');return;}document.getElementById('target-banner').classList.remove('show');targetingCard=null;executeCard(cardDef,playerIdx,cardIdx,{r:targetData.r1,c:targetData.c1,r2:r,c2:c});}
+  if(cardDef.twoTarget){const v2=CRLogic.validateTargets(STATE,cardDef,playerIdx,{r:targetData.r1,c:targetData.c1,r2:r,c2:c});if(!v2.ok){showToast('❌ '+v2.msg);return;}document.getElementById('target-banner').classList.remove('show');targetingCard=null;executeCard(cardDef,playerIdx,cardIdx,{r:targetData.r1,c:targetData.c1,r2:r,c2:c});}
   else{document.getElementById('target-banner').classList.remove('show');targetingCard=null;executeCard(cardDef,playerIdx,cardIdx,{r,c});}
   renderGridHighlight();
 }
 document.getElementById('cancel-target-btn').addEventListener('click',()=>{targetingCard=null;targetData={};selectedHandCard=null;document.getElementById('target-banner').classList.remove('show');renderGridHighlight();updateHandHighlight();});
-function isValidTarget(cardDef,r,c,playerIdx){
-  const cell=STATE.cells[r][c];
-  if(cardDef.rebirthOnly)return cell.owner===-1;
-  if(cardDef.ownOnly)return cell.owner===playerIdx&&cell.count>0;
-  if(cardDef.id==='c5')return cell.owner===playerIdx&&cell.count>0; // Spin ต้องมีบอล
-  if(cardDef.targetSelf)return cell.owner===playerIdx||cell.owner===-1;
-  return cell.owner!==playerIdx&&cell.owner!==-1&&cell.count>0;
+// กฎเป้าหมายของการ์ด: ที่เดียวใน shared/gameLogic.js (validateTargets) — server, ออนไลน์, ออฟไลน์ และไฮไลต์ใช้ตัวเดียวกัน
+// ช่องแรกของการ์ดสองเป้าถูกเลือกไปแล้ว (targetData.r1Done) → ตรวจ (r,c) ในฐานะช่องที่สอง
+function cardTargetOk(cardDef,playerIdx,r,c){
+  if(!STATE.rows)STATE.rows=STATE.size;
+  const t=(cardDef.twoTarget&&targetData&&targetData.r1Done)?{r:targetData.r1,c:targetData.c1,r2:r,c2:c}:{r,c};
+  return CRLogic.validateTargets(STATE,cardDef,playerIdx,t,{partial:true}).ok;
 }
+function isValidTarget(cardDef,r,c,playerIdx){return cardTargetOk(cardDef,playerIdx,r,c);}
 
 function showCardAnnounce(cardDef){return Promise.resolve();}
 function showCardResult(emoji,text){return Promise.resolve();}

@@ -13,7 +13,7 @@
 })(typeof window !== 'undefined' ? window : null, function () {
 
 const CARD_DEFS = [
-  {id:'c1',emoji:'⚡',name:'Overload',rarity:'uncommon',cat:'burst',desc:'เพิ่มลูกบอล +2 ในช่องที่เลือก',needTarget:true,targetSelf:true},
+  {id:'c1',emoji:'⚡',name:'Overload',rarity:'uncommon',cat:'burst',desc:'เพิ่มลูกบอล +2 ในช่องของตัวเองที่เลือก',needTarget:true,targetSelf:true,ownOnly:true},
   {id:'c2',emoji:'💠',name:'Pulse',rarity:'uncommon',cat:'burst',desc:'ช่องรอบๆ ที่เลือก +1 ทุกช่อง',needTarget:true,targetSelf:true},
   {id:'c3',emoji:'🎯',name:'Sniper',rarity:'common',cat:'attack',desc:'เลือกช่องศัตรู -1 ลูกบอล',needTarget:true,targetSelf:false},
   {id:'c4',emoji:'⚖️',name:'Exchange',rarity:'uncommon',cat:'chaos',desc:'+2 ช่องตัวเองที่เลือก แล้วสุ่มช่องศัตรู -2',needTarget:true,targetSelf:true},
@@ -25,9 +25,9 @@ const CARD_DEFS = [
   {id:'c10',emoji:'🔄',name:'Cycle',rarity:'common',cat:'strategy',desc:'ทิ้งการ์ดทั้งหมด แล้วจั่ว 1 ใบใหม่',needTarget:false},
   {id:'c11',anyTarget:true,emoji:'📦',name:'Store',rarity:'common',cat:'burst',desc:'+1 สองช่องของตัวเองสุ่ม',needTarget:false},
   {id:'c12',emoji:'🔍',name:'Scout',rarity:'common',cat:'strategy',desc:'ดูการ์ดในมือของผู้เล่นอื่นสุ่ม',needTarget:false},
-  {id:'u1',emoji:'💣',name:'Instant Burst',rarity:'uncommon',cat:'burst',desc:'ช่องที่เลือกระเบิดทันที',needTarget:true,targetSelf:true},
+  {id:'u1',emoji:'💣',name:'Instant Burst',rarity:'uncommon',cat:'burst',desc:'ช่องของตัวเองที่เลือกระเบิดทันที',needTarget:true,targetSelf:true,ownOnly:true},
   {id:'u2',emoji:'🔁',name:'Swap',rarity:'uncommon',cat:'strategy',desc:'สลับตำแหน่ง 2 ช่องบนกระดาน',needTarget:true,targetSelf:true,twoTarget:true},
-  {id:'u3',emoji:'💥',name:'Double Shot',rarity:'uncommon',cat:'burst',desc:'+1 สองช่องที่เลือก',needTarget:true,targetSelf:true,twoTarget:true},
+  {id:'u3',emoji:'💥',name:'Double Shot',rarity:'uncommon',cat:'burst',desc:'+1 สองช่องของตัวเองที่เลือก',needTarget:true,targetSelf:true,twoTarget:true,ownOnly:true},
   {id:'u4',anyTarget:true,emoji:'🧱',name:'Wall',rarity:'uncommon',cat:'defense',desc:'ป้องกัน 3 ช่องของตัวเอง 1 เทิร์น',needTarget:false},
   {id:'u5',emoji:'⏳',name:'Time Bomb',rarity:'super_rare',cat:'chaos',desc:'อีก 2 เทิร์น ช่องนั้นระเบิดเอง',needTarget:true,targetSelf:false},
   {id:'u6',emoji:'⚔️',name:'Raid',rarity:'uncommon',cat:'attack',desc:'ลบลูกบอลศัตรู -2',needTarget:true,targetSelf:false},
@@ -448,7 +448,69 @@ function tickTimeBombs(state) {
   return exploded.length > 0;
 }
 
+// ── เป้าหมายของการ์ด ──
+// กฎชุดเดียวที่ server (ก่อนแก้ state), client ออนไลน์ (ก่อนส่ง), โหมดออฟไลน์ และบอท ใช้ร่วมกัน
+// (ของเดิม: client ออนไลน์ไม่ตรวจเลย ส่วน server ตรวจแค่ 3 ใบ → ใช้การ์ดของตัวเองบนช่องศัตรูเพื่อพลิกช่องได้)
+//
+//   rebirthOnly            → ผู้เล่นตายแล้ว + ช่องว่าง
+//   ownOnly (c1, u1, u3)   → ช่องตัวเองที่มีลูก
+//   targetSelf             → ช่องตัวเองหรือช่องว่าง (ใบใน EMPTY_OK) · ใบอื่น: ช่องตัวเองที่มีลูก
+//   ไม่ใช่ targetSelf       → ช่องศัตรูที่มีลูก (c3, c9, u6 ต้องไม่มีโล่ด้วย)
+//   สองเป้า                → ช่องต่างกัน · Spin: ช่องสองติดกัน · Double Shot / Sever: ช่องสองเป็นของเราด้วย · Swap: ช่องสองเป็นช่องไหนก็ได้
+//   ช่องที่ถูก Void อยู่      → เลือกไม่ได้ทุกใบ
+const EMPTY_OK = new Set(['c2', 'c4', 'c6', 'c8', 'u2', 'u7', 'r1', 'r2', 'e1', 'e2']);
+const SHIELD_BLOCKS = new Set(['c3', 'c9', 'u6']);
+const isVoidCell = (state, r, c) => ((state.voidCells && state.voidCells[`${r},${c}`]) || 0) > 0;
+
+// opts.partial = true: การ์ดสองเป้าที่เพิ่งเลือกช่องแรก (ยังไม่มี r2/c2) ให้ตรวจเฉพาะช่องแรก — ใช้ตอนไฮไลต์/คลิกช่องแรกใน UI
+function validateTargets(state, cardDef, playerIdx, targets, opts) {
+  const { rows, cols, cells } = state;
+  const me = playerIdx;
+  const { r, c, r2, c2 } = (targets && typeof targets === 'object') ? targets : {};
+  const bad = msg => ({ ok: false, msg });
+  const inBoard = (a, b) => Number.isInteger(a) && Number.isInteger(b) && a >= 0 && a < rows && b >= 0 && b < cols;
+  const has1 = r !== undefined || c !== undefined;
+  const has2 = r2 !== undefined || c2 !== undefined;
+  const needsCell = !!cardDef.needTarget || cardDef.id === 'e4'; // Pillar ใช้ column ของช่องที่เลือก
+
+  if (needsCell && !has1) return bad('ต้องเลือกช่องก่อน');
+  if (has1 && !inBoard(r, c)) return bad('ช่องอยู่นอกกระดาน');
+  if (has2 && !inBoard(r2, c2)) return bad('ช่องอยู่นอกกระดาน');
+  if (cardDef.twoTarget && !has2 && !(opts && opts.partial)) return bad('ต้องเลือก 2 ช่อง');
+  if (cardDef.twoTarget && has2 && r === r2 && c === c2) return bad('ต้องเลือกช่องคนละช่อง');
+  if (!needsCell) return { ok: true };
+
+  const mine = (a, b) => cells[a][b].owner === me && cells[a][b].count > 0;
+  const empty = (a, b) => cells[a][b].owner === -1 || cells[a][b].count <= 0;
+  if (isVoidCell(state, r, c)) return bad('ช่องนั้นหายไปจากกระดานอยู่ (Void)');
+
+  if (cardDef.rebirthOnly) {
+    if (state.alive.includes(me)) return bad('Rebirth ใช้ได้เมื่อตายแล้วเท่านั้น');
+    if (!empty(r, c)) return bad('วางได้เฉพาะช่องว่าง');
+    return { ok: true };
+  }
+  if (cardDef.id === 'e4') return { ok: true }; // Pillar: ช่องไหนก็ได้ เพื่อบอก column
+
+  if (cardDef.ownOnly || cardDef.id === 'c5') {
+    if (!mine(r, c)) return bad('ต้องเลือกช่องของตัวเองที่มีลูกบอล');
+  } else if (cardDef.targetSelf) {
+    if (EMPTY_OK.has(cardDef.id)) { if (!mine(r, c) && !empty(r, c)) return bad('ต้องเลือกช่องของตัวเองหรือช่องว่าง'); }
+    else if (!mine(r, c)) return bad('ต้องเลือกช่องของตัวเองที่มีลูกบอล');
+  } else {
+    if (mine(r, c) || empty(r, c)) return bad('ต้องเลือกช่องของคู่ต่อสู้ที่มีลูกบอล');
+    if (SHIELD_BLOCKS.has(cardDef.id) && state.shielded[r][c] > 0) return bad('ช่องนั้นมีโล่ป้องกันอยู่');
+  }
+
+  if (cardDef.twoTarget && has2) {
+    if (isVoidCell(state, r2, c2)) return bad('ช่องนั้นหายไปจากกระดานอยู่ (Void)');
+    if (cardDef.id === 'c5' && !neighbors(r, c, rows, cols).some(([a, b]) => a === r2 && b === c2)) return bad('ต้องเลือกช่องที่ติดกัน');
+    if ((cardDef.id === 'u3' || cardDef.id === 'sr1') && !mine(r2, c2)) return bad('ช่องที่สองต้องเป็นช่องของตัวเองที่มีลูกบอล');
+  }
+  return { ok: true };
+}
+
 // ── Apply card effect (returns {ok, resultText, vfxData}) ──
+// ลำดับ: ตรวจทุกอย่าง → แก้ state → ตอบ · การ์ดที่ถูกปฏิเสธต้องไม่เปลี่ยน state เลย
 function applyCard(state, playerIdx, cardDef, targets) {
   const { rows, cols, cells } = state;
   const cur = playerIdx;
@@ -456,38 +518,8 @@ function applyCard(state, playerIdx, cardDef, targets) {
   let resultText = '';
   let vfxData = {};
 
-  // ── ตรวจเป้าหมายทั้งหมดให้ครบ "ก่อน" แก้ state ใดๆ ──
-  // (ของเดิมตรวจแค่ r,c — r2/c2 นอกกระดานจะ throw หลังจากกินการ์ดและ action ไปแล้ว ทำให้เทิร์นค้าง)
-  const inBoard = (a, b) => Number.isInteger(a) && Number.isInteger(b) && a >= 0 && a < rows && b >= 0 && b < cols;
-  const has1 = r !== undefined || c !== undefined;
-  const has2 = r2 !== undefined || c2 !== undefined;
-  const needsCell = cardDef.needTarget || cardDef.id === 'e4'; // Pillar ใช้ column ของช่องที่เลือก
-  if (needsCell && !has1) return { ok: false, msg: 'ต้องเลือกช่องก่อน' };
-  if (has1 && !inBoard(r, c)) return { ok: false, msg: 'ช่องอยู่นอกกระดาน' };
-  if (cardDef.twoTarget) {
-    if (!has2) return { ok: false, msg: 'ต้องเลือก 2 ช่อง' };
-    if (!inBoard(r2, c2)) return { ok: false, msg: 'ช่องอยู่นอกกระดาน' };
-    if (r === r2 && c === c2) return { ok: false, msg: 'ต้องเลือกช่องคนละช่อง' };
-  } else if (has2 && !inBoard(r2, c2)) {
-    return { ok: false, msg: 'ช่องอยู่นอกกระดาน' };
-  }
-  // Rebirth: ใช้ได้เมื่อตายแล้วเท่านั้น และต้องเป็นช่องว่าง (ของเดิมไม่ตรวจว่ายังมีชีวิต และตรวจช่องว่างหลังกินการ์ดไปแล้ว)
-  if (cardDef.rebirthOnly) {
-    if (state.alive.includes(cur)) return { ok: false, msg: 'Rebirth ใช้ได้เมื่อตายแล้วเท่านั้น' };
-    if (cells[r][c].owner !== -1) return { ok: false, msg: 'วางได้เฉพาะช่องว่าง' };
-  }
-  // c1 Overload, u1 Instant Burst, u3 Double Shot: เฉพาะช่องตัวเองเท่านั้น
-  if (['c1','u1','u3'].includes(cardDef.id) && r !== undefined) {
-    if (cells[r][c].owner !== cur) return { ok: false, msg: 'ใช้ได้เฉพาะช่องของตัวเองเท่านั้น' };
-    if (['u3'].includes(cardDef.id) && r2 !== undefined && cells[r2][c2].owner !== cur)
-      return { ok: false, msg: 'ใช้ได้เฉพาะช่องของตัวเองเท่านั้น' };
-  }
-  // c5 Spin: r2,c2 ต้องอยู่ติดกับ r,c
-  if (cardDef.id === 'c5' && r2 !== undefined) {
-    const nbs5 = neighbors(r, c, rows, cols);
-    if (!nbs5.some(([a,b]) => a===r2 && b===c2))
-      return { ok: false, msg: 'ต้องเลือกช่องที่ติดกัน' };
-  }
+  const v = validateTargets(state, cardDef, playerIdx, targets);
+  if (!v.ok) return v;
 
   if (cardDef.rarity === 'legendary' && (state.legendaryUsedBy[cur] || 0) >= 2)
     return { ok: false, msg: 'Legendary ใช้ได้แค่ 2 ครั้งต่อเกม!' };
@@ -627,6 +659,7 @@ return {
     createInitialState, applyPlace, applyCard,
     processExplosionsSync, processExplosionsWithWaves, checkEliminations, checkWin,
     nextTurn, tickTimeBombs, draw3UniqueCards, drawRandomCard, neighbors, rebirthUsable,
+    validateTargets,
     FX_MAX_WAVES, FX_TIMING, CARD_VFX_MS, cardVfxMs, waveStepMs, animMs,
   };
 });

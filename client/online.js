@@ -824,20 +824,16 @@ function onlineCellClick(r, c) {
     const realIdx = cardDef ? STATE.hands[playerIdx].indexOf(cardDef) : cardIdx;
     if (cardDef) {
       if (cardDef.twoTarget && !targetData.r1Done) {
+        const v1 = window.CRLogic.validateTargets(STATE, cardDef, mySlot, { r, c }, { partial: true });
+        if (!v1.ok) { showToast('❌ ' + v1.msg); return true; }
         targetData = { r1: r, c1: c, r1Done: true, playerIdx, cardIdx: realIdx, cardDef };
         document.getElementById('target-text').textContent = `✅ ช่อง 1 แล้ว — เลือกช่องที่ 2`;
         renderGridHighlight();
         return true;
       }
       if (cardDef.twoTarget && targetData.r1Done) {
-        if (r === targetData.r1 && c === targetData.c1) { showToast('เลือกช่องคนละช่อง'); return true; }
-        // c5 Spin: ช่องที่ 2 ต้องอยู่ติดกับช่องที่ 1
-        if (cardDef.id === 'c5') {
-          const size = STATE.size, cols = STATE.cols || STATE.size;
-          const r1 = targetData.r1, c1 = targetData.c1;
-          const isNb = (Math.abs(r-r1)===1&&c===c1) || (Math.abs(c-c1)===1&&r===r1);
-          if (!isNb) { showToast('❌ ต้องเลือกช่องที่ติดกัน'); return true; }
-        }
+        const v2 = window.CRLogic.validateTargets(STATE, cardDef, mySlot, { r: targetData.r1, c: targetData.c1, r2: r, c2: c });
+        if (!v2.ok) { showToast('❌ ' + v2.msg); return true; }
         selectedHandCard = null;
         document.getElementById('target-banner').classList.remove('show');
         clearAllTimers();
@@ -850,6 +846,8 @@ function onlineCellClick(r, c) {
         targetData = {}; renderGridHighlight();
         return true;
       }
+      const v = window.CRLogic.validateTargets(STATE, cardDef, mySlot, { r, c });
+      if (!v.ok) { showToast('❌ ' + v.msg); return true; }
       selectedHandCard = null;
       document.getElementById('target-banner').classList.remove('show');
       clearAllTimers();
