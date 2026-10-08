@@ -1,7 +1,8 @@
 // Realtime Database จำลองในหน่วยความจำ — ไว้ทดสอบ client/fb-transport.js โดยไม่ต้องต่อ Firebase จริง
 //  · ใน Node: หลาย adapter ใช้ MemDB ตัวเดียวกัน (แทนแขกหลายคนที่ใช้ฐานข้อมูลเดียวกัน)
 //  · ในเบราว์เซอร์: MemDB({ channel }) ซิงก์ข้ามแท็บด้วย BroadcastChannel (ชุดทดสอบ e2e เปิดสองแท็บ)
-// ไม่จำลอง Rules — Rules ต้องทดสอบกับ Firebase จริง
+// Rules: จำลองเฉพาะกฎของ cr/hosts (จอง / ต่ออายุ / ปล่อยรหัสห้อง) ให้ตรงกับ database.rules.json เพราะตรรกะของโฮสต์พึ่งมัน
+//        กฎอื่นทั้งหมดไม่ได้จำลอง — ต้องทดสอบกับ Firebase จริง (ดู README)
 (function (root) {
 'use strict';
 const later = fn => setTimeout(fn, 0);
@@ -12,6 +13,7 @@ class MemDB {
   // delay: () => ms — หน่วงการแจ้ง listener (จำลองความหน่วงของเครือข่าย) โดยยังคงลำดับเดิมเหมือน Firebase จริง
   constructor({ channel, delay } = {}) {
     this.data = {}; this.subs = new Set(); this.seq = 0; this.synced = true; this.delay = delay || null; this._due = 0;
+    this.skew = 0; // เลื่อนนาฬิกาของ "server" ในเทสต์ (เช่น ข้ามไป 6 นาที)
     if (channel && typeof BroadcastChannel !== 'undefined') {
       this.id = Math.random().toString(36).slice(2);
       this.bc = new BroadcastChannel(channel);
@@ -43,13 +45,24 @@ class MemDB {
       this._pump();
     }, Math.max(0, q[0].due - Date.now()));
   }
+  now() { return Date.now() + this.skew; }
+  // แทนค่า serverTimestamp ด้วยเวลาของฐานข้อมูล ณ ตอนเขียน
+  _resolve(v) {
+    if (v && typeof v === 'object') {
+      if (v['.sv'] === 'timestamp') return this.now();
+      const out = Array.isArray(v) ? [] : {};
+      for (const k of Object.keys(v)) out[k] = this._resolve(v[k]);
+      return out;
+    }
+    return v;
+  }
   whenSynced() { return new Promise(r => { const t = () => (this.synced ? r() : setTimeout(t, 20)); t(); }); }
   get(path) {
     let cur = this.data;
     for (const k of seg(path)) { if (cur === null || typeof cur !== 'object' || !(k in cur)) return null; cur = cur[k]; }
     return clone(cur);
   }
-  write(path, val) { this._apply(path, val); this.bc?.postMessage({ t: 'w', path, val: clone(val) }); }
+  write(path, val) { val = this._resolve(val); this._apply(path, val); this.bc?.postMessage({ t: 'w', path, val: clone(val) }); }
   _apply(path, val) {
     const ks = seg(path);
     if (!ks.length) { this.data = clone(val) || {}; return this._notify(); }
@@ -97,13 +110,41 @@ class MemDB {
 function memoryAdapter(db, uid) {
   const conns = new Set(); const ods = new Set();
   let up = true;
+  const denied = () => Object.assign(new Error('PERMISSION_DENIED: Permission denied'), { code: 'PERMISSION_DENIED' });
+  // กฎของ cr/hosts/{code} และ cr/hostOf/{uid} (ย่อจาก database.rules.json) · writes = { path: value } ที่กำลังจะเขียนพร้อมกัน
+  //   hosts:  จอง/ต่ออายุได้เมื่อ ว่าง | ของเรา | ไม่ได้ต่ออายุเกิน 5 นาที และ (หลังเขียน) hostOf/{uid} ชี้มาที่รหัสนี้ · ลบได้เฉพาะของเรา
+  //   hostOf: ของ uid ตัวเองเท่านั้น · ย้าย/ลบได้ต่อเมื่อรายการโฮสต์ของรหัสเดิมไม่อยู่แล้ว (หรือถูกลบในชุดเดียวกัน) หรือไม่ใช่ของเรา
+  //           → uid หนึ่งถือได้ทีละรหัสเดียว · ค่าใหม่ต้องชี้ไปรหัสที่ (หลังเขียน) เราเป็นโฮสต์
+  const after = (writes, path) => (path in writes ? writes[path] : db.get(path));
+  const check = writes => {
+    for (const p of Object.keys(writes)) {
+      const x = /^cr\/hostOf\/([^/]+)$/.exec(p);
+      if (x) {
+        if (x[1] !== uid) throw denied();
+        const old = db.get(p), val = writes[p];
+        if (old && val !== old) { const h = db.get('cr/hosts/' + old); if (after(writes, 'cr/hosts/' + old) && h && h.host === uid) throw denied(); }
+        if (val !== null && val !== undefined) { const h = after(writes, 'cr/hosts/' + val); if (!/^\d{4}$/.test(String(val)) || !h || h.host !== uid) throw denied(); }
+        continue;
+      }
+      const m = /^cr\/hosts\/([^/]+)$/.exec(p);
+      if (!m) continue;
+      const cur = db.get(p), val = writes[p];
+      if (val === null || val === undefined) { if (cur && cur.host !== uid) throw denied(); continue; }
+      const free = !cur || cur.host === uid || !(cur.t >= db.now() - 300000);
+      const idx = after(writes, 'cr/hostOf/' + uid);
+      if (!free || val.host !== uid || !/^\d{4}$/.test(m[1]) || idx !== m[1]) throw denied();
+    }
+  };
   const a = {
     uid, db,
     ready: async () => { await db.whenSynced(); return uid; },
+    now: () => db.now(),
+    serverTimestamp: () => ({ '.sv': 'timestamp' }),
+    update: async (obj) => { check(obj); Object.keys(obj).forEach(p => db.write(p, obj[p])); },
     onConnection(cb) { conns.add(cb); later(() => { if (conns.has(cb)) cb(up); }); return () => conns.delete(cb); },
     get: async p => db.get(p),
-    set: async (p, v) => { db.write(p, v); },
-    remove: async p => { db.write(p, null); },
+    set: async (p, v) => { check({ [p]: v }); db.write(p, v); },
+    remove: async p => { check({ [p]: null }); db.write(p, null); },
     push: async (p, v) => { const k = Date.now().toString(36) + (++db.seq).toString(36).padStart(5, '0') + Math.random().toString(36).slice(2, 4); db.write(p + '/' + k, v); return k; },
     onChildAdded: (p, cb) => db.sub('added', p, cb),
     onChildRemoved: (p, cb) => db.sub('removed', p, cb),
