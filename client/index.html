@@ -4193,16 +4193,26 @@ async function doBotPlace(playerIdx,size){
 async function processExplosions(done){
   animating=true;document.getElementById('blocker').classList.add('on');
   if(!STATE.rows)STATE.rows=STATE.size;
-  const max=STATE.size*(STATE.cols||STATE.size)*4;let safety=0,w;
-  while((w=CRLogic.explodeWave(STATE))){await playWave(w.explosions);if(++safety>max)break;}
+  // จังหวะเดียวกับโหมดออนไลน์: ปกติ 520ms ต่อ wave แต่ลูกโซ่ยาวแค่ไหนก็จบใน ~8 วินาที (ยาวมากจะรวมหลาย wave เป็นขั้นภาพเดียว)
+  // (ของเดิม 520ms ตายตัว: Big Bang บนกระดานเต็มๆ ระเบิดเกิน 100 wave = รอเกือบนาที)
+  const n=CRLogic.countWaves(STATE),T=CRLogic.FX_TIMING,per=CRLogic.waveStepMs(n);
+  const group=per>=T.WAVE_MIN_MS?1:Math.ceil(T.WAVE_MIN_MS/per);
+  const max=STATE.size*(STATE.cols||STATE.size)*4;let safety=0;
+  for(;;){
+    const list=[];let k=0;
+    for(;k<group;k++){const w=CRLogic.explodeWave(STATE);if(!w)break;list.push(...w.explosions);}
+    if(!k)break;
+    await playWave(list,per*k);
+    if((safety+=k)>max)break;
+  }
   animating=false;document.getElementById('blocker').classList.remove('on');
   if(!STATE._dead)done();
 }
-function playWave(list){
+function playWave(list,step){
   return new Promise(resolve=>{
-    // เอฟเฟกต์ + เสียงของ wave นี้ (แรงขึ้นตามลำดับใน chain) — ไม่กระทบจังหวะ STEP_DELAY
+    // เอฟเฟกต์ + เสียงของ wave นี้ (แรงขึ้นตามลำดับใน chain)
     FX.wave(list,FX.chainStep());
-    setTimeout(()=>{renderGrid();FX.land(list);setTimeout(resolve,STEP_DELAY*.55);},STEP_DELAY*.45);
+    setTimeout(()=>{renderGrid();FX.land(list);setTimeout(resolve,step*.55);},step*.45);
   });
 }
 function spawnFlyingOrbs(r,c,playerIdx,nbs){FX.flyOrbs(r,c,playerIdx,nbs);}

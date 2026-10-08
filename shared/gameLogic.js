@@ -174,6 +174,7 @@ function rebirthUsable(state, i) {
 // (ของเดิมเก็บแค่ count/owner: ผู้เล่นที่เพิ่งถูกคัดออกไม่กลับมา และโล่ / Void / Sever / Pin / Time Bomb ไม่ย้อนตาม)
 const SNAP_FIELDS = ['alive', 'shielded', 'shieldOwner', 'voidCells', 'voidSnapshot', 'voidOwner', 'severed', 'severedOwner', 'pinned', 'pinnedOwner', 'pinnedBy', 'timeBombs'];
 function takeSnapshot(state) {
+  if (state._sim) return; // สถานะจำลอง: ไม่ต้องเก็บ (แพง และไม่มีใครย้อน)
   const snap = { cells: state.cells.map(row => row.map(ce => ({ count: ce.count, owner: ce.owner }))) };
   SNAP_FIELDS.forEach(f => { snap[f] = state[f] === undefined ? null : state[f]; });
   state._snapshot = JSON.parse(JSON.stringify(snap));
@@ -188,7 +189,8 @@ function restoreSnapshot(state) {
     if (now.count !== old.count || now.owner !== old.owner) diff.push({ r, c, fromCount: now.count, fromOwner: now.owner, toCount: old.count, toOwner: old.owner });
     now.count = old.count; now.owner = old.owner;
   }
-  SNAP_FIELDS.forEach(f => { if (snap[f] !== null && snap[f] !== undefined) state[f] = snap[f]; });
+  // สำเนา: snapshot อาจถูกใช้ร่วมกับสถานะจำลองของบอท — ห้ามชี้ไปที่ก้อนเดียวกัน
+  SNAP_FIELDS.forEach(f => { if (snap[f] !== null && snap[f] !== undefined) state[f] = JSON.parse(JSON.stringify(snap[f])); });
   state._snapshot = null;
   return diff;
 }
@@ -362,6 +364,37 @@ function processExplosionsWithWaves(state, opts) {
 }
 // การ์ดที่ระเบิดในตัวเอง (Meteor / Big Bang): server บันทึกลูกโซ่ · สถานะจำลองของบอท (state._sim) ไม่ต้อง
 const runExplosions = state => (state._sim ? processExplosionsSync(state) : processExplosionsWithWaves(state).length);
+
+// ── สำเนาเบาสำหรับจำลอง ──
+// คัดลอกเฉพาะสิ่งที่กติกาอ่าน/เขียน (ไม่ผ่าน JSON) — บอทใช้ลองเดินล่วงหน้า และโหมดออฟไลน์ใช้นับความยาวลูกโซ่
+// สำเนามี _sim = true: ไม่บันทึกลูกโซ่ (state._fx) และไม่เก็บ snapshot ของ Rewind
+function cloneSim(state) {
+  const rows = state.rows, cols = state.cols;
+  const cells = new Array(rows);
+  for (let r = 0; r < rows; r++) {
+    const src = state.cells[r], row = new Array(cols);
+    for (let c = 0; c < cols; c++) { const ce = src[c]; row[c] = { count: ce.count, owner: ce.owner, cap: ce.cap }; }
+    cells[r] = row;
+  }
+  const n = state.players, arr = (a, fill) => (Array.isArray(a) ? a.slice() : Array(n).fill(fill)), obj = o => Object.assign({}, o);
+  return {
+    rows, cols, cells, players: n, current: state.current, turnCount: state.turnCount || 0, cardInterval: state.cardInterval || 0,
+    alive: state.alive.slice(), moved: arr(state.moved, false), playerTurns: arr(state.playerTurns, 0), scores: arr(state.scores, 0),
+    hands: state.hands.map(h => h.slice()),
+    legendaryUsedBy: arr(state.legendaryUsedBy, 0), mythicalUsedBy: arr(state.mythicalUsedBy, false),
+    eclipse: state.eclipse || 0, keyActive: arr(state.keyActive, 0),
+    delayFor: state.delayFor === undefined ? -1 : state.delayFor, _pendingDelayFor: state._pendingDelayFor === undefined ? -1 : state._pendingDelayFor,
+    voidCells: obj(state.voidCells), voidSnapshot: obj(state.voidSnapshot), voidOwner: obj(state.voidOwner),
+    severed: obj(state.severed), severedOwner: obj(state.severedOwner),
+    pinned: obj(state.pinned), pinnedOwner: obj(state.pinnedOwner), pinnedBy: obj(state.pinnedBy), catalyzed: obj(state.catalyzed),
+    shielded: state.shielded.map(r => r.slice()), shieldOwner: state.shieldOwner.map(r => r.slice()),
+    timeBombs: (state.timeBombs || []).map(b => Object.assign({}, b)), frozen: arr(state.frozen, 0),
+    disabledCards: state.disabledCards, phase: state.phase || 'playing', winner: state.winner === undefined ? -1 : state.winner,
+    _snapshot: state._snapshot || null, _sim: true,
+  };
+}
+// ลูกโซ่ที่กำลังจะเกิดบนกระดานนี้ยาวกี่ wave (ไม่แตะ state จริง)
+function countWaves(state) { return processExplosionsSync(cloneSim(state)); }
 
 // ── Check eliminations ──
 function checkEliminations(state) {
@@ -748,7 +781,7 @@ return {
     createInitialState, applyPlace, applyCard,
     processExplosionsSync, processExplosionsWithWaves, checkEliminations, checkWin,
     nextTurn, tickTimeBombs, draw3UniqueCards, drawRandomCard, neighbors, rebirthUsable,
-    validateTargets, takeSnapshot, restoreSnapshot, explodeWave, tickEffects, drawPickChoices,
+    validateTargets, takeSnapshot, restoreSnapshot, explodeWave, tickEffects, drawPickChoices, cloneSim, countWaves,
     FX_MAX_WAVES, FX_TIMING, CARD_VFX_MS, cardVfxMs, waveStepMs, animMs,
   };
 });
