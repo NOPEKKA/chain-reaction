@@ -696,7 +696,8 @@ io.on('connection', (socket) => {
       return cb?.({ ok: false, msg: 'การ์ดใบนี้ใช้ไม่ได้ตอนนี้ (ไม่มีอะไรเปลี่ยน)' });
     }
     if (!result.ok) return cb?.({ ok: false, msg: result.msg });
-    cb?.({ ok: true, vfxData: result.vfxData, resultText: result.resultText });
+    // result.private (เช่น ผลของ Scout) ไปที่ callback ของคนใช้เท่านั้น — ไม่อยู่ใน card_vfx / room_update
+    cb?.({ ok: true, vfxData: result.vfxData, resultText: result.resultText, ...(result.private || {}) });
     io.to(room.code).emit('card_vfx', { cardId, targets: targets||{}, playerIdx: member.slot, vfxData: result.vfxData||{} });
     // บันทึกการ์ดล่าสุดใน state เพื่อให้ room_update รู้ว่ามี VFX
     state._lastCardId = cardId;

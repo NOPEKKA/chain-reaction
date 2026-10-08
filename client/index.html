@@ -3043,9 +3043,7 @@ function activateCard(pi,ci,cardDef){
   updateHandHighlight();renderGridHighlight();
 }
 
-function takeSnapshot(){
-  STATE._snapshot=JSON.parse(JSON.stringify(STATE.cells.map(row=>row.map(ce=>({count:ce.count,owner:ce.owner})))));
-}
+function takeSnapshot(){if(!STATE.rows)STATE.rows=STATE.size;CRLogic.takeSnapshot(STATE);} // ช่อง + ผู้เล่นที่ยังอยู่ + เอฟเฟกต์ของกระดาน (shared/gameLogic.js)
 function handleCellClick(){
   if(animating)return;
   const r=parseInt(this.dataset.r),c=parseInt(this.dataset.c);
@@ -3806,6 +3804,7 @@ async function executeCardInner(cardDef,playerIdx,cardIdx,targets){
   }
   if(cardDef.rarity==='legendary'&&STATE.legendaryUsedBy[cur]>=2){showToast('💀 Legendary ใช้ได้แค่ 2 ครั้งต่อเกม!');selectedHandCard=null;updateHandHighlight();return;}
   if(cardDef.rarity==='mythical'&&STATE.mythicalUsedBy[cur]){showToast('🌌 Mythical ใช้ได้แค่ 1 ครั้งต่อเกม!');selectedHandCard=null;updateHandHighlight();return;}
+  if(cardDef.id==='r8'&&!(STATE._snapshot&&STATE._snapshot.cells)){showToast('🔙 ยังไม่มีอะไรให้ย้อน');selectedHandCard=null;updateHandHighlight();renderGridHighlight();return;}
   if(cardDef.id!=='r8')takeSnapshot();
   if(cardDef.id!=='ep4')STATE.moved[cur]=true; // บล็อกวางบอลทันที (Delay ไม่บล็อก)
   STATE.hands[playerIdx].splice(cardIdx,1);selectedHandCard=null;
@@ -3848,7 +3847,7 @@ async function executeCardInner(cardDef,playerIdx,cardIdx,targets){
       const zone=[];
       for(let ro=Math.max(0,r-1);ro<=Math.min(size-1,r+1);ro++)
         for(let co=Math.max(0,c-1);co<=Math.min(cols-1,c+1);co++)
-          zone.push([ro,co]);
+          if(!(STATE.voidCells&&STATE.voidCells[`${ro},${co}`]>0))zone.push([ro,co]); // ไม่แตะช่อง Void
       // แยกช่องของแต่ละเจ้าของ
       const byOwner={};
       zone.forEach(([ro,co])=>{
@@ -3891,19 +3890,9 @@ async function executeCardInner(cardDef,playerIdx,cardIdx,targets){
     case 'u9':{if(STATE.cells[r][c].owner!==cur&&STATE.cells[r][c].owner!==-1){if(!STATE.pinned)STATE.pinned={};STATE.pinned[`${r},${c}`]=1;resultText='Pin!';}else{resultText='❌ เลือกช่องศัตรูที่มีบอล';}break;}
     case 'u10':{STATE.cells[r][c].count+=2;STATE.cells[r][c].owner=cur;const boosted_u10=[[r,c]];const others_u10=STATE.alive.filter(i=>i!==cur);if(others_u10.length){const t_u10=others_u10[Math.floor(Math.random()*others_u10.length)];const tcells_u10=[];for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++)if(STATE.cells[ro][co].owner===t_u10)tcells_u10.push([ro,co]);tcells_u10.sort(()=>Math.random()-.5);tcells_u10.slice(0,2).forEach(([ro,co])=>{STATE.cells[ro][co].count++;boosted_u10.push([ro,co]);});}vfxData={boosted:boosted_u10};resultText='Gift!';}break;
     case 'r7':{if(!STATE.voidCells)STATE.voidCells={};if(!STATE.voidSnapshot)STATE.voidSnapshot={};STATE.voidCells[`${r},${c}`]=2;STATE.voidSnapshot[`${r},${c}`]={count:STATE.cells[r][c].count,owner:STATE.cells[r][c].owner};STATE.cells[r][c].count=0;STATE.cells[r][c].owner=-1;resultText='Void!';}break;
-    case 'r8':{// Rewind: คำนวณ diff ก่อน แล้วค่อย apply
-    if(STATE._snapshot){
-      const snap=STATE._snapshot;
-      const diff=[];
-      for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++){
-        const cur3=STATE.cells[ro][co],old3=snap[ro][co];
-        if(cur3.count!==old3.count||cur3.owner!==old3.owner)
-          diff.push({r:ro,c:co,fromCount:cur3.count,fromOwner:cur3.owner,toCount:old3.count,toOwner:old3.owner});
-      }
-      vfxData={diff};
-      for(let ro=0;ro<size;ro++)for(let co=0;co<cols;co++){STATE.cells[ro][co].count=snap[ro][co].count;STATE.cells[ro][co].owner=snap[ro][co].owner;}
-      resultText='Rewind!';
-    }}break;
+    case 'r8':{ // Rewind: คืนกระดาน + ผู้เล่นที่ถูกคัดออก + เอฟเฟกต์ของกระดาน (shared/gameLogic.js)
+    if(!STATE.rows)STATE.rows=STATE.size;
+    vfxData={diff:CRLogic.restoreSnapshot(STATE)||[]};resultText='Rewind!';}break;
     case 'sr1':{// Sever: เลือก 2 ช่อง ระเบิดออกไม่ได้ 4 เทิร์น
     if(!STATE.severed)STATE.severed={};
     STATE.severed[`${r},${c}`]=4;

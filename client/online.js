@@ -806,6 +806,14 @@ function syncStateFromServer(serverState) {
   STATE.hands[mySlot] = myHand;
 }
 
+// ผลของการ์ดที่ส่งให้เราคนเดียว (ไม่ได้ broadcast) — ตอนนี้มี Scout: รายชื่อการ์ดในมือของผู้เล่นที่สุ่มได้
+function cardResult(res) {
+  if (!res || !res.scout) return;
+  const who = getPlayerName(res.scout.player);
+  const cards = (res.scout.cards || []).map(c => `${c.emoji || ''} ${c.name}`.trim());
+  showToast(`🔍 ${who}: ${cards.length ? cards.join(' · ') : 'ไม่มีการ์ดในมือ'}`);
+}
+
 // ── Cell click (online) ──
 function onlineCellClick(r, c) {
   if (!onlineMode || !socket) return false;
@@ -841,7 +849,7 @@ function onlineCellClick(r, c) {
           if (!res?.ok) {
         if (res?.msg === 'ไม่พบห้อง' || res?.msg === 'ไม่พบผู้เล่น') handleServerReset();
         else showToast(res?.msg || 'ใช้การ์ดไม่ได้');
-      }
+      } else cardResult(res);
         });
         targetData = {}; renderGridHighlight();
         return true;
@@ -855,7 +863,7 @@ function onlineCellClick(r, c) {
         if (!res?.ok) {
         if (res?.msg === 'ไม่พบห้อง' || res?.msg === 'ไม่พบผู้เล่น') handleServerReset();
         else showToast(res?.msg || 'ใช้การ์ดไม่ได้');
-      }
+      } else cardResult(res);
       });
       renderGridHighlight();
       return true;
@@ -888,7 +896,7 @@ function onlineActivateCard(pi, ci, cardDef) {
       if (!res?.ok) {
         if (res?.msg === 'ไม่พบห้อง' || res?.msg === 'ไม่พบผู้เล่น') handleServerReset();
         else showToast(res?.msg || 'ใช้การ์ดไม่ได้');
-      }
+      } else cardResult(res);
     });
     return true;
   }

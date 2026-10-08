@@ -145,6 +145,30 @@ function rebirthUsable(state, i) {
     && state.cells.some(row => row.some(ce => ce.owner === -1));
 }
 
+// ── Snapshot สำหรับ Rewind ──
+// เก็บ "สภาพกระดานก่อน action นี้": ช่อง + ใครยังอยู่ + เอฟเฟกต์ที่ติดกับกระดาน — ไม่เก็บมือการ์ด/โควตา (การ์ดที่ใช้ไปแล้วไม่คืน)
+// (ของเดิมเก็บแค่ count/owner: ผู้เล่นที่เพิ่งถูกคัดออกไม่กลับมา และโล่ / Void / Sever / Pin / Time Bomb ไม่ย้อนตาม)
+const SNAP_FIELDS = ['alive', 'shielded', 'shieldOwner', 'voidCells', 'voidSnapshot', 'severed', 'pinned', 'timeBombs'];
+function takeSnapshot(state) {
+  const snap = { cells: state.cells.map(row => row.map(ce => ({ count: ce.count, owner: ce.owner }))) };
+  SNAP_FIELDS.forEach(f => { snap[f] = state[f] === undefined ? null : state[f]; });
+  state._snapshot = JSON.parse(JSON.stringify(snap));
+}
+// คืน diff ของช่องที่เปลี่ยน (ให้ VFX) หรือ null ถ้าไม่มี snapshot · ใช้แล้ว snapshot หมดไป
+function restoreSnapshot(state) {
+  const snap = state._snapshot;
+  if (!snap || !snap.cells) return null;
+  const diff = [];
+  for (let r = 0; r < state.rows; r++) for (let c = 0; c < state.cols; c++) {
+    const now = state.cells[r][c], old = snap.cells[r][c];
+    if (now.count !== old.count || now.owner !== old.owner) diff.push({ r, c, fromCount: now.count, fromOwner: now.owner, toCount: old.count, toOwner: old.owner });
+    now.count = old.count; now.owner = old.owner;
+  }
+  SNAP_FIELDS.forEach(f => { if (snap[f] !== null && snap[f] !== undefined) state[f] = snap[f]; });
+  state._snapshot = null;
+  return diff;
+}
+
 // ── Apply place action ──
 function applyPlace(state, playerIdx, r, c) {
   const { rows, cols, cells } = state;
@@ -159,7 +183,7 @@ function applyPlace(state, playerIdx, r, c) {
   if (state.frozen[playerIdx] > 0) return { ok: false, msg: 'ถูก Freeze!' };
 
   const isFirstPlace = !hasOwnCells;
-  state._snapshot = JSON.parse(JSON.stringify(cells.map(row => row.map(ce => ({ count: ce.count, owner: ce.owner })))));
+  takeSnapshot(state);
   state.moved[playerIdx] = true;
   cell.count += isFirstPlace ? 3 : 1;
   cell.owner = playerIdx;
@@ -501,6 +525,8 @@ function validateTargets(state, cardDef, playerIdx, targets, opts) {
     if (SHIELD_BLOCKS.has(cardDef.id) && state.shielded[r][c] > 0) return bad('ช่องนั้นมีโล่ป้องกันอยู่');
   }
 
+  if (cardDef.id === 'u8' && !cells.some(row => row.some(ce => ce.owner === me && ce.count > 0))) return bad('ยังไม่มีช่องของตัวเองให้คัดลอกมาใส่');
+
   if (cardDef.twoTarget && has2) {
     if (isVoidCell(state, r2, c2)) return bad('ช่องนั้นหายไปจากกระดานอยู่ (Void)');
     if (cardDef.id === 'c5' && !neighbors(r, c, rows, cols).some(([a, b]) => a === r2 && b === c2)) return bad('ต้องเลือกช่องที่ติดกัน');
@@ -526,11 +552,12 @@ function applyCard(state, playerIdx, cardDef, targets) {
   if (cardDef.rarity === 'mythical' && state.mythicalUsedBy[cur])
     return { ok: false, msg: 'Mythical ใช้ได้แค่ 1 ครั้งต่อเกม!' };
 
-  if (cardDef.id !== 'r8') {
-    state._snapshot = JSON.parse(JSON.stringify(cells.map(row =>
-      row.map(ce => ({ count: ce.count, owner: ce.owner }))
-    )));
-  }
+  // Rewind ตอนยังไม่มีอะไรให้ย้อน: ปฏิเสธก่อนกินการ์ด (ของเดิมการ์ดหายเปล่า)
+  if (cardDef.id === 'r8' && !(state._snapshot && state._snapshot.cells)) return { ok: false, msg: 'ยังไม่มีอะไรให้ย้อน' };
+
+  // ── ผ่านทุกข้อแล้ว: เริ่มแก้ state ──
+  let priv = null; // ผลที่ส่งให้ "คนใช้" คนเดียว (server ใส่ใน callback เท่านั้น ไม่ broadcast)
+  if (cardDef.id !== 'r8') takeSnapshot(state);
 
   if (cardDef.id !== 'ep4') state.moved[cur] = true;
 
@@ -597,6 +624,14 @@ function applyCard(state, playerIdx, cardDef, targets) {
       const picked = own.sort(()=>Math.random()-.5).slice(0,2); picked.forEach(([ro,co])=>cells[ro][co].count++);
       vfxData={boosted:picked}; resultText='+1 สองช่อง!'; break;
     }
+    case 'c12': { // Scout: ดูมือของผู้เล่นอื่นที่สุ่ม — ผลไปใน priv เท่านั้น
+      const others = state.alive.filter(i => i !== cur);
+      if (others.length) {
+        const t = others[Math.floor(Math.random() * others.length)];
+        priv = { scout: { player: t, cards: (state.hands[t] || []).map(d => ({ id: d.id, name: d.name, emoji: d.emoji, rarity: d.rarity })) } };
+      }
+      resultText = 'Scout!'; break;
+    }
     case 'c13': { const vals=[-2,-1,0,1,2]; const v=vals[Math.floor(Math.random()*vals.length)]; cells[r][c].count=Math.max(0,cells[r][c].count+v); if(cells[r][c].count>0) cells[r][c].owner=cur; vfxData={value:v}; resultText=`Gamble: ${v>=0?'+':''}${v}!`; break; }
     case 'c14': { cells[r][c].count++; cells[r][c].owner=cur; const boosted=[[r,c]]; neighbors(r,c,rows,cols).forEach(([nr,nc])=>{if(cells[nr][nc].owner===cur){cells[nr][nc].count++;boosted.push([nr,nc]);}}); vfxData={boosted}; resultText='Boost!'; break; }
     case 'u1': cells[r][c].count=cells[r][c].cap; cells[r][c].owner=cur; resultText='Burst!'; break;
@@ -605,6 +640,27 @@ function applyCard(state, playerIdx, cardDef, targets) {
     case 'u4': { const own=[]; for(let ro=0;ro<rows;ro++) for(let co=0;co<cols;co++) if(cells[ro][co].owner===cur) own.push([ro,co]); const sh3=own.sort(()=>Math.random()-.5).slice(0,3); sh3.forEach(([ro,co])=>{state.shielded[ro][co]=1;state.shieldOwner[ro][co]=cur;}); vfxData={shielded:sh3}; resultText='Wall!'; break; }
     case 'u5': state.timeBombs.push({r,c,turnsLeft:2,owner:cur}); resultText='Time Bomb!'; break;
     case 'u6': if(cells[r][c].owner!==cur&&state.shielded[r][c]<=0){cells[r][c].count=Math.max(0,cells[r][c].count-2);if(!cells[r][c].count)cells[r][c].owner=-1;vfxData={target:[r,c]};resultText='-2!';}; break;
+    case 'u7': { // Shuffle Zone: สุ่มตำแหน่งของกองลูกใน 3×3 — จำนวนลูกของแต่ละฝ่ายเท่าเดิม · ไม่แตะช่อง Void
+      const zone = [];
+      for (let ro = Math.max(0, r - 1); ro <= Math.min(rows - 1, r + 1); ro++)
+        for (let co = Math.max(0, c - 1); co <= Math.min(cols - 1, c + 1); co++)
+          if (!isVoidCell(state, ro, co)) zone.push([ro, co]);
+      const piles = zone.filter(([ro, co]) => cells[ro][co].count > 0).map(([ro, co]) => ({ count: cells[ro][co].count, owner: cells[ro][co].owner }));
+      const spots = zone.slice();
+      for (let i = spots.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [spots[i], spots[j]] = [spots[j], spots[i]]; }
+      zone.forEach(([ro, co]) => { cells[ro][co].count = 0; cells[ro][co].owner = -1; });
+      piles.forEach((p, i) => { const [ro, co] = spots[i]; cells[ro][co].count = p.count; cells[ro][co].owner = p.owner; });
+      vfxData = { zone }; resultText = 'Shuffle!'; break;
+    }
+    case 'u8': { // Mirror: คัดลอกจำนวนลูกของช่องศัตรูที่เลือก มาใส่ช่องตัวเองที่ใกล้ที่สุด
+      let best = null, bd = Infinity;
+      for (let ro = 0; ro < rows; ro++) for (let co = 0; co < cols; co++) if (cells[ro][co].owner === cur && cells[ro][co].count > 0) {
+        const d = Math.abs(ro - r) + Math.abs(co - c);
+        if (d < bd) { bd = d; best = [ro, co]; }
+      }
+      if (best) { cells[best[0]][best[1]].count = cells[r][c].count; vfxData = { moves: [{ from: [r, c], to: best }] }; }
+      resultText = 'Mirror!'; break;
+    }
     case 'u9': { if(!state.pinned) state.pinned={}; state.pinned[`${r},${c}`]=1; vfxData={target:[r,c]}; resultText='Pin!'; break; }
     case 'u10': {
       cells[r][c].count += 2; cells[r][c].owner = cur;
@@ -630,7 +686,7 @@ function applyCard(state, playerIdx, cardDef, targets) {
     case 'r5': { const moves=[]; const all=[]; for(let ro=0;ro<rows;ro++) for(let co=0;co<cols;co++) if(cells[ro][co].count>0) all.push([ro,co]); all.filter(()=>Math.random()<.2).forEach(([ro,co])=>{const nbs2=neighbors(ro,co,rows,cols);if(nbs2.length&&cells[ro][co].count>0){const[nr,nc]=nbs2[Math.floor(Math.random()*nbs2.length)];const ow=cells[ro][co].owner;cells[ro][co].count--;if(!cells[ro][co].count)cells[ro][co].owner=-1;cells[nr][nc].count++;cells[nr][nc].owner=ow;moves.push({from:[ro,co],to:[nr,nc]});}}); vfxData={moves};resultText='Tornado!'; break; }
     case 'r6': { const shAll=[]; for(let ro=0;ro<rows;ro++) for(let co=0;co<cols;co++) if(cells[ro][co].owner===cur){state.shielded[ro][co]=1;state.shieldOwner[ro][co]=cur;shAll.push([ro,co]);} vfxData={shielded:shAll};resultText='Reflect!'; break; }
     case 'r7': { if(!state.voidCells) state.voidCells={}; if(!state.voidSnapshot) state.voidSnapshot={}; state.voidCells[`${r},${c}`]=2; state.voidSnapshot[`${r},${c}`]={count:cells[r][c].count,owner:cells[r][c].owner}; cells[r][c].count=0; cells[r][c].owner=-1; resultText='Void!'; break; }
-    case 'r8': { if(state._snapshot){const snap=state._snapshot;const diff=[];for(let ro=0;ro<rows;ro++) for(let co=0;co<cols;co++){const cur3=cells[ro][co],old3=snap[ro][co];if(cur3.count!==old3.count||cur3.owner!==old3.owner)diff.push({r:ro,c:co,fromCount:cur3.count,fromOwner:cur3.owner,toCount:old3.count,toOwner:old3.owner});}vfxData={diff};for(let ro=0;ro<rows;ro++) for(let co=0;co<cols;co++){cells[ro][co].count=snap[ro][co].count;cells[ro][co].owner=snap[ro][co].owner;}resultText='Rewind!';} break; }
+    case 'r8': { vfxData = { diff: restoreSnapshot(state) || [] }; resultText = 'Rewind!'; break; }
     case 'e1': cells[r][c].count=Math.max(cells[r][c].count,cells[r][c].cap); cells[r][c].owner=cur; resultText='Meteor!'; break;
     case 'e2': { const row=[]; for(let co=0;co<cols;co++) if(cells[r][co].owner===cur||cells[r][co].owner===-1){cells[r][co].count++;cells[r][co].owner=cur;row.push([r,co]);} vfxData={row};resultText='Tsunami!'; break; }
     case 'e3': if(cells[r][c].owner!==cur&&cells[r][c].owner!==-1&&cells[r][c].count>0){cells[r][c].owner=cur;if(cells[r][c].count<=0)cells[r][c].count=1;resultText='Steal!';}; break;
@@ -651,7 +707,9 @@ function applyCard(state, playerIdx, cardDef, targets) {
     case 'm2': { const exploded=[]; for(let ro=0;ro<rows;ro++) for(let co=0;co<cols;co++) if(cells[ro][co].owner===cur){cells[ro][co].count=cells[ro][co].cap;exploded.push([ro,co]);} vfxData={exploded};resultText='Big Bang!'; break; }
   }
 
-  return { ok: true, resultText, vfxData, needsExplosion: true };
+  const out = { ok: true, resultText, vfxData, needsExplosion: true };
+  if (priv) out.private = priv;
+  return out;
 }
 
 return {
@@ -659,7 +717,7 @@ return {
     createInitialState, applyPlace, applyCard,
     processExplosionsSync, processExplosionsWithWaves, checkEliminations, checkWin,
     nextTurn, tickTimeBombs, draw3UniqueCards, drawRandomCard, neighbors, rebirthUsable,
-    validateTargets,
+    validateTargets, takeSnapshot, restoreSnapshot,
     FX_MAX_WAVES, FX_TIMING, CARD_VFX_MS, cardVfxMs, waveStepMs, animMs,
   };
 });
