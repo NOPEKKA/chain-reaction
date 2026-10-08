@@ -6,7 +6,7 @@ const path    = require('path');
 
 const {
   createInitialState, applyPlace, applyCard,
-  processExplosionsSync, processExplosionsWithWaves, checkEliminations, checkWin,
+  processExplosionsWithWaves, checkEliminations, checkWin,
   nextTurn, tickTimeBombs, draw3UniqueCards,
   PLAYER_NAMES, HAND_LIMIT, CARD_DEFS,
 } = require('../shared/gameLogic');
@@ -32,14 +32,18 @@ const REJOIN_MIN_MS     = envMs('REJOIN_MIN_MS', 10000);       // กลับ�
 const PICK_MS           = envMs('PICK_MS', 30000);             // เวลาเลือกการ์ด
 const LOBBY_GRACE_MS    = envMs('LOBBY_GRACE_MS', 15000);      // หลุดใน lobby: เก็บที่นั่งไว้ให้ครู่หนึ่ง
 const ROOM_TTL_EMPTY_MS = envMs('ROOM_TTL_EMPTY_MS', 10 * 60 * 1000); // ห้องที่ไม่มีใครเชื่อมต่ออยู่เลย
+const ROOM_TTL_LOBBY_MS = envMs('ROOM_TTL_LOBBY_MS', 30 * 60 * 1000); // ห้องรอ (lobby) ที่ไม่มีความเคลื่อนไหว
 const ROOM_SWEEP_MS     = envMs('ROOM_SWEEP_MS', 30000);
 const WAVE_MS     = 520;  // client เล่นระเบิด wave ละ 520ms
 const CARD_VFX_MS = 2000; // เผื่อเวลา VFX ของการ์ดฝั่ง client
 
 const app    = express();
 const server = http.createServer(app);
+// CORS: ตั้งผ่าน env ALLOWED_ORIGIN (คั่นหลายค่าด้วย ,) — ไม่ตั้ง = '*' เหมือนเดิม
+const ALLOWED_ORIGIN = (process.env.ALLOWED_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
+const corsOrigin = (!ALLOWED_ORIGIN.length || ALLOWED_ORIGIN.includes('*')) ? '*' : ALLOWED_ORIGIN;
 const io     = new Server(server, {
-  cors: { origin: '*', methods: ['GET','POST'] },
+  cors: { origin: corsOrigin, methods: ['GET','POST'] },
   pingTimeout: 60000, pingInterval: 25000,
 });
 
@@ -128,20 +132,23 @@ function broadcastRoom(room) {
   });
 }
 
+// state ที่ส่งให้ client: เฉพาะ field ที่ client ใช้จริง (whitelist)
+// ของเดิม copy ทั้ง state แล้วลบ hands — _snapshot, voidSnapshot, playerTurns ฯลฯ หลุดไปด้วยทุกครั้ง
+const STATE_FIELDS = [
+  'rows', 'cols', 'players', 'current', 'alive', 'moved', 'turnCount', 'scores',
+  'cells', 'shielded', 'shieldOwner', 'timeBombs', 'frozen', 'eclipse',
+  'voidCells', 'severed', 'pinned', 'phase', 'winner', 'legendaryUsedBy', 'mythicalUsedBy',
+];
 function sanitizeState(state) {
-  const s = JSON.parse(JSON.stringify(state));
-  s.disabledCards = state.disabledCards || [];
+  const pick = {};
+  for (const k of STATE_FIELDS) pick[k] = state[k];
+  const s = JSON.parse(JSON.stringify(pick));
+  s.handsCount = state.hands.map(h => h.length); // จำนวนการ์ดในมือเท่านั้น — มือจริงส่งแยกให้เจ้าของ (your_hand)
   s.lastCardId = state._lastCardId || null;
   s.lastCardVfxData = state._lastCardVfxData || null;
-  // Clear after sending
-  if (state._lastCardId) { delete state._lastCardId; delete state._lastCardVfxData; }
-  s.handsCount = s.hands.map(h => h.length);
-  delete s.hands;
-  // ส่ง all waves data พร้อม state
-  // จำกัด waves ไม่เกิน 20 waves เพื่อป้องกัน message ใหญ่เกิน
-  const allWaves = state._allWaves || null;
-  s.explosionWaves = allWaves ? allWaves.slice(0, 20) : null;
-  s.explosions = state._lastExplosions || null;
+  // waves ของเทิร์นล่าสุด (ไม่เกิน 20 wave กัน message ใหญ่) — เป็นของ broadcast ครั้งเดียว ส่งแล้วล้าง
+  s.explosionWaves = state._allWaves ? state._allWaves.slice(0, 20) : null;
+  delete state._lastCardId; delete state._lastCardVfxData;
   state._allWaves = null;
   state._lastExplosions = null;
   return s;
@@ -209,7 +216,11 @@ function onTurnTimeout(room, key) {
   const away  = !m || !m.connected;
   if (m && away) m.missedTurns = (m.missedTurns || 0) + 1;
   state.moved[slot] = true;
-  io.to(room.code).emit('turn_skipped', { playerIdx: slot, reason: away ? 'disconnected' : 'timeout' });
+  // ผู้ตายที่ได้ตานี้เพราะถือ Rebirth แต่ไม่ใช้จนหมดเวลา (หรือหลุดเกิน grace): เสียสิทธิ์คืนชีพ
+  // ของเดิม checkWin คืน false ตลอดตราบที่การ์ดยังอยู่ในมือ → ถ้าเขาไม่ใช้หรือหลุดไป เกมไม่มีวันจบ
+  const forfeit = !state.alive.includes(slot) && state.hands[slot].some(d => d.id === 'l5');
+  if (forfeit) { state.hands[slot] = state.hands[slot].filter(d => d.id !== 'l5'); sendPrivateHand(room, slot); }
+  io.to(room.code).emit('turn_skipped', { playerIdx: slot, reason: forfeit ? 'forfeit' : away ? 'disconnected' : 'timeout' });
   processTurnEnd(room);
 }
 
@@ -323,25 +334,6 @@ function shouldTriggerGroupPick(room) {
     (state.turnCount % (state.players * state.cardInterval)) === 0;
 }
 
-// รวบรวมช่องที่จะระเบิดก่อน processExplosionsSync
-function collectExplosions(state) {
-  const { rows, cols, cells } = state;
-  const toExplode = [];
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const cell = cells[r][c];
-      const key = `${r},${c}`;
-      const isVoid    = (state.voidCells[key] || 0) > 0;
-      const isSevered = (state.severed[key] || 0) > 0;
-      const isPinned  = (state.pinned[key] || 0) > 0;
-      if (!isVoid && !isSevered && !isPinned && cell.count >= cell.cap && state.shielded[r][c] <= 0) {
-        toExplode.push({ r, c, owner: cell.owner });
-      }
-    }
-  }
-  return toExplode;
-}
-
 function processTurnEnd(room) {
   if (!room?.state) return;
   const state = room.state;
@@ -351,7 +343,6 @@ function processTurnEnd(room) {
     const bombWaves = processExplosionsWithWaves(state);
     waves.push(...bombWaves);
   }
-  state._lastExplosions = waves.length > 0 ? waves[0].explosions : null;
   state._allWaves = waves.length > 0 ? waves : null;
   const aliveB4 = [...state.alive];
   checkEliminations(state);
@@ -372,7 +363,7 @@ function processTurnEnd(room) {
     sendAllHands(room);
     io.to(room.code).emit('game_over', {
       winner: state.winner,
-      winnerName: PLAYER_NAMES[state.winner],
+      winnerName: room.members.find(m => m.slot === state.winner)?.name || PLAYER_NAMES[state.winner],
       scores: state.scores,
     });
     return;
@@ -398,6 +389,8 @@ function deleteRoom(room) {
   if (rooms.get(room.code) === room) rooms.delete(room.code);
 }
 
+const touch = room => { room.touchedAt = Date.now(); }; // มีความเคลื่อนไหวในห้อง
+
 // host ต้องเป็นคนที่เชื่อมต่ออยู่เสมอ
 function ensureHost(room) {
   if (room.members.some(m => m.connected && m.socketId === room.host)) return;
@@ -418,6 +411,7 @@ function cleanupMember(sockId, room, { left = false } = {}) {
   if (!member) return;
   member.connected = false;
   member.leftAt = Date.now();
+  touch(room);
   socketRoom.delete(sockId);
   io.sockets.sockets.get(sockId)?.leave(room.code);
 
@@ -458,11 +452,19 @@ function cleanupMember(sockId, room, { left = false } = {}) {
   broadcastRoom(room);
 }
 
-// ลบห้องที่ไม่มีใครอยู่จนครบกำหนด
+// อายุห้อง (ตรวจทุก ROOM_SWEEP_MS):
+//  · ไม่มีใครเชื่อมต่อเลยครบ ROOM_TTL_EMPTY_MS (10 นาที) → ลบ — ครอบคลุมห้องที่จบเกมแล้วทุกคนออกไป และเกมที่ทุกคนหลุดไม่กลับมา
+//  · ห้องรอ (lobby) ที่ไม่มีความเคลื่อนไหวครบ ROOM_TTL_LOBBY_MS (30 นาที) → แจ้งสมาชิกแล้วลบ
 const sweeper = setInterval(() => {
   const now = Date.now();
   for (const room of [...rooms.values()]) {
-    if (!anyConnected(room) && now - (room.emptySince || now) >= ROOM_TTL_EMPTY_MS) deleteRoom(room);
+    if (!anyConnected(room)) {
+      if (now - (room.emptySince || now) >= ROOM_TTL_EMPTY_MS) deleteRoom(room);
+    } else if (room.phase === 'lobby' && now - (room.touchedAt || now) >= ROOM_TTL_LOBBY_MS) {
+      io.to(room.code).emit('room_closed', { reason: 'idle' });
+      room.members.forEach(m => io.sockets.sockets.get(m.socketId)?.leave(room.code));
+      deleteRoom(room);
+    }
   }
 }, ROOM_SWEEP_MS);
 sweeper.unref();
@@ -515,7 +517,7 @@ io.on('connection', (socket) => {
       },
       members: [{ socketId: socket.id, name: cleanName(name, 'ผู้เล่น'), slot: 0, connected: true, token, leftAt: 0, missedTurns: 0 }],
       state: null, phase: 'lobby', groupPick: null,
-      gameId: 0, turnTimer: null, turnDeadline: 0, emptySince: 0,
+      gameId: 0, turnTimer: null, turnDeadline: 0, emptySince: 0, touchedAt: Date.now(),
     };
     rooms.set(code, room);
     socketRoom.set(socket.id, code);
@@ -537,7 +539,7 @@ io.on('connection', (socket) => {
     room.members.push({ socketId: socket.id, name: cleanName(name, `P${slot+1}`), slot, connected: true, token, leftAt: 0, missedTurns: 0 });
     socketRoom.set(socket.id, room.code);
     socket.join(room.code);
-    room.emptySince = 0;
+    room.emptySince = 0; touch(room);
     ensureHost(room);
     cb?.({ ok: true, code: room.code, slot, token });
     broadcastRoom(room);
@@ -568,7 +570,7 @@ io.on('connection', (socket) => {
     member.missedTurns = 0;
     socketRoom.set(socket.id, room.code);
     socket.join(room.code);
-    room.emptySince = 0;
+    room.emptySince = 0; touch(room);
     ensureHost(room);
 
     // นาฬิกา: เป็นตาของคนที่กลับมา → ได้เวลาใหม่ · นาฬิกาหยุดอยู่เพราะห้องว่าง → เดินต่อ
@@ -588,7 +590,7 @@ io.on('connection', (socket) => {
     if (!room || room.host !== socket.id || room.phase !== 'lobby') return cb?.({ ok: false });
     const clean = cleanCfg(cfg);
     if (!Object.keys(clean).length) return cb?.({ ok: false, msg: 'ค่าตั้งห้องไม่ถูกต้อง' });
-    Object.assign(room.cfg, clean);
+    Object.assign(room.cfg, clean); touch(room);
     console.log(`[update_cfg] room.cfg now:`, JSON.stringify(room.cfg));
     cb?.({ ok: true, cfg: clean });
     broadcastRoom(room);

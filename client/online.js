@@ -335,7 +335,7 @@ function notifyMyTurn(turnKey) {
   SFX.myTurn(mySlot);
 
   // 2. สั่น (มือถือ) — double pulse
-  if (navigator.vibrate) navigator.vibrate([60, 30, 100]);
+  if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) navigator.vibrate([60, 30, 100]);
 
   // 3. กระดานกระพริบแรงๆ 2 รอบ
   const gWrap = document.getElementById('grid-wrap');
@@ -481,7 +481,16 @@ function initSocket() {
   socket.on('turn_skipped', ({ playerIdx, reason }) => {
     if (!onlineMode) return;
     const who = playerIdx === mySlot ? 'คุณ' : getPlayerName(playerIdx);
-    showToast(reason === 'disconnected' ? `⏭️ ${who} หลุดการเชื่อมต่อ — ข้ามตา` : `⏰ ${who} หมดเวลา — ข้ามตา`);
+    showToast(reason === 'forfeit' ? `🔮 ${who} ไม่ได้ใช้ Rebirth ทันเวลา — เสียสิทธิ์คืนชีพ`
+      : reason === 'disconnected' ? `⏭️ ${who} หลุดการเชื่อมต่อ — ข้ามตา` : `⏰ ${who} หมดเวลา — ข้ามตา`);
+  });
+  // server ปิดห้องรอที่ไม่มีความเคลื่อนไหวนานเกินไป
+  socket.on('room_closed', () => {
+    clearAllTimers(); closeGroupPickOverlay(); clearSession(); setNetBanner(false);
+    onlineMode = false; mySlot = -1; isHost = false; currentRoom = null; myHand = [];
+    document.getElementById('game-screen').style.display = 'none';
+    showScreen('main-menu');
+    showToast('⌛ ห้องถูกปิดเพราะไม่มีความเคลื่อนไหว');
   });
 
   socket.on('room_update', (room) => {

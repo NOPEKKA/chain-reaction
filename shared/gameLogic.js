@@ -127,9 +127,19 @@ function createInitialState(cfg) {
   };
 }
 
+// ผู้ตายยังได้ตา / ยังกันไม่ให้เกมจบ ก็ต่อเมื่อ Rebirth ในมือ "ใช้ได้จริง":
+// ยังไม่ชนเพดาน Legendary 2 ครั้ง และยังมีช่องว่างให้เกิดใหม่ — ไม่งั้นเกมจะวนรอคนที่ไม่มีวันฟื้น
+function rebirthUsable(state, i) {
+  return !!(state.hands[i] && state.hands[i].some(d => d.id === 'l5'))
+    && (state.legendaryUsedBy[i] || 0) < 2
+    && state.cells.some(row => row.some(ce => ce.owner === -1));
+}
+
 // ── Apply place action ──
 function applyPlace(state, playerIdx, r, c) {
   const { rows, cols, cells } = state;
+  // ตกรอบแล้ววางบอลปกติไม่ได้ (ของเดิมไม่ตรวจ: ผู้ตายที่ได้ตาเพราะถือ Rebirth วางบอลได้ทั้งที่ไม่ได้อยู่ใน alive)
+  if (!state.alive.includes(playerIdx)) return { ok: false, msg: 'ตกรอบแล้ว — ใช้การ์ด Rebirth เพื่อคืนชีพ' };
   const cell = cells[r][c];
   const hasOwnCells = cells.some(row => row.some(ce => ce.owner === playerIdx));
 
@@ -253,7 +263,7 @@ function checkWin(state) {
   if (state.alive.length === 1 && state.moved.some(Boolean)) {
     const deadWithRebirth = [];
     for (let i = 0; i < state.players; i++) {
-      if (!state.alive.includes(i) && state.moved[i] && state.hands[i].some(d => d.id === 'l5')) {
+      if (!state.alive.includes(i) && state.moved[i] && rebirthUsable(state, i)) {
         deadWithRebirth.push(i);
       }
     }
@@ -316,7 +326,7 @@ function nextTurn(state) {
 
   let next = (state.current + 1) % state.players;
   let guard = 0;
-  const canPlay = i => state.alive.includes(i) || (state.hands[i] && state.hands[i].some(d => d.id === 'l5'));
+  const canPlay = i => state.alive.includes(i) || rebirthUsable(state, i);
   while (!canPlay(next)) {
     next = (next + 1) % state.players;
     if (++guard > state.players) break;
@@ -524,6 +534,6 @@ if (typeof module !== 'undefined') {
     CARD_DEFS, RARITY_WEIGHTS, PLAYER_COLORS, PLAYER_NAMES, HAND_LIMIT,
     createInitialState, applyPlace, applyCard,
     processExplosionsSync, processExplosionsWithWaves, checkEliminations, checkWin,
-    nextTurn, tickTimeBombs, draw3UniqueCards, drawRandomCard, neighbors,
+    nextTurn, tickTimeBombs, draw3UniqueCards, drawRandomCard, neighbors, rebirthUsable,
   };
 }
