@@ -1,0 +1,34 @@
+# เผยแพร่เกมขึ้น GitHub Pages ทุกครั้งที่ push เข้า main
+# ตั้งครั้งเดียว: Settings → Pages → Build and deployment → Source = "GitHub Actions"
+name: Deploy to GitHub Pages
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble site
+        run: |
+          mkdir -p _site/shared _site/lib
+          cp -r client/. _site/
+          cp shared/gameLogic.js _site/shared/
+          cp server/game-server.js _site/lib/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,37 @@
+{
+  "rules": {
+    "cr": {
+      "hosts": {
+        "$code": {
+          ".read": "auth != null",
+          ".write": "auth != null && (!data.exists() || data.child('host').val() === auth.uid || data.child('t').val() < now - 86400000)",
+          ".validate": "!newData.exists() || (newData.hasChildren(['host', 't']) && newData.child('host').val() === auth.uid)"
+        }
+      },
+      "rooms": {
+        "$code": {
+          ".write": "auth != null && root.child('cr/hosts/' + $code + '/host').val() === auth.uid",
+          "in": {
+            ".read": "auth != null && root.child('cr/hosts/' + $code + '/host').val() === auth.uid",
+            "$key": {
+              ".write": "auth != null && !data.exists() && newData.child('from').val().beginsWith(auth.uid + '_')",
+              ".validate": "newData.hasChildren(['from', 'd']) && newData.child('d').isString() && newData.child('d').val().length < 4000"
+            }
+          },
+          "out": {
+            "$sid": {
+              ".read": "auth != null && $sid.beginsWith(auth.uid + '_')",
+              ".write": "auth != null && $sid.beginsWith(auth.uid + '_')"
+            }
+          },
+          "presence": {
+            ".read": "auth != null && root.child('cr/hosts/' + $code + '/host').val() === auth.uid",
+            "$sid": {
+              ".write": "auth != null && $sid.beginsWith(auth.uid + '_')"
+            }
+          }
+        }
+      }
+    }
+  }
+}
