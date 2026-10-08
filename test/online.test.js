@@ -75,6 +75,14 @@ async function started(names, cfg) {
   return r;
 }
 const member = (upd, slot) => upd.members.find(m => m.slot === slot);
+// A วาง แล้ว B วาง → กลับมาเป็นตา A (turnCount = 2) โดยทั้งคู่มีบอลบนกระดาน
+async function bothPlaced(r) {
+  const [a, b] = r.players;
+  assert.ok((await emit(a, 'place', { r: 1, c: 1 })).ok);
+  await until(() => r.S().current === 1, 1000, 'ถึงตา B');
+  assert.ok((await emit(b, 'place', { r: 3, c: 3 })).ok);
+  await until(() => r.S().current === 0 && r.S().turnCount === 2 && last(b).state.turnCount === 2, 1000, 'กลับมาที่ตา A');
+}
 
 // ═══════════════ A: ความเสถียร ═══════════════
 
@@ -121,23 +129,27 @@ test('A1 rejoin ได้ระหว่างเลือกการ์ด (gr
 test('A2 ผู้เล่นปัจจุบันหลุด → server ข้ามตาให้เองภายในเวลา grace', async () => {
   const r = await started(['A', 'B']);
   const [a, b] = r.players;
+  await bothPlaced(r); // ทั้งคู่มีบอลบนกระดานแล้ว (คนที่ยังไม่เคยวางแล้วเสียตา = ตกรอบตามกติกาเดิม)
   assert.equal(last(b).state.current, 0);
   const t0 = Date.now();
   a.close();
-  await until(() => last(b).state.current === 1, GRACE + 1500, 'server ข้ามตาของ A ที่หลุด');
+  await until(() => last(b).state.current === 1 && last(b).state.turnCount === 3, GRACE + 1500, 'server ข้ามตาของ A ที่หลุด');
   assert.ok(Date.now() - t0 >= GRACE - 100, 'ต้องให้เวลา grace ก่อนข้าม');
+  assert.deepEqual(r.S().alive, [0, 1], 'ข้ามตาเฉยๆ ไม่ได้ตกรอบ');
   // หลุดต่อเนื่อง: ตาถัดไปของ A ต้องถูกข้ามทันที ไม่รอ grace/เวลาเต็มอีก
-  assert.ok((await emit(b, 'place', { r: 2, c: 2 })).ok);
+  r.S().cells[3][3].count = 1; // กันไม่ให้การวางครั้งนี้ระเบิด (server บวกเวลาแอนิเมชันระเบิดให้ตาถัดไป)
+  assert.ok((await emit(b, 'place', { r: 3, c: 3 })).ok);
   const t1 = Date.now();
-  await until(() => r.S().current === 1 && r.S().turnCount >= 3, 1000, 'ข้ามตา A อีกรอบทันที');
+  await until(() => r.S().current === 1 && r.S().turnCount >= 5, 1000, 'ข้ามตา A อีกรอบทันที');
   assert.ok(Date.now() - t1 < GRACE, 'รอบที่สองไม่ควรรอ grace อีก');
 });
 
 test('A2 ผู้เล่นที่ไม่เดินจนหมดเวลา ถูกข้ามตาโดย timer ของ server', async () => {
   const r = await started(['A', 'B']);
   const [, b] = r.players;
+  await bothPlaced(r);
   const t0 = Date.now();
-  await until(() => last(b).state.current === 1, TURN + 1500, 'timer ของ server ข้ามตา');
+  await until(() => last(b).state.current === 1 && last(b).state.turnCount === 3, TURN + 1500, 'timer ของ server ข้ามตา');
   assert.ok(Date.now() - t0 >= TURN - 150, `ข้ามเร็วเกินไป (${Date.now() - t0}ms)`);
 });
 

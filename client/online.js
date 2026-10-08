@@ -14,6 +14,44 @@ let cardTimerInterval = null;
 const TURN_LIMIT = 30;
 const CARD_LIMIT = 30;
 
+// ══ ที่นั่งในห้อง (playerToken) ══
+// server ออก token ตอน create/join — เก็บไว้เพื่อกลับเข้าที่นั่งเดิมเมื่อหลุด/รีเฟรช
+//  · sessionStorage = ของแท็บนี้ (รีเฟรชแล้วยังอยู่) → ยึดที่นั่งคืนได้ทันที
+//  · localStorage   = สำรองไว้ 10 นาที สำหรับ "ปิดแท็บแล้วเปิดใหม่" → เข้าได้เฉพาะเมื่อที่นั่งว่าง (ไม่แย่งจากอีกแท็บที่ยังเล่นอยู่)
+let session = null;      // { code, token } ของห้องที่กำลังอยู่
+let _enterGame = false;  // rejoin สำเร็จตอนยังไม่ได้อยู่หน้าเกม (เช่น รีเฟรช) → room_update ถัดไปพาเข้าเกม
+const SS_KEY = 'cr.session', LS_KEY = 'cr.lastSession';
+function saveSession(s) {
+  session = { code: s.code, token: s.token };
+  try { sessionStorage.setItem(SS_KEY, JSON.stringify(session)); } catch (e) {}
+  try { localStorage.setItem(LS_KEY, JSON.stringify({ code: s.code, token: s.token, at: Date.now() })); } catch (e) {}
+}
+function clearSession() {
+  const tok = session && session.token;
+  session = null;
+  try { sessionStorage.removeItem(SS_KEY); } catch (e) {}
+  try { const l = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); if (!l || !tok || l.token === tok) localStorage.removeItem(LS_KEY); } catch (e) {}
+}
+function storedSession() {
+  try { const s = JSON.parse(sessionStorage.getItem(SS_KEY) || 'null'); if (s && s.code && s.token) return { code: s.code, token: s.token, takeover: true }; } catch (e) {}
+  try { const s = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); if (s && s.code && s.token && Date.now() - (s.at || 0) < 10 * 60 * 1000) return { code: s.code, token: s.token, takeover: false }; } catch (e) {}
+  return null;
+}
+
+// แถบ "หลุดการเชื่อมต่อ" — ค้างไว้จนกว่าจะกลับเข้าห้องได้ (คนละเรื่องกับ "ห้องไม่อยู่แล้ว" ที่เป็น overlay เต็มจอ)
+function setNetBanner(on) {
+  let el = document.getElementById('net-banner');
+  if (!on) { if (el) el.style.display = 'none'; return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'net-banner';
+    el.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:1100;background:rgba(40,16,16,.94);color:#fff;border:1px solid rgba(255,140,120,.6);border-radius:999px;padding:8px 18px;font-family:"Fredoka One",cursive;font-size:.9rem;box-shadow:0 8px 24px rgba(0,0,0,.4);white-space:nowrap;';
+    el.textContent = '⚠️ หลุดการเชื่อมต่อ — กำลังเชื่อมใหม่…';
+    document.body.appendChild(el);
+  }
+  el.style.display = 'block';
+}
+
 const PLAYER_COLORS_O = ['#e05c5c','#5bc4e0','#6dba6d','#e0a84a','#cc55ee','#ee8844'];
 
 // ══ TIMER (ตัวเลขนับถอยหลัง) ══
@@ -260,11 +298,15 @@ async function playExplosionWaves(waves, stateData) {
 function handleServerReset() {
   clearAllTimers();
   closeGroupPickOverlay();
-  // แสดง overlay ให้กลับเมนู
+  clearSession();
+  setNetBanner(false);
+  if (document.getElementById('server-reset-ov')) return;
+  // ห้องหายจริงๆ (server ถูก restart หรือห้องหมดอายุ) — ต่างจากแค่หลุดการเชื่อมต่อ ซึ่งกลับเข้าห้องเดิมได้เอง
   const ov = document.createElement('div');
+  ov.id = 'server-reset-ov';
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(10px);z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;';
   ov.innerHTML = `
-    <div style="font-family:'Fredoka One',cursive;font-size:1.4rem;color:#fff;text-align:center;">⚠️ Server ถูก restart<br><span style="font-size:.9rem;color:rgba(255,255,255,0.6);font-family:Nunito,sans-serif;">ห้องหายไปแล้ว</span></div>
+    <div style="font-family:'Fredoka One',cursive;font-size:1.4rem;color:#fff;text-align:center;">⚠️ ห้องนี้ไม่อยู่แล้ว<br><span style="font-size:.9rem;color:rgba(255,255,255,0.6);font-family:Nunito,sans-serif;">Server ถูก restart หรือห้องหมดอายุ</span></div>
     <button id="server-reset-btn" style="background:#fff;border:none;border-radius:999px;padding:12px 32px;font-family:'Fredoka One',cursive;font-size:1.1rem;color:#2a1a4e;cursor:pointer;">กลับหน้าหลัก</button>
   `;
   document.body.appendChild(ov);
@@ -362,7 +404,9 @@ const isSettling = () => _settling && Date.now() < _settleDeadline; // deadline 
 function announceTurn(room) {
   if (!onlineMode || !room || !room.state || room.phase !== 'playing') return;
   if (room.state.current === mySlot) {
-    startCountdown(TURN_LIMIT, '#5bc4e0', () => { socket.emit('place_timeout', {}, () => {}); });
+    // นาฬิกาอยู่ที่ server: แสดงเวลาที่เหลือจริง (หักเวลาที่ใช้เล่นเอฟเฟกต์ไปแล้ว) — หมดเวลาแล้วส่ง place_timeout เป็นแค่ hint
+    const left = room.turnEndsIn != null ? Math.ceil((room._at + room.turnEndsIn - Date.now()) / 1000) : TURN_LIMIT;
+    startCountdown(Math.max(1, left), '#5bc4e0', () => { socket.emit('place_timeout', {}, () => {}); });
     notifyMyTurn(room.code + ':' + (room.state.turnCount || 0));
   } else {
     // เสียงเปลี่ยนเทิร์นสำหรับตาคนอื่น (เบา, โน้ตประจำตัวของคนนั้น) — ครั้งเดียวต่อเทิร์น
@@ -379,28 +423,79 @@ function settleThenAnnounce() {
   });
 }
 
+// กลับเข้าที่นั่งเดิมด้วย token (เรียกทุกครั้งที่ socket ต่อติด ถ้ามีที่นั่งค้างอยู่)
+function tryRejoin(s) {
+  const silent = !session; // ลองตอนเปิดหน้า (ยังไม่ได้อยู่ในห้อง): ไม่ได้ก็เงียบๆ
+  socket.emit('rejoin_room', { code: s.code, token: s.token, takeover: s.takeover !== false }, res => {
+    if (res && res.ok) {
+      saveSession({ code: res.code, token: res.token });
+      mySlot = res.slot; isHost = !!res.isHost;
+      setNetBanner(false);
+      if (res.phase === 'lobby') { onlineMode = false; enterLobby(); }
+      else if (!(onlineMode && document.getElementById('game-screen').style.display === 'flex')) _enterGame = true;
+      showToast(silent ? `↩️ กลับเข้าห้อง ${res.code}` : '✅ เชื่อมต่อแล้ว — กลับเข้าห้องเดิม');
+      return;
+    }
+    if (res && res.busy && silent) return; // ที่นั่งนั้นมีแท็บอื่นเล่นอยู่ — ไม่ยุ่ง
+    // ห้อง/ที่นั่งไม่อยู่แล้วจริงๆ
+    const wasIn = !!session;
+    clearSession(); setNetBanner(false);
+    if (wasIn) handleServerReset();
+  });
+}
+let _pillsReady = false;
+function enterLobby() {
+  document.getElementById('game-screen').style.display = 'none';
+  showScreen('room-screen');
+  if (!_pillsReady) { _pillsReady = true; setupRoomPills(); }
+  renderCardFilter();
+}
+
 function initSocket() {
-  if (socket && socket.connected) return;
+  // socket เดียวตลอด (ของเดิมสร้างใหม่ทุกครั้งที่ยังต่อไม่ติด → handler ซ้อนกัน)
+  if (socket) { if (!socket.connected) socket.connect(); return; }
   socket = io({ autoConnect: true, reconnection: true, reconnectionDelay: 1000 });
 
-  socket.on('connect', () => console.log('[online] connected:', socket.id));
+  socket.on('connect', () => {
+    console.log('[online] connected:', socket.id);
+    const s = session ? { ...session, takeover: true } : storedSession();
+    if (s) tryRejoin(s); else setNetBanner(false);
+  });
   socket.on('disconnect', (reason) => {
-    if (onlineMode && reason !== 'io client disconnect') {
-      // ไม่แสดง toast ถ้ากำลังเลือกการ์ดอยู่ (กัน false alarm ช่วง 30s)
-      const inGroupPick = document.getElementById('group-pick-overlay')?.style.display === 'flex';
-      if (!inGroupPick) {
-        clearAllTimers();
-        showToast('⚠️ หลุดการเชื่อมต่อ กำลังเชื่อมใหม่...');
-      }
-    }
+    if (reason === 'io client disconnect' || !session) return;
+    // หลุดการเชื่อมต่อ: ที่นั่งยังอยู่ที่ server — socket.io จะต่อใหม่เอง แล้ว 'connect' ข้างบนจะพากลับเข้าห้อง
+    clearAllTimers();
+    setNetBanner(true);
+  });
+  // เปิดเกมนี้ (ที่นั่งเดียวกัน) ในแท็บอื่น
+  socket.on('session_replaced', () => {
+    session = null; try { sessionStorage.removeItem(SS_KEY); } catch (e) {}
+    clearAllTimers(); closeGroupPickOverlay(); setNetBanner(false);
+    onlineMode = false; mySlot = -1; isHost = false; myHand = [];
+    if (STATE) STATE._dead = true;
+    document.getElementById('game-screen').style.display = 'none';
+    document.getElementById('winner-overlay').classList.remove('show');
+    showScreen('main-menu');
+    showToast('ที่นั่งนี้ถูกเปิดในแท็บอื่นแล้ว');
+  });
+  socket.on('turn_skipped', ({ playerIdx, reason }) => {
+    if (!onlineMode) return;
+    const who = playerIdx === mySlot ? 'คุณ' : getPlayerName(playerIdx);
+    showToast(reason === 'disconnected' ? `⏭️ ${who} หลุดการเชื่อมต่อ — ข้ามตา` : `⏰ ${who} หมดเวลา — ข้ามตา`);
   });
 
   socket.on('room_update', (room) => {
+    room._at = Date.now(); // เวลาที่ได้รับ — ใช้คำนวณเวลาที่เหลือของตา (turnEndsIn)
     currentRoom = room;
+    const me = room.members && room.members.find(m => m.slot === mySlot);
+    if (me && me.name) myName = me.name;
 
     if ((room.phase === 'playing' || room.phase === 'group_pick' || room.phase === 'finished') && room.state) {
-      const wasInRoom = document.getElementById('room-screen').classList.contains('active');
+      // เข้าหน้าเกม: มาจากห้องรอ หรือเพิ่ง rejoin กลับมา (รีเฟรช/เปิดแท็บใหม่)
+      const wasInRoom = document.getElementById('room-screen').classList.contains('active') || _enterGame;
+      _enterGame = false;
       if (wasInRoom) {
+        showScreen('room-screen'); // ซ่อนเมนู/หน้าอื่นให้หมดก่อน (กรณีกลับเข้ามาจากหน้าเมนู)
         document.getElementById('room-screen').classList.remove('active');
         document.getElementById('main-menu').style.display = 'none';
         document.getElementById('game-screen').style.display = 'flex';
@@ -440,7 +535,16 @@ function initSocket() {
         _settling = true;
         _settleDeadline = Date.now() + (waves ? waves.length * 520 : 0) + 6000;
 
-        if (wasInRoom) { settleThenAnnounce(); return; } // render แล้ว ไม่ต้องทำซ้ำ
+        if (wasInRoom) {
+          // กลับเข้ามาตอนเกมจบไปแล้ว: game_over ไม่ถูกส่งซ้ำ → เปิดหน้าผู้ชนะจาก state
+          if (room.phase === 'finished' && room.state.winner >= 0 && !document.getElementById('winner-overlay').classList.contains('show')) {
+            document.getElementById('winner-title').textContent = `${getPlayerName(room.state.winner)} ชนะ! 🎉`;
+            document.getElementById('winner-title').style.color = PLAYER_COLORS_O[room.state.winner] || '#fff';
+            document.getElementById('winner-sub').textContent = 'คะแนน: ' + (room.state.scores || []).map((s, i) => `P${i + 1}:${s}`).join('  ');
+            document.getElementById('winner-overlay').classList.add('show');
+          }
+          settleThenAnnounce(); return; // render แล้ว ไม่ต้องทำซ้ำ
+        }
 
         const finalRender = () => {
           if (_waveAnimating) return; // wave ชุดก่อนยังเล่นอยู่ — ตอนจบมันจะ sync ด้วย state ล่าสุดเอง
@@ -732,6 +836,7 @@ function syncStateFromServer(serverState) {
 // ── Cell click (online) ──
 function onlineCellClick(r, c) {
   if (!onlineMode || !socket) return false;
+  if (!socket.connected) { showToast('⚠️ กำลังเชื่อมต่อใหม่…'); return true; } // socket.io จะ buffer คำสั่งไว้ส่งทีหลัง — ไม่เอา
   if (STATE.current !== mySlot) { showToast('⏳ ยังไม่ถึงตาคุณ'); return true; }
   if (isSettling()) return true; // เอฟเฟกต์ของตาก่อนหน้ายังเล่นไม่จบ
 
@@ -798,6 +903,7 @@ function onlineCellClick(r, c) {
 
 function onlineActivateCard(pi, ci, cardDef) {
   if (!onlineMode || !socket) return false;
+  if (!socket.connected) { showToast('⚠️ กำลังเชื่อมต่อใหม่…'); return true; }
   if (pi !== mySlot) { showToast('❌ ไม่ใช่การ์ดของคุณ'); return true; }
   if (STATE.current !== mySlot) { showToast('⏳ ยังไม่ถึงตาของคุณ'); return true; }
   if (isSettling()) return true;
@@ -1087,10 +1193,9 @@ document.getElementById('btn-create-room').addEventListener('click', () => {
   socket.emit('create_room', { name: myName, cfg: roomCfg }, res => {
     if (!res?.ok) return showToast(res?.msg || 'เกิดข้อผิดพลาด');
     mySlot = res.slot; isHost = true; myHand = [];
+    if (res.token) saveSession({ code: res.code, token: res.token });
     document.getElementById('online-screen').classList.remove('active');
-    showScreen('room-screen');
-    setupRoomPills();
-    renderCardFilter();
+    enterLobby();
   });
 });
 
@@ -1107,8 +1212,9 @@ document.getElementById('btn-confirm-join').addEventListener('click', () => {
   socket.emit('join_room', { code, name: myName }, res => {
     if (!res?.ok) return showToast(res?.msg || 'เข้าไม่ได้');
     mySlot = res.slot; isHost = false; myHand = [];
+    if (res.token) saveSession({ code: res.code, token: res.token });
     document.getElementById('online-screen').classList.remove('active');
-    showScreen('room-screen');
+    enterLobby();
   });
 });
 
@@ -1125,6 +1231,7 @@ document.getElementById('btn-start-online').addEventListener('click', () => {
 document.getElementById('btn-leave-room').addEventListener('click', () => {
   clearAllTimers(); closeGroupPickOverlay();
   socket?.emit('leave_room');
+  clearSession();
   onlineMode = false; mySlot = -1; isHost = false; currentRoom = null; myHand = [];
   STATE._dead = true;
   document.getElementById('game-screen').style.display = 'none';
@@ -1143,6 +1250,7 @@ document.getElementById('winner-menu').addEventListener('click', () => {
   if (!onlineMode) return;
   clearAllTimers(); closeGroupPickOverlay();
   socket?.emit('leave_room');
+  clearSession();
   onlineMode = false; mySlot = -1; isHost = false; myHand = [];
   STATE._dead = true;
   document.getElementById('game-screen').style.display = 'none';
@@ -1151,6 +1259,9 @@ document.getElementById('winner-menu').addEventListener('click', () => {
 }, true);
 
 // renderHandBar handled in index.html directly
+
+// เปิดหน้ามาแล้วมีที่นั่งค้างอยู่ (รีเฟรช / ปิดแท็บแล้วเปิดใหม่): ต่อ socket แล้วลองกลับเข้าห้องเดิมเอง
+if (typeof io !== 'undefined' && storedSession()) initSocket();
 
 window._onlineCellClick    = onlineCellClick;
 window.openCardFilter      = openCardFilter;
