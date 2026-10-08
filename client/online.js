@@ -219,6 +219,10 @@ function closeGroupPickOverlay() {
 // งานแต่ละชิ้นมีข้อมูลครบในตัว (state.last = การ์ด/การวาง/การโดน Freeze ของตานั้น) — ไม่พึ่งลำดับของ card_vfx / place_vfx / game_over
 const WAVE_MS = 520;       // เวลาต่อ wave ปกติ (เท่ากับ STEP_DELAY ของโหมดออฟไลน์)
 const WAVE_FAST_MS = 170;  // เมื่องานค้างเยอะ: เร่ง แต่ยังเล่นครบทุก wave
+const WAVE_MIN_MS = 90;    // ขั้นภาพสั้นสุด — ลูกโซ่ที่ต้องเร็วกว่านี้จะรวมหลาย wave เป็นขั้นภาพเดียว
+const CHAIN_CAP_MS = 8000; // ลูกโซ่ยาวแค่ไหนก็เล่นจบใน ~8 วินาที
+// เวลาต่อ wave ของลูกโซ่ n wave
+const waveStepMs = n => Math.min(WAVE_MS, CHAIN_CAP_MS / Math.max(1, n));
 const VFX_MS = {
   c1:600,c2:1400,c3:1100,c4:1400,c5:700,c6:900,c7:500,c8:700,c9:1300,c10:500,c11:700,c13:800,c14:1300,
   u1:400,u2:700,u3:700,u4:700,u5:500,u6:1100,u7:600,u8:700,u9:600,u10:1100,
@@ -287,7 +291,7 @@ function fxIdle(job, max) {
 function fxEstimate(job) {
   if (job.type !== 'update' || job.instant) return 300;
   const st = job.room.state, last = st.last || {}, n = (st.explosionWaves || []).length;
-  return (last.card ? cardVfxMs(last.card.cardId, last.card.vfxData) + 200 : 0) + n * WAVE_MS + 2500 + (job.room.phase === 'finished' ? 300 : 0);
+  return (last.card ? cardVfxMs(last.card.cardId, last.card.vfxData) + 200 : 0) + n * waveStepMs(n) + 2500 + (job.room.phase === 'finished' ? 300 : 0);
 }
 // งานค้างเยอะ (≥ 3 ชิ้นรวมชิ้นที่เล่นอยู่ หรือที่รออยู่รวมกันเกิน ~6 วินาที) → เร่ง
 function fxBehind() {
@@ -390,36 +394,44 @@ async function fxCard({ cardId, targets, playerIdx, vfxData }, job) {
 }
 
 // เล่นลูกโซ่ทีละ wave: ระเบิด (45% ของช่วง) → กระดานเปลี่ยน + ลูกลงช่อง (55%)
+// ภาพทุกขั้นมาจาก server: เริ่มที่ fxBase (กระดานก่อน wave แรก) แล้ววาดค่าที่แต่ละ wave บอก — client ไม่คำนวณกฎระเบิดเอง
+function fxSet(list) { // [r, c, count, owner, ...]
+  for (let i = 0; i + 3 < list.length; i += 4) {
+    const cell = STATE.cells[list[i]] && STATE.cells[list[i]][list[i + 1]];
+    if (cell) { cell.count = list[i + 2]; cell.owner = list[i + 3]; }
+  }
+}
 async function fxWaves(job, waves, alive) {
-  const st = job.room.state;
-  // การ์ดที่ดูดบอลทั้งกระดานก่อน (m1,l1,l2): ไม่มีกระดานก่อนระเบิดให้ใช้ → เริ่มจากผลลัพธ์ (ของเดิม)
-  if (st.last && st.last.card && ['m1', 'l1', 'l2'].includes(st.last.card.cardId)) { syncStateFromServer(st); renderGrid(false); }
-  const rows = STATE.size, cols = STATE.cols || rows;
+  const st = job.room.state, base = st.fxBase;
+  if (base) {
+    let i = 0;
+    for (let r = 0; r < st.rows; r++) for (let c = 0; c < st.cols; c++, i += 2) {
+      const cell = STATE.cells[r] && STATE.cells[r][c];
+      if (cell) { cell.count = base[i]; cell.owner = base[i + 1]; }
+    }
+    renderGrid(false);
+  }
+  const n = waves.length, perWave = waveStepMs(n);
+  const group = perWave >= WAVE_MIN_MS ? 1 : Math.ceil(WAVE_MIN_MS / perWave); // ลูกโซ่ยาวมาก: รวมหลาย wave เป็นขั้นภาพเดียว
   FX.chainReset();
   let cursor = performance.now();
-  for (const wave of waves) {
-    const explosions = wave.explosions || [];
-    if (!explosions.length) continue;
-    const step = fxBehind() ? WAVE_FAST_MS : WAVE_MS;
+  for (let w = 0; w < n; w += group) {
+    const part = waves.slice(w, w + group);
+    const step = fxBehind() ? Math.min(WAVE_FAST_MS, perWave * part.length) : perWave * part.length;
+    const explosions = [];
+    part.forEach(wave => { for (let i = 0; i + 2 < wave.e.length; i += 3) explosions.push({ r: wave.e[i], c: wave.e[i + 1], owner: wave.e[i + 2] }); });
     await fxUntil(cursor, job); if (!alive()) return;
-    if (!job.rush) { FX.wave(explosions, FX.chainStep()); FXQ.stats.waves++; }
+    if (part[0].b) { fxSet(part[0].b); if (!job.rush) renderGrid(false); } // เปลี่ยนก่อนระเบิด (เช่น Time Bomb เติมช่อง)
+    if (!job.rush) { FX.wave(explosions, FX.chainStep()); FXQ.stats.waves += part.length; }
     job.played = true;
     cursor += step * .45;
     await fxUntil(cursor, job); if (!alive()) return;
-    explosions.forEach(({ r, c, owner }) => {
-      const cell = STATE.cells[r] && STATE.cells[r][c];
-      if (!cell) return;
-      cell.count -= cell.cap || 4;
-      if (cell.count <= 0) { cell.count = 0; cell.owner = -1; }
-      [[r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1]].forEach(([nr, nc]) => {
-        if (nr < 0 || nc < 0 || nr >= rows || nc >= cols) return;
-        STATE.cells[nr][nc].count++; STATE.cells[nr][nc].owner = owner;
-      });
-    });
+    part.forEach((wave, k) => { if (k && wave.b) fxSet(wave.b); fxSet(wave.d); });
     if (!job.rush) { renderGrid(false); FX.land(explosions); }
     cursor += step * .55;
   }
   await fxUntil(cursor, job);
+  if (st.wavesTruncated) job.played = false; // server เลิกบันทึกกลางทาง: ภาพจบไม่เท่าผลลัพธ์ เป็นเรื่องที่รู้อยู่ — ไม่นับเป็นการวาร์ป
 }
 
 function fxPick(job) {

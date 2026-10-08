@@ -232,7 +232,7 @@ test('B2 เทิร์นที่ระเบิดแล้วทริก�
   assert.ok((await emit(b, 'place', { r: 3, c: 3 })).ok);
   const upd = await until(() => a.updates.slice(n0).find(u => u.state && u.state.phase === 'group_pick'), 1500, 'room_update ของเทิร์นที่ทริกเกอร์ group pick');
   assert.ok(Array.isArray(upd.state.explosionWaves) && upd.state.explosionWaves.length >= 1, 'ต้องมี explosionWaves ให้ client เล่นแอนิเมชัน');
-  assert.deepEqual(upd.state.explosionWaves[0].explosions.map(e => [e.r, e.c, e.owner]), [[3, 3, 1]]);
+  assert.deepEqual(upd.state.explosionWaves[0].e, [3, 3, 1], 'ช่องที่ระเบิด: [r, c, owner]');
   // update ถัดไป (จบการเลือกการ์ด) ต้องไม่ส่ง wave เดิมซ้ำ
   const n1 = a.updates.length;
   await emit(a, 'group_pick_skip', {}); await emit(b, 'group_pick_skip', {});

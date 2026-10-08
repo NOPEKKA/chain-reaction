@@ -159,13 +159,45 @@ function applyPlace(state, playerIdx, r, c) {
 
 // ── Process explosions (sync, returns changed cells) ──
 // คืน array ของ waves สำหรับ animation (online mode)
-function processExplosionsWithWaves(state) {
+// ── บันทึกลูกโซ่ให้ client เล่นตาม (state._fx) ──
+// client ไม่คำนวณกฎระเบิดเอง: เริ่มจาก base (กระดานก่อน wave แรก) แล้ววาดค่าที่ server บอกทีละ wave
+//   base  = [count, owner, ...] ทุกช่อง เรียงทีละแถว
+//   waves = [{ e: [r, c, owner, ...] ช่องที่ระเบิด, d: [r, c, count, owner, ...] ค่าใหม่ของช่องที่เปลี่ยนหลัง wave นี้,
+//              b: [r, c, count, owner, ...] (ถ้ามี) สิ่งที่เปลี่ยน "ก่อน" wave นี้โดยไม่ใช่การระเบิด เช่น Time Bomb เติมช่องจนเต็ม }]
+// server ส่งไปกับ room_update ครั้งเดียวแล้วล้าง (sanitizeState)
+const FX_MAX_WAVES = 400; // เพดานกันพัง: เกินนี้เลิกบันทึก (truncated) แล้วให้ client จบด้วยการซิงก์
+function fxPack(state) {
+  const out = [];
+  for (let r = 0; r < state.rows; r++) for (let c = 0; c < state.cols; c++) { const ce = state.cells[r][c]; out.push(ce.count, ce.count > 0 ? ce.owner : -1); }
+  return out;
+}
+// ช่องที่ต่างจาก shadow → [r, c, count, owner, ...] แล้วอัปเดต shadow ให้ตรง
+function fxDiff(state, shadow) {
+  const out = [];
+  let i = 0;
+  for (let r = 0; r < state.rows; r++) for (let c = 0; c < state.cols; c++, i += 2) {
+    const ce = state.cells[r][c], ow = ce.count > 0 ? ce.owner : -1;
+    if (shadow[i] !== ce.count || shadow[i + 1] !== ow) { out.push(r, c, ce.count, ow); shadow[i] = ce.count; shadow[i + 1] = ow; }
+  }
+  return out;
+}
+
+// opts.maxWaves: เพดานจำนวน wave ที่บันทึก (ชุดทดสอบใช้ค่าต่ำๆ)
+function processExplosionsWithWaves(state, opts) {
   const { rows, cols, cells } = state;
   const voidCells = state.voidCells || {};
   const severed   = state.severed   || {};
   const pinned    = state.pinned    || {};
   const allWaves  = [];
+  const maxWaves  = (opts && opts.maxWaves) || FX_MAX_WAVES;
 
+  // เรียกครั้งแรกของตานี้: กระดานตอนนี้คือ base · เรียกซ้ำ (เช่น Time Bomb ระเบิดตามหลัง): สิ่งที่เปลี่ยนไปตั้งแต่ wave ล่าสุดคือ b ของ wave ถัดไป
+  let before = null;
+  if (!state._fx) { const base = fxPack(state); state._fx = { base, shadow: base.slice(), waves: [], truncated: false }; }
+  else before = fxDiff(state, state._fx.shadow);
+  const fx = state._fx;
+
+  let guard = 0;
   while (true) {
     const toExplode = [];
     for (let r = 0; r < rows; r++) {
@@ -190,18 +222,38 @@ function processExplosionsWithWaves(state) {
     allWaves.push({ explosions: wave });
 
     // Apply explosion (same logic as processExplosionsSync)
+    const touched = new Set();
     toExplode.forEach(([r, c]) => {
       const cell = cells[r][c];
       const owner = cell.owner;
       const cap = cell.cap || 4;
       cell.count -= cap;
       if (cell.count <= 0) { cell.count = 0; cell.owner = -1; }
+      touched.add(r * cols + c);
       const nb = neighbors(r, c, rows, cols);
       nb.forEach(([nr, nc]) => {
         cells[nr][nc].count++;
         cells[nr][nc].owner = owner;
+        touched.add(nr * cols + nc);
       });
     });
+
+    // ผลของ wave นี้: ค่าใหม่ของทุกช่องที่ถูกแตะ
+    if (fx.waves.length < maxWaves) {
+      const e = [], d = [];
+      wave.forEach(x => e.push(x.r, x.c, x.owner));
+      touched.forEach(k => {
+        const r = Math.floor(k / cols), c = k % cols, ce = cells[r][c], ow = ce.count > 0 ? ce.owner : -1;
+        d.push(r, c, ce.count, ow);
+        fx.shadow[k * 2] = ce.count; fx.shadow[k * 2 + 1] = ow;
+      });
+      const rec = { e, d };
+      if (before && before.length) rec.b = before;
+      before = null;
+      fx.waves.push(rec);
+    } else fx.truncated = true;
+
+    if (++guard > rows * cols * 4) break; // กันวนไม่จบ (เท่ากับ processExplosionsSync)
   }
   return allWaves;
 }
@@ -535,5 +587,6 @@ if (typeof module !== 'undefined') {
     createInitialState, applyPlace, applyCard,
     processExplosionsSync, processExplosionsWithWaves, checkEliminations, checkWin,
     nextTurn, tickTimeBombs, draw3UniqueCards, drawRandomCard, neighbors, rebirthUsable,
+    FX_MAX_WAVES,
   };
 }

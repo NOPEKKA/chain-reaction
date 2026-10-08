@@ -133,10 +133,14 @@ function sanitizeState(state) {
   delete state._last;
   s.lastCardId = state._lastCardId || null;
   s.lastCardVfxData = state._lastCardVfxData || null;
-  // waves ของเทิร์นล่าสุด (ไม่เกิน 20 wave กัน message ใหญ่) — เป็นของ broadcast ครั้งเดียว ส่งแล้วล้าง
-  s.explosionWaves = state._allWaves ? state._allWaves.slice(0, 20) : null;
+  // ลูกโซ่ของเทิร์นล่าสุด: ครบทุก wave ในรูปกะทัดรัด + กระดานก่อน wave แรก (fxBase) — ดูรูปแบบที่ shared/gameLogic.js
+  // (ของเดิมตัดที่ 20 wave เงียบๆ: ลูกโซ่ที่ยาวกว่านั้นหายท้ายแล้วกระดานกระโดด) · เป็นของ broadcast ครั้งเดียว ส่งแล้วล้าง
+  const fx = state._fx;
+  s.explosionWaves = fx && fx.waves.length ? fx.waves : null;
+  s.fxBase = s.explosionWaves ? fx.base : null;
+  if (fx && fx.truncated) s.wavesTruncated = true; // เกินเพดาน: client เล่นเท่าที่ได้แล้วจบด้วยการซิงก์
+  state._fx = null;
   delete state._lastCardId; delete state._lastCardVfxData;
-  state._allWaves = null;
   state._lastExplosions = null;
   return s;
 }
@@ -157,7 +161,7 @@ const turnKey = room => `${room.gameId || 0}:${room.state.turnCount}:${room.stat
 
 // เวลาที่ client ใช้เล่นแอนิเมชันของ update นี้ (ระเบิดทีละ wave + VFX การ์ด) — บวกเพิ่มให้ตาถัดไป จะได้ไม่เสียเวลาคิดไปกับการดูเอฟเฟกต์
 function animMsOf(state) {
-  const waves = state._allWaves ? Math.min(state._allWaves.length, 20) : 0;
+  const waves = state._fx ? state._fx.waves.length : 0;
   const card  = state._lastCardId ? CARD_VFX_MS : 0;
   return waves * WAVE_MS + card + (waves || card ? 300 : 0);
 }
@@ -325,12 +329,9 @@ function processTurnEnd(room) {
   if (!room?.state) return;
   const state = room.state;
 
-  const waves = processExplosionsWithWaves(state);
-  if (tickTimeBombs(state)) {
-    const bombWaves = processExplosionsWithWaves(state);
-    waves.push(...bombWaves);
-  }
-  state._allWaves = waves.length > 0 ? waves : null;
+  // ลูกโซ่ถูกบันทึกสะสมไว้ใน state._fx (รวมของ Time Bomb ที่ระเบิดตามหลัง) → sanitizeState ส่งให้ client
+  processExplosionsWithWaves(state);
+  if (tickTimeBombs(state)) processExplosionsWithWaves(state);
   const aliveB4 = [...state.alive];
   checkEliminations(state);
   if (aliveB4.length !== state.alive.length) {
