@@ -4,30 +4,54 @@
       "hosts": {
         "$code": {
           ".read": "auth != null",
-          ".write": "auth != null && (!data.exists() || data.child('host').val() === auth.uid || data.child('t').val() < now - 86400000)",
-          ".validate": "!newData.exists() || (newData.hasChildren(['host', 't']) && newData.child('host').val() === auth.uid)"
+          ".write": "auth != null && $code.matches(/^[0-9][0-9][0-9][0-9]$/) && ((!newData.exists() && data.child('host').val() === auth.uid) || (newData.exists() && (!data.exists() || data.child('host').val() === auth.uid || data.child('t').val() < now - 300000) && newData.parent().parent().child('hostOf').child(auth.uid).val() === $code))",
+          ".validate": "newData.hasChildren(['host', 't'])",
+          "host": { ".validate": "newData.val() === auth.uid" },
+          "t": { ".validate": "newData.val() === now" },
+          "$other": { ".validate": false }
+        }
+      },
+      "hostOf": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.uid === $uid && (!data.exists() || newData.val() === data.val() || !newData.parent().parent().child('hosts').child(data.val()).exists() || root.child('cr/hosts/' + data.val() + '/host').val() !== auth.uid)",
+          ".validate": "newData.isString() && newData.val().matches(/^[0-9][0-9][0-9][0-9]$/) && newData.parent().parent().child('hosts').child(newData.val()).child('host').val() === auth.uid"
         }
       },
       "rooms": {
         "$code": {
-          ".write": "auth != null && root.child('cr/hosts/' + $code + '/host').val() === auth.uid",
+          ".write": "auth != null && (root.child('cr/hosts/' + $code + '/host').val() === auth.uid || (!newData.exists() && data.child('meta').child('host').val() === auth.uid))",
+          "meta": {
+            ".validate": "newData.hasChildren(['host'])",
+            "host": { ".validate": "newData.val() === auth.uid" },
+            "$other": { ".validate": false }
+          },
           "in": {
             ".read": "auth != null && root.child('cr/hosts/' + $code + '/host').val() === auth.uid",
             "$key": {
-              ".write": "auth != null && !data.exists() && newData.child('from').val().beginsWith(auth.uid + '_')",
-              ".validate": "newData.hasChildren(['from', 'd']) && newData.child('d').isString() && newData.child('d').val().length < 4000"
+              ".write": "auth != null && !data.exists() && newData.exists() && newData.child('from').val().beginsWith(auth.uid + '_') && root.child('cr/rooms/' + $code + '/presence/' + newData.child('from').val()).exists()",
+              ".validate": "newData.hasChildren(['from', 'd'])",
+              "from": { ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9]+_[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]$/)" },
+              "d": { ".validate": "newData.isString() && newData.val().length < 4000" },
+              "$other": { ".validate": false }
             }
           },
           "out": {
             "$sid": {
               ".read": "auth != null && $sid.beginsWith(auth.uid + '_')",
-              ".write": "auth != null && $sid.beginsWith(auth.uid + '_')"
+              ".write": "auth != null && $sid.beginsWith(auth.uid + '_') && !newData.exists()",
+              "$key": {
+                ".write": "auth != null && $sid.beginsWith(auth.uid + '_') && !newData.exists()"
+              }
             }
           },
           "presence": {
             ".read": "auth != null && root.child('cr/hosts/' + $code + '/host').val() === auth.uid",
             "$sid": {
-              ".write": "auth != null && $sid.beginsWith(auth.uid + '_')"
+              ".write": "auth != null && $sid.beginsWith(auth.uid + '_') && $sid.matches(/^[A-Za-z0-9]+_[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]$/)",
+              ".validate": "newData.hasChildren(['t'])",
+              "t": { ".validate": "newData.isNumber()" },
+              "$other": { ".validate": false }
             }
           }
         }

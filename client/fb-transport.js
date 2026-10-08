@@ -5,11 +5,14 @@
 //     (กติกา · จับเวลาตา · เลือกการ์ด · rejoin ด้วย token) ผ่าน io จำลอง
 //   · คนเข้าห้อง = "แขก": ส่งคำสั่งไปที่ Firebase แล้วโฮสต์หยิบไปทำ · ผลลัพธ์ส่งกลับทาง Firebase
 //
-// โครงข้อมูลใน Firebase (ทุกอย่างอยู่ใต้ cr/):
-//   hosts/{code}                  { host: uid, t: เวลา }   โฮสต์จองรหัสห้อง · หายเมื่อโฮสต์ออก (onDisconnect)
-//   rooms/{code}/in/{key}         { from: sid, d: JSON }   แขก → โฮสต์ (โฮสต์ลบทิ้งหลังอ่าน)
-//   rooms/{code}/out/{sid}/{key}  { d: JSON }              โฮสต์ → แขกแต่ละคน (แขกลบทิ้งหลังอ่าน)
-//   rooms/{code}/presence/{sid}   { t }                    แขกที่ยังเชื่อมต่ออยู่ · หายเมื่อแขกหลุด (onDisconnect)
+// โครงข้อมูลใน Firebase (ทุกอย่างอยู่ใต้ cr/) — สิทธิ์ของแต่ละเส้นทางอยู่ใน database.rules.json:
+//   hosts/{code}                  { host: uid, t: เวลา server }  โฮสต์จองรหัสห้อง · ต่ออายุทุกนาที · เกิน 5 นาทีถือว่าว่าง
+//   hostOf/{uid}                  code                           หนึ่ง uid ถือได้ห้องเดียว (เขียนพร้อม hosts/{code})
+//   rooms/{code}/meta             { host: uid }                  เจ้าของข้อมูลห้อง (ให้ลบได้แม้รายการโฮสต์หายไปก่อน)
+//   rooms/{code}/in/{key}         { from: sid, d: JSON }         แขก → โฮสต์ (โฮสต์ลบทิ้งหลังอ่าน)
+//   rooms/{code}/out/{sid}/{key}  { d: JSON }                    โฮสต์ → แขกแต่ละคน (แขกลบทิ้งหลังอ่าน)
+//   rooms/{code}/presence/{sid}   { t }                          แขกที่ยังเชื่อมต่ออยู่ · หายเมื่อแขกหลุด (onDisconnect)
+// โฮสต์หลุด/แครช: onDisconnect ลบ rooms/{code}, hosts/{code}, hostOf/{uid}
 // sid = `${uid}_${conn}` — uid จาก Anonymous Auth, conn สุ่มใหม่ทุกครั้งที่เปิดหน้า (เปิดสองแท็บในเบราว์เซอร์เดียวกันได้)
 //
 // ข้อมูลทุกก้อนเป็นสตริง JSON ในฟิลด์ d — ไม่ติดข้อจำกัดของ Firebase (key มีจุดไม่ได้, array, null, undefined)
@@ -73,11 +76,32 @@ class FakeIO {
 }
 
 // ══ โฮสต์: รันเซิร์ฟเวอร์เกมในหน้านี้ แล้วรับ/ส่งข้อมูลกับแขกผ่าน Firebase ══
+// ทุกอย่างที่มาจากคิว in มาจากคนแปลกหน้า: Rules รับประกันได้แค่ว่า `from` ขึ้นต้นด้วย uid ของคนเขียนจริง
+// ที่เหลือ (ปริมาณ, ชนิดของคำสั่ง, จำนวนการเชื่อมต่อ) โฮสต์ต้องกันเองที่นี่ — Rules กันปริมาณไม่ได้
+const REMOTE_EVENTS = new Set(['join_room', 'rejoin_room', 'update_cfg', 'start_game', 'restart_game', 'place', 'place_timeout',
+  'use_card', 'discard_card', 'group_pick_response', 'group_pick_skip', 'leave_room']); // สร้างห้อง (create_room) ทำได้จากแท็บโฮสต์เองเท่านั้น
+const ENTER_EVENTS = new Set(['join_room', 'rejoin_room']);
+const SID_RE = /^[A-Za-z0-9]{1,128}_[0-9a-f]{8}$/;
+const HOST_STALE_MS = 5 * 60 * 1000;   // รายการโฮสต์ที่ไม่ได้ต่ออายุเกินนี้ = ว่าง ใครจองทับก็ได้ (ตรงกับ database.rules.json)
+const HOST_LIMITS = {
+  heartbeatMs: 60000,      // ต่ออายุรหัสห้องทุกนาที
+  burst: 40, perSec: 20,   // token bucket ต่อ uid: ผู้เล่นปกติส่งไม่กี่ข้อความต่อวินาที
+  strikes: 20, blockMs: 60000, // เกินอัตราสะสมถึงเท่านี้ → บล็อก uid นั้นชั่วคราว
+  connsPerUid: 3,          // แท็บ/การเชื่อมต่อพร้อมกันต่อ uid ต่อห้อง
+  socketsPerRoom: 12,      // 6 ที่นั่ง + เผื่อคนรีเฟรช
+  joinGraceMs: 10000,      // เชื่อมมาแล้วไม่เข้าห้องภายในเวลานี้ → ตัดทิ้ง
+  batch: 50, batchMs: 100, // ประมวลผลคิวไม่เกิน 50 ข้อความต่อ 100ms (แท็บโฮสต์ยังต้องวาดเกมของตัวเอง)
+  backlog: 300,            // ค้างเกินนี้ = โดนถล่ม: ทิ้งทั้งคิว
+  maxUids: 200,            // จำนวน uid ที่จำสถิติไว้ต่อห้อง
+};
+const isDenied = e => /permission[_ -]?denied/i.test(String(e && (e.code || e.message || e)));
+
 class HostRuntime {
   constructor(a, deps, attach) {
     this.a = a; this.deps = deps;
+    this.L = Object.assign({}, HOST_LIMITS, deps.limits);
     this.io = new FakeIO();
-    this.codes = new Map();      // code → { unsubs, cancelOD }
+    this.codes = new Map();      // code → สถานะของห้อง (ดู _listen)
     this.deliver = new Map();    // sid ของผู้เล่นในหน้านี้ → ฟังก์ชันส่งเข้า ClientSocket
     this.pendingCode = null;
     this.game = attach(this.io, {
@@ -86,6 +110,9 @@ class HostRuntime {
       onRoomDeleted: code => this.release(code),
     });
     this._guard();
+    this._beat = setInterval(() => this.heartbeat(), this.L.heartbeatMs);
+    if (this._beat.unref) this._beat.unref();
+    this._cleaned = this._cleanupOld().catch(noop);
   }
   static async get(a, deps) {
     if (!a._rt) a._rt = (async () => new HostRuntime(a, deps, await deps.loadAttach()))();
@@ -99,46 +126,84 @@ class HostRuntime {
       e.preventDefault(); e.returnValue = '';
     });
   }
+  _warn(st, msg) { const now = Date.now(); if (now - (st.warnedAt || 0) < 5000) return; st.warnedAt = now; console.warn('[fb] ' + msg); }
 
-  // จองรหัสห้อง 4 หลักใน Firebase (ไม่ซ้ำกับโฮสต์คนอื่น) แล้วเริ่มฟังคำสั่งของห้องนั้น
+  // เปิดแท็บโฮสต์ใหม่ทั้งที่ uid นี้ยังมีห้องเก่าค้างอยู่ (แท็บเดิมแครช/ถูกปิด): เก็บกวาดห้องเก่าทิ้ง — หนึ่ง uid ถือได้ห้องเดียว
+  async _cleanupOld() {
+    const a = this.a, old = await a.get(P('hostOf', a.uid));
+    if (typeof old !== 'string' || !/^\d{4}$/.test(old) || this.codes.has(old)) return;
+    const h = await a.get(P('hosts', old));
+    if (h && h.host === a.uid) { await a.remove(P('rooms', old)).catch(noop); await a.remove(P('hosts', old)).catch(noop); }
+    await a.remove(P('hostOf', a.uid)).catch(noop);
+  }
+
+  // จองรหัสห้อง 4 หลัก: เขียน hosts/{code} กับ hostOf/{uid} พร้อมกัน (multi-path) — Rules ให้ผ่านเฉพาะรหัสที่ว่าง / หมดอายุ / ของเราเอง
+  // เวลา t เป็นเวลาของ server เสมอ (serverTimestamp) — client กำหนดเองไม่ได้ จึงจองค้างด้วยเวลาอนาคตไม่ได้
   async claim() {
+    await this._cleaned;
     const a = this.a, uid = a.uid;
+    await this._cleanupOld().catch(noop); // ห้องของ uid นี้ที่ค้างจากแท็บอื่น: Rules ไม่ให้ถือสองรหัส ต้องปล่อยของเก่าก่อน
+    // หนึ่ง uid = หนึ่งห้อง: ห้องเดิมของหน้านี้ (ถ้ามีคนค้างอยู่) ต้องปิดก่อน ไม่งั้นจะต่ออายุไม่ได้แล้วค้างเป็นห้องผี
+    for (const code of [...this.codes.keys()]) this.game.closeRoom(code, 'host_left');
+    await this._releasing; // รอให้ห้องเก่าถูกเก็บกวาดเสร็จก่อนจองห้องใหม่
     for (let i = 0; i < 40; i++) {
-      const code = String(Math.floor(1000 + Math.random() * 9000));
-      if (this.codes.has(code) || this.game.rooms.has(code)) continue;
-      const ok = await a.transaction(P('hosts', code), cur => {
-        if (cur && cur.host !== uid && typeof cur.t === 'number' && Date.now() - cur.t < 86400000) return undefined; // มีโฮสต์อื่นถืออยู่
-        return { host: uid, t: Date.now() };
-      });
-      if (!ok) continue;
+      const code = String(this.deps.pickCode ? this.deps.pickCode(i) : Math.floor(1000 + Math.random() * 9000));
+      if (!/^\d{4}$/.test(code) || this.codes.has(code) || this.game.rooms.has(code)) continue;
+      const cur = await a.get(P('hosts', code));
+      if (cur && cur.host !== uid && typeof cur.t === 'number' && a.now() - cur.t < HOST_STALE_MS) continue; // โฮสต์อื่นยังต่ออายุอยู่
+      try { await a.update({ [P('hosts', code)]: { host: uid, t: a.serverTimestamp() }, [P('hostOf', uid)]: code }); }
+      catch (e) { if (isDenied(e)) continue; throw e; } // Rules ปฏิเสธ = มีคนชิงรหัสนี้ไปก่อน
+      // ข้อมูลค้างจากโฮสต์เก่าของรหัสนี้ (คำสั่ง / out / presence) ต้องไม่ถูกประมวลผล: ล้างก่อนเริ่มฟัง
+      await a.remove(P('rooms', code)).catch(noop);
+      await a.set(P('rooms', code, 'meta'), { host: uid }).catch(noop);
       this._listen(code);
       return code;
     }
     throw new Error('จองรหัสห้องไม่ได้');
   }
-  _listen(code) {
-    const a = this.a, st = { unsubs: [], cancelOD: noop };
-    this.codes.set(code, st);
-    st.cancelOD = a.onDisconnectRemove(P('hosts', code));
-    st.unsubs.push(a.onChildAdded(P('rooms', code, 'in'), (key, v) => this._onIn(code, key, v)));
-    st.unsubs.push(a.onChildRemoved(P('rooms', code, 'presence'), sid => this._gone(code, sid)));
+  _armDisconnect(code, st) {
+    st.cancel.forEach(c => { try { c(); } catch (e) {} });
+    // โฮสต์หลุด/แครช: ลบข้อมูลห้อง "ก่อน" รายการโฮสต์ (สิทธิ์ลบห้องของ Rules ดูจากรายการโฮสต์ · มี meta/host เป็นทางสำรองถ้าลำดับสลับ)
+    st.cancel = [this.a.onDisconnectRemove(P('rooms', code)), this.a.onDisconnectRemove(P('hosts', code)), this.a.onDisconnectRemove(P('hostOf', this.a.uid))];
   }
-  // ต่อเน็ตกลับมา: ประกาศตัวเป็นโฮสต์ของห้องอีกครั้ง (onDisconnect ลบทิ้งไปตอนหลุด)
+  _listen(code) {
+    const a = this.a;
+    const st = { unsubs: [], cancel: [], queue: [], pumping: false, timer: 0, graces: new Set(), uids: new Map(), sockets: new Set(), drops: 0, sweep: 0, warnedAt: 0 };
+    this.codes.set(code, st);
+    this._armDisconnect(code, st);
+    st.unsubs.push(a.onChildAdded(P('rooms', code, 'in'), (key, v) => this._enqueue(code, key, v)));
+    st.unsubs.push(a.onChildRemoved(P('rooms', code, 'presence'), sid => this._drop(code, sid)));
+  }
+  // ต่ออายุรหัสห้อง: ถ้า Rules ปฏิเสธ แปลว่ารหัสนี้ไม่ใช่ของเราแล้ว (เช่น เปิดห้องใหม่จากอีกแท็บ) → ปิดห้องในหน้านี้
+  async heartbeat() {
+    for (const code of [...this.codes.keys()]) {
+      try { await this.a.update({ [P('hosts', code)]: { host: this.a.uid, t: this.a.serverTimestamp() }, [P('hostOf', this.a.uid)]: code }); }
+      catch (e) { if (isDenied(e)) { console.warn('[fb] ห้อง ' + code + ': รหัสห้องไม่ใช่ของหน้านี้แล้ว — ปิดห้อง'); this.game.closeRoom(code, 'host_left'); } }
+    }
+  }
+  // ต่อเน็ตกลับมา: onDisconnect ลบทุกอย่างของห้องไปแล้วตอนหลุด → ประกาศตัวใหม่ (แขกจะ rejoin ด้วย token เอง)
   async republish() {
     for (const [code, st] of this.codes) {
-      st.cancelOD();
-      st.cancelOD = this.a.onDisconnectRemove(P('hosts', code));
-      await this.a.set(P('hosts', code), { host: this.a.uid, t: Date.now() }).catch(noop);
+      this._armDisconnect(code, st);
+      await this.a.set(P('rooms', code, 'meta'), { host: this.a.uid }).catch(noop);
     }
+    await this.heartbeat();
   }
   release(code) {
     const st = this.codes.get(code);
     if (!st) return;
     this.codes.delete(code);
     st.unsubs.forEach(u => { try { u(); } catch (e) {} });
-    st.cancelOD();
-    // ลบ rooms ก่อน hosts — Rules ตรวจสิทธิ์ลบจากรายการ hosts
-    this.a.remove(P('rooms', code)).catch(noop).then(() => this.a.remove(P('hosts', code)).catch(noop));
+    st.cancel.forEach(c => { try { c(); } catch (e) {} });
+    clearTimeout(st.timer); clearTimeout(st.sweep); st.graces.forEach(clearTimeout); st.queue.length = 0;
+    st.sockets.forEach(sid => this.io._disconnect(sid, 'room closed'));
+    // ลบ rooms ก่อน hosts — Rules ตรวจสิทธิ์ลบจากรายการ hosts · ดัชนี hostOf ลบเฉพาะเมื่อยังชี้มาที่ห้องนี้ (อาจชี้ไปห้องใหม่แล้ว)
+    const a = this.a;
+    this._releasing = (this._releasing || Promise.resolve())
+      .then(() => a.remove(P('rooms', code)).catch(noop))
+      .then(() => a.remove(P('hosts', code)).catch(noop))
+      .then(() => a.get(P('hostOf', a.uid)).catch(noop))
+      .then(idx => { if (idx === code) return a.remove(P('hostOf', a.uid)).catch(noop); });
   }
 
   local(sid, deliver) {
@@ -148,30 +213,102 @@ class HostRuntime {
       later(() => this.deliver.get(sid)?.(ev, JSON.parse(s)));
     });
   }
-  _remote(code, sid) {
-    let s = this.io.sockets.sockets.get(sid);
-    if (!s) s = this.io._connect(sid, (ev, args) => this._out(s._code, sid, ev, args));
-    s._code = code;
-    return s;
-  }
   _out(code, sid, ev, args) {
     if (!code || !this.codes.has(code)) return;
     this.a.push(P('rooms', code, 'out', sid), { d: enc([ev, args]) }).catch(e => this.deps.onError?.(e));
   }
-  _onIn(code, key, v) {
-    this.a.remove(P('rooms', code, 'in', key)).catch(noop);
-    if (!v || typeof v.from !== 'string' || typeof v.d !== 'string' || !/^[A-Za-z0-9]+_[0-9a-f]+$/.test(v.from)) return;
-    let m; try { m = JSON.parse(v.d); } catch (e) { return; }
-    if (!m || typeof m.ev !== 'string' || m.ev === 'disconnect' || m.ev === 'connection') return;
-    const sock = this._remote(code, v.from);
-    const cb = m.k ? res => this._out(code, v.from, '__ack', [m.k, res === undefined ? null : res]) : null;
+
+  // ── คิวขาเข้า ──
+  // อัตราต่อ uid ตัดสินตั้งแต่ตอนข้อความ "มาถึง" (ยังไม่ parse): ข้อความของ uid ที่ส่งถี่เกิน/ถูกบล็อกไม่ได้เข้าคิวเลย
+  // ผู้เล่นปกติจึงไม่ถูกเบียด แม้มีคนยิงเป็นพันข้อความ
+  _uid(st, uid, now) {
+    let u = st.uids.get(uid);
+    if (!u) {
+      if (st.uids.size >= this.L.maxUids) { // จำกัดความจำ: ทิ้งสถิติของ uid ที่ไม่มีการเชื่อมต่อและไม่ได้ถูกบล็อก
+        for (const [k, x] of st.uids) { if (!x.conns.size && x.blockedUntil < now) { st.uids.delete(k); if (st.uids.size < this.L.maxUids) break; } }
+        if (st.uids.size >= this.L.maxUids) return null;
+      }
+      u = { tokens: this.L.burst, at: now, over: 0, blockedUntil: 0, conns: new Set() };
+      st.uids.set(uid, u);
+    }
+    return u;
+  }
+  _admit(st, uid, now, cost) {
+    const u = this._uid(st, uid, now);
+    if (!u || now < u.blockedUntil) return null;
+    u.tokens = Math.min(this.L.burst, u.tokens + (now - u.at) / 1000 * this.L.perSec); u.at = now;
+    if (u.tokens < 1) { this._strike(st, uid, u, now, cost || 1); return null; }
+    u.tokens--;
+    return u;
+  }
+  _strike(st, uid, u, now, n) {
+    u.over += n;
+    if (u.over < this.L.strikes) return;
+    u.over = 0; u.blockedUntil = now + this.L.blockMs;
+    this._warn(st, 'บล็อก uid ' + uid.slice(0, 6) + '… ชั่วคราว (ส่งคำสั่งถี่/ผิดรูปแบบเกินไป)');
+    [...u.conns].forEach(sid => this._dropSid(st, sid));
+  }
+  _enqueue(code, key, v) {
+    const st = this.codes.get(code);
+    if (!st) return;
+    const from = v && v.from, now = Date.now();
+    const ok = typeof from === 'string' && SID_RE.test(from) && typeof v.d === 'string' && v.d.length < 4000 && !this.deliver.has(from)
+      && this._admit(st, from.slice(0, from.indexOf('_')), now);
+    if (!ok) { // ทิ้งโดยไม่ประมวลผล แล้วล้างทั้งกล่องจดหมายทีเดียวในอีกครู่ (ข้อความที่มาถึงแล้วอยู่ในความจำของเราทั้งหมด จึงไม่มีอะไรหาย)
+      st.drops++;
+      if (!st.sweep) st.sweep = setTimeout(() => { st.sweep = 0; if (this.codes.get(code) === st) this.a.remove(P('rooms', code, 'in')).catch(noop); }, 500);
+      return;
+    }
+    st.queue.push([key, v]);
+    if (st.queue.length > this.L.backlog) {
+      st.queue.length = 0; this.a.remove(P('rooms', code, 'in')).catch(noop);
+      this._warn(st, 'ห้อง ' + code + ': คำสั่งค้างเกิน ' + this.L.backlog + ' — ทิ้งทั้งคิว');
+      return;
+    }
+    if (!st.pumping) this._pump(code);
+  }
+  _pump(code) {
+    const st = this.codes.get(code);
+    if (!st) return;
+    st.pumping = true;
+    for (let n = 0; st.queue.length && n < this.L.batch; n++) {
+      const [key, v] = st.queue.shift();
+      this.a.remove(P('rooms', code, 'in', key)).catch(noop);
+      try { this._handle(code, st, v); } catch (e) { console.error('[fb] handle', e); }
+    }
+    if (st.queue.length) st.timer = setTimeout(() => this._pump(code), this.L.batchMs);
+    else st.pumping = false;
+  }
+  _handle(code, st, v) {
+    const from = v.from, uid = from.slice(0, from.indexOf('_')), now = Date.now();
+    const u = st.uids.get(uid);
+    if (!u || now < u.blockedUntil) return;
+    let m; try { m = JSON.parse(v.d); } catch (e) { this._strike(st, uid, u, now, 5); return; }
+    if (!m || typeof m.ev !== 'string' || !REMOTE_EVENTS.has(m.ev)) { this._strike(st, uid, u, now, 5); return; }
+    let sock = this.io.sockets.sockets.get(from);
+    if (!sock) {
+      // sid ที่ไม่รู้จัก: ข้อความแรกต้องเป็นการเข้าห้องเท่านั้น และมีเพดานจำนวนการเชื่อมต่อ
+      if (!ENTER_EVENTS.has(m.ev)) { this.a.remove(P('rooms', code, 'out', from)).catch(noop); this._strike(st, uid, u, now, 1); return; }
+      if (u.conns.size >= this.L.connsPerUid || st.sockets.size >= this.L.socketsPerRoom) { this._strike(st, uid, u, now, 1); return; }
+      sock = this.io._connect(from, (ev, args) => this._out(sock._code, from, ev, args));
+      st.sockets.add(from); u.conns.add(from);
+      const g = setTimeout(() => { st.graces.delete(g); if (!this.game.socketRoom.has(from)) this._dropSid(st, from, code); }, this.L.joinGraceMs);
+      st.graces.add(g);
+    }
+    sock._code = code;
+    const cb = m.k ? res => this._out(code, from, '__ack', [m.k, res === undefined ? null : res]) : null;
     const args = m.a === undefined || m.a === null ? [] : [m.a];
     sock._dispatch(m.ev, cb ? [...args, cb] : args);
   }
-  _gone(code, sid) {
-    this.a.remove(P('rooms', code, 'out', sid)).catch(noop);
-    // ระหว่างที่ห้องนี้ถูกลบไปแล้ว ไม่ต้องทำอะไร
-    if (this.io.sockets.sockets.has(sid) && !this.deliver.has(sid)) this.io._disconnect(sid, 'transport close');
+  // presence ของแขกหายไป (ปิดแท็บ/หลุด) หรือเราตัดเอง
+  _drop(code, sid) { const st = this.codes.get(code); if (st) this._dropSid(st, sid, code); }
+  _dropSid(st, sid, code) {
+    if (this.deliver.has(sid)) return; // ผู้เล่นในหน้านี้ไม่ได้มาทาง Firebase
+    if (code) this.a.remove(P('rooms', code, 'out', sid)).catch(noop);
+    st.sockets.delete(sid);
+    const u = st.uids.get(sid.slice(0, sid.indexOf('_')));
+    if (u) u.conns.delete(sid);
+    if (this.io.sockets.sockets.has(sid)) this.io._disconnect(sid, 'transport close');
   }
 }
 
@@ -289,8 +426,9 @@ class ClientSocket {
       if (!this._bind || this._bind.code !== code) {
         if (this._bind) this._send('leave_room');
         const host = await this.a.get(P('hosts', code));
-        if (!host) return cb?.({ ok: false, gone: true, msg: 'ไม่พบห้องรหัสนี้' });
-        await this._attach(code);
+        // ไม่มีรายการ หรือโฮสต์ไม่ได้ต่ออายุนานแล้ว (แท็บโฮสต์ตายไปโดยไม่ทันลบ) = ไม่มีห้อง
+        if (!host || (typeof host.t === 'number' && this.a.now() - host.t > HOST_STALE_MS + 60000)) return cb?.({ ok: false, gone: true, msg: 'ไม่พบห้องรหัสนี้' });
+        await this._attach(code, host.host);
       }
       this.route = { t: 'remote', code };
       this._post(ev, data, res => {
@@ -335,9 +473,9 @@ class ClientSocket {
     b.cancelOD = this.a.onDisconnectRemove(P('rooms', b.code, 'presence', this.id));
     return this.a.set(P('rooms', b.code, 'presence', this.id), { t: Date.now() });
   }
-  async _attach(code) {
+  async _attach(code, hostUid) {
     this._unbind(false);
-    const a = this.a, b = this._bind = { code, unsubs: [], cancelOD: noop, goneTimer: null, first: true };
+    const a = this.a, b = this._bind = { code, hostUid, unsubs: [], cancelOD: noop, goneTimer: null };
     b.unsubs.push(a.onChildAdded(P('rooms', code, 'out', this.id), (key, v) => {
       a.remove(P('rooms', code, 'out', this.id, key)).catch(noop);
       let m; try { m = JSON.parse(v.d); } catch (e) { return; }
@@ -345,20 +483,25 @@ class ClientSocket {
     }));
     await this._announce(b);
     // โฮสต์ยังอยู่ไหม: หายไปครู่หนึ่ง = หลุด (รอกลับมา) · หายนาน = ห้องปิด
+    const closed = () => {
+      if (this._bind !== b) return;
+      this._unbind(true); this.route = null;
+      this.connected = true; // ตัวเราเองยังต่อ Firebase อยู่ — โฮสต์ต่างหากที่ไป
+      this._fire('room_closed', { reason: 'host_left' });
+    };
     b.unsubs.push(a.onValue(P('hosts', code), v => {
-      const first = b.first; b.first = false;
+      // รหัสเดิมแต่คนละโฮสต์ = ห้องของเราไม่อยู่แล้ว (โฮสต์เดิมหายไป แล้วมีคนอื่นได้รหัสนี้ไป) — ไม่ใช่ "โฮสต์กลับมา"
+      if (v && hostUid && v.host !== hostUid) { later(closed); return; }
       if (v) {
-        if (b.goneTimer) { clearTimeout(b.goneTimer); b.goneTimer = null; this._announce(b).catch(noop); this.connected = true; this._fire('connect'); }
+        if (b.goneTimer) { // โฮสต์กลับมา: ประกาศตัว (presence) ให้เสร็จก่อน แล้วค่อยให้ client rejoin — Rules รับคำสั่งเฉพาะจาก sid ที่มี presence
+          clearTimeout(b.goneTimer); b.goneTimer = null;
+          this._announce(b).catch(noop).then(() => { if (this._bind !== b) return; this.connected = true; this._fire('connect'); });
+        }
         return;
       }
       if (b.goneTimer) return;
       if (this.connected) { this.connected = false; this._fire('disconnect', 'transport close'); }
-      b.goneTimer = setTimeout(() => {
-        if (this._bind !== b) return;
-        this._unbind(true); this.route = null;
-        this.connected = true; // ตัวเราเองยังต่อ Firebase อยู่ — โฮสต์ต่างหากที่ไป
-        this._fire('room_closed', { reason: 'host_left' });
-      }, this.deps.hostGoneMs ?? 20000);
+      b.goneTimer = setTimeout(closed, this.deps.hostGoneMs ?? 20000);
     }));
   }
   _unbind(cleanup) {
@@ -380,21 +523,32 @@ class ClientSocket {
 async function makeFirebaseAdapter(config, version) {
   const u = `https://www.gstatic.com/firebasejs/${version || '10.12.0'}/`;
   const [A, D, Au] = await Promise.all([import(u + 'firebase-app.js'), import(u + 'firebase-database.js'), import(u + 'firebase-auth.js')]);
-  const app = A.initializeApp(config), db = D.getDatabase(app), auth = Au.getAuth(app);
-  const R = p => D.ref(db, p);
+  const app = A.initializeApp(config);
+  // App Check (ไม่บังคับ): ใส่คีย์ reCAPTCHA v3 ใน fb-config.js (CR_APPCHECK_SITE_KEY) แล้วเปิด Enforce ใน Firebase console
+  // — กันสคริปต์ที่ไม่ได้มาจากหน้าเว็บนี้ไม่ให้ใช้ฐานข้อมูล · ไม่ตั้งค่า = ไม่โหลด
+  if (root.CR_APPCHECK_SITE_KEY) {
+    const AC = await import(u + 'firebase-app-check.js');
+    AC.initializeAppCheck(app, { provider: new AC.ReCaptchaV3Provider(root.CR_APPCHECK_SITE_KEY), isTokenAutoRefreshEnabled: true });
+  }
+  const db = D.getDatabase(app), auth = Au.getAuth(app);
+  const R = p => (p ? D.ref(db, p) : D.ref(db));
+  let offset = 0;
+  D.onValue(R('.info/serverTimeOffset'), s => { offset = s.val() || 0; });
   const a = {
     uid: null,
     async ready() { a.uid = (await Au.signInAnonymously(auth)).user.uid; return a.uid; },
     onConnection: cb => D.onValue(R('.info/connected'), s => cb(!!s.val())),
+    now: () => Date.now() + offset,                 // เวลาของ server โดยประมาณ
+    serverTimestamp: () => D.serverTimestamp(),     // ค่าที่ server แทนด้วยเวลาของมันเองตอนเขียน
     get: async p => (await D.get(R(p))).val(),
     set: (p, v) => D.set(R(p), v),
+    update: obj => D.update(R(''), obj),            // หลายเส้นทางพร้อมกัน (สำเร็จหรือล้มเหลวทั้งชุด)
     remove: p => D.remove(R(p)),
     push: async (p, v) => { const r = D.push(R(p)); await D.set(r, v); return r.key; },
     onChildAdded: (p, cb) => D.onChildAdded(R(p), s => cb(s.key, s.val())),
     onChildRemoved: (p, cb) => D.onChildRemoved(R(p), s => cb(s.key)),
     onValue: (p, cb) => D.onValue(R(p), s => cb(s.val())),
     onDisconnectRemove: p => { const od = D.onDisconnect(R(p)); od.remove(); return () => { od.cancel(); }; },
-    transaction: async (p, fn) => (await D.runTransaction(R(p), cur => fn(cur))).committed,
   };
   return a;
 }

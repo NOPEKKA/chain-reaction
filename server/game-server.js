@@ -70,7 +70,7 @@ const NO_PAYLOAD = new Set(['start_game', 'restart_game']); // event ที่ c
 
 // opts.genCode: โหมด Firebase จองรหัสห้องไว้ล่วงหน้า (ไม่ให้ซ้ำกับห้องของโฮสต์คนอื่น) แล้วส่งมาทางนี้
 function genCode() {
-  if (opts.genCode) return String(opts.genCode());
+  if (opts.genCode) { const c = opts.genCode(); return c === null || c === undefined ? '' : String(c); }
   return String(Math.floor(1000 + Math.random() * 9000));
 }
 const newToken = () => crypto.randomBytes(16).toString('hex');
@@ -485,12 +485,13 @@ io.on('connection', (socket) => {
   const leaveCurrent = () => { const old = getRoomBySocket(socket.id); if (old) cleanupMember(socket.id, old, { left: true }); };
 
   socket.on('create_room', ({ name, cfg }, cb) => {
-    leaveCurrent();
-
+    // หารหัสให้ได้ก่อน แล้วค่อยออกจากห้องเดิม — สร้างไม่สำเร็จต้องไม่ทำให้หลุดจากห้องที่อยู่
     let code;
     let tries = 0;
     do { code = genCode(); } while (rooms.has(code) && ++tries < 50);
-    if (rooms.has(code)) return cb?.({ ok: false, msg: 'สร้างห้องไม่ได้ ลองใหม่อีกครั้ง' });
+    // ไม่มีรหัส (โหมด Firebase: create_room ที่ไม่ได้มาจากแท็บโฮสต์เอง จะไม่มีรหัสที่จองไว้) หรือรหัสซ้ำ → ไม่สร้าง
+    if (!/^\d{4}$/.test(code) || rooms.has(code)) return cb?.({ ok: false, msg: 'สร้างห้องไม่ได้ ลองใหม่อีกครั้ง' });
+    leaveCurrent();
 
     const token = newToken();
     const c = cleanCfg(cfg);
@@ -813,8 +814,17 @@ io.on('connection', (socket) => {
   });
 });
 
+// ปิดห้องจากภายนอก (โหมด Firebase: โฮสต์เปิดห้องใหม่ / เสียสิทธิ์ในรหัสห้อง): แจ้งสมาชิกแล้วลบ
+function closeRoom(code, reason) {
+  const room = rooms.get(String(code));
+  if (!room) return false;
+  io.to(room.code).emit('room_closed', { reason: reason || 'closed' });
+  deleteRoom(room);
+  return true;
+}
+
 return {
-  rooms, socketRoom,
+  rooms, socketRoom, closeRoom,
   stop() { clearInterval(sweeper); [...rooms.values()].forEach(deleteRoom); },
 };
 }
