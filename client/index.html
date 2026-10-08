@@ -2988,7 +2988,7 @@ function renderHandBar(){
   if(hand.length===0){
     const empty=document.createElement('div');
     empty.style.cssText='color:rgba(255,255,255,0.4);font-size:.82rem;font-family:"Fredoka One","Mitr",cursive;padding:8px 0;';
-    empty.textContent=isBot(cur)?'🤖 Bot กำลังคิด...':'🎴 ไม่มีการ์ดในมือ';
+    empty.textContent=isBot(cur)?'':'🎴 ไม่มีการ์ดในมือ';
     cardsRow.appendChild(empty);bar.appendChild(cardsRow);return;
   }
 
