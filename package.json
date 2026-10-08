@@ -5,14 +5,16 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
-    "dev": "nodemon server/index.js"
+    "dev": "nodemon server/index.js",
+    "test": "node --test test/online.test.js"
   },
   "dependencies": {
     "express": "^4.18.2",
     "socket.io": "^4.6.1"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
+    "nodemon": "^3.0.1",
+    "socket.io-client": "^4.8.4"
   },
   "engines": {
     "node": ">=18.0.0"

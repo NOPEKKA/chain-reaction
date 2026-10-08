@@ -14,6 +14,44 @@ let cardTimerInterval = null;
 const TURN_LIMIT = 30;
 const CARD_LIMIT = 30;
 
+// ══ ที่นั่งในห้อง (playerToken) ══
+// server ออก token ตอน create/join — เก็บไว้เพื่อกลับเข้าที่นั่งเดิมเมื่อหลุด/รีเฟรช
+//  · sessionStorage = ของแท็บนี้ (รีเฟรชแล้วยังอยู่) → ยึดที่นั่งคืนได้ทันที
+//  · localStorage   = สำรองไว้ 10 นาที สำหรับ "ปิดแท็บแล้วเปิดใหม่" → เข้าได้เฉพาะเมื่อที่นั่งว่าง (ไม่แย่งจากอีกแท็บที่ยังเล่นอยู่)
+let session = null;      // { code, token } ของห้องที่กำลังอยู่
+let _enterGame = false;  // rejoin สำเร็จตอนยังไม่ได้อยู่หน้าเกม (เช่น รีเฟรช) → room_update ถัดไปพาเข้าเกม
+const SS_KEY = 'cr.session', LS_KEY = 'cr.lastSession';
+function saveSession(s) {
+  session = { code: s.code, token: s.token };
+  try { sessionStorage.setItem(SS_KEY, JSON.stringify(session)); } catch (e) {}
+  try { localStorage.setItem(LS_KEY, JSON.stringify({ code: s.code, token: s.token, at: Date.now() })); } catch (e) {}
+}
+function clearSession() {
+  const tok = session && session.token;
+  session = null;
+  try { sessionStorage.removeItem(SS_KEY); } catch (e) {}
+  try { const l = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); if (!l || !tok || l.token === tok) localStorage.removeItem(LS_KEY); } catch (e) {}
+}
+function storedSession() {
+  try { const s = JSON.parse(sessionStorage.getItem(SS_KEY) || 'null'); if (s && s.code && s.token) return { code: s.code, token: s.token, takeover: true }; } catch (e) {}
+  try { const s = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); if (s && s.code && s.token && Date.now() - (s.at || 0) < 10 * 60 * 1000) return { code: s.code, token: s.token, takeover: false }; } catch (e) {}
+  return null;
+}
+
+// แถบ "หลุดการเชื่อมต่อ" — ค้างไว้จนกว่าจะกลับเข้าห้องได้ (คนละเรื่องกับ "ห้องไม่อยู่แล้ว" ที่เป็น overlay เต็มจอ)
+function setNetBanner(on) {
+  let el = document.getElementById('net-banner');
+  if (!on) { if (el) el.style.display = 'none'; return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'net-banner';
+    el.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:1100;background:rgba(40,16,16,.94);color:#fff;border:1px solid rgba(255,140,120,.6);border-radius:999px;padding:8px 18px;font-family:"Fredoka One","Mitr",cursive;font-size:.9rem;box-shadow:0 8px 24px rgba(0,0,0,.4);white-space:nowrap;';
+    el.textContent = '⚠️ หลุดการเชื่อมต่อ — กำลังเชื่อมใหม่…';
+    document.body.appendChild(el);
+  }
+  el.style.display = 'block';
+}
+
 const PLAYER_COLORS_O = ['#e05c5c','#5bc4e0','#6dba6d','#e0a84a','#cc55ee','#ee8844'];
 
 // ══ TIMER (ตัวเลขนับถอยหลัง) ══
@@ -24,7 +62,7 @@ function createTimerEl() {
     el.id = 'online-timer-el';
     el.style.cssText = [
       'position:fixed;top:8px;left:50%;transform:translateX(-50%)',
-      'font-family:"Fredoka One",cursive;font-size:1.4rem;font-weight:900',
+      'font-family:"Fredoka One","Mitr",cursive;font-size:1.4rem;font-weight:900',
       'color:#fff;text-shadow:0 0 12px rgba(0,0,0,0.6)',
       'background:rgba(0,0,0,0.55);border-radius:999px',
       'padding:4px 18px;z-index:998;pointer-events:none',
@@ -47,6 +85,7 @@ function startCountdown(seconds, color, onEnd) {
   turnTimerInterval = setInterval(() => {
     left--;
     el.textContent = left;
+    if (left <= 5 && left > 0) SFX.tick(left);
     if (left <= 5) el.style.color = '#ff6644';
     else el.style.color = color || '#fff';
     if (left <= 0) {
@@ -85,7 +124,7 @@ function showGroupPickOverlay(cards, handSize, timeLimit, mySlotName) {
   const hdr = document.createElement('div');
   hdr.style.cssText = 'text-align:center;';
   hdr.innerHTML = `
-    <div style="font-family:'Fredoka One',cursive;font-size:1.5rem;color:#fff;">🎴 เลือกการ์ด</div>
+    <div style="font-family:'Fredoka One','Mitr',cursive;font-size:1.5rem;color:#fff;">🎴 เลือกการ์ด</div>
     <div style="font-size:.82rem;color:rgba(255,255,255,0.6);margin-top:4px;">มือ ${handSize}/4 ใบ</div>
   `;
   ov.appendChild(hdr);
@@ -93,9 +132,15 @@ function showGroupPickOverlay(cards, handSize, timeLimit, mySlotName) {
   // Progress + timer
   const progRow = document.createElement('div');
   progRow.id = 'gp-prog-row';
-  progRow.style.cssText = 'font-family:"Fredoka One",cursive;font-size:.9rem;color:rgba(255,255,255,0.6);text-align:center;';
+  progRow.style.cssText = 'font-family:"Fredoka One","Mitr",cursive;font-size:.9rem;color:rgba(255,255,255,0.6);text-align:center;';
   progRow.textContent = 'รอผู้เล่นอื่น...';
   ov.appendChild(progRow);
+  const bar = document.createElement('div');
+  bar.className = 'gp-bar'; bar.id = 'gp-bar';
+  bar.innerHTML = '<i></i>';
+  bar.firstChild.style.animationDuration = timeLimit + 's';
+  ov.appendChild(bar);
+  setTimeout(() => { if (bar.isConnected) bar.classList.add('low'); }, Math.max(0, timeLimit - 5) * 1000);
 
   // Cards row
   const row = document.createElement('div');
@@ -109,6 +154,7 @@ function showGroupPickOverlay(cards, handSize, timeLimit, mySlotName) {
   cards.forEach((def, idx) => {
     const el = document.createElement('div');
     el.className = 'pick-card';
+    el.dataset.rarity = def.rarity;
     el.style.animationDelay = (idx * 0.07) + 's';
     el.innerHTML = `
       <div class="pc-emoji">${def.emoji}</div>
@@ -131,8 +177,8 @@ function showGroupPickOverlay(cards, handSize, timeLimit, mySlotName) {
       });
       el.style.border = '3px solid rgba(255,255,255,0.8)';
       el.style.boxShadow = '0 0 20px rgba(255,255,255,0.3)';
-      skipBtn.style.display = 'none';
       progRow.textContent = '✅ เลือกแล้ว — รอผู้เล่นอื่น...';
+      bar.firstChild.style.animationPlayState = 'paused'; bar.style.opacity = '.4';
       SFX.pickCard && SFX.pickCard();
     };
     el.addEventListener('click', doPickCard);
@@ -140,6 +186,8 @@ function showGroupPickOverlay(cards, handSize, timeLimit, mySlotName) {
     row.appendChild(el);
   });
   ov.appendChild(row);
+  FX.revealCards(row);
+  SFX.reveal(cards.map(c => c.rarity));
 
 
 
@@ -177,27 +225,14 @@ async function playExplosionWavesIncremental(waves, finalState) {
   const rows = STATE.size || finalState.rows || 8;
   const cols = STATE.cols || finalState.cols || rows;
   const STEP = 520; // เหมือน STEP_DELAY offline
+  FX.chainReset();
 
   for (const wave of waves) {
     const explosions = wave.explosions || [];
     if (!explosions.length) continue;
 
-    // Phase 1: burst + ripple + flying orbs ทันที (เหมือน offline)
-    const chainLen = explosions.length;
-    if (chainLen >= 4) SFX.bigChain && SFX.bigChain();
-    else SFX.explode && SFX.explode(chainLen);
-
-    explosions.forEach(({ r, c, owner }) => {
-      const el = document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
-      if (el) { el.classList.add('bursting'); setTimeout(() => el.classList.remove('bursting'), 460); }
-      if (window.spawnRipple) spawnRipple(r, c, owner);
-      const nbs = [];
-      if (r > 0) nbs.push([r-1, c]);
-      if (r < rows-1) nbs.push([r+1, c]);
-      if (c > 0) nbs.push([r, c-1]);
-      if (c < cols-1) nbs.push([r, c+1]);
-      if (window.spawnFlyingOrbs) spawnFlyingOrbs(r, c, owner, nbs);
-    });
+    // Phase 1: burst + ripple + flying orbs + เสียง ทันที — ใช้ FX ชุดเดียวกับ offline (แรงขึ้นตามลำดับ wave)
+    FX.wave(explosions, FX.chainStep());
 
     // Phase 2 (45%): apply cells ของ wave นี้ + renderGrid + flash
     await new Promise(resolve => {
@@ -227,17 +262,7 @@ async function playExplosionWavesIncremental(waves, finalState) {
         renderGrid(false);
 
         // Flash neighbors
-        explosions.forEach(({ r, c }) => {
-          const nbs = [];
-          if (r > 0) nbs.push([r-1, c]);
-          if (r < rows-1) nbs.push([r+1, c]);
-          if (c > 0) nbs.push([r, c-1]);
-          if (c < cols-1) nbs.push([r, c+1]);
-          nbs.forEach(([nr, nc]) => {
-            const nel = document.querySelector(`.cell[data-r="${nr}"][data-c="${nc}"]`);
-            if (nel) { nel.classList.add('explosion-flash'); setTimeout(() => nel.classList.remove('explosion-flash'), 200); }
-          });
-        });
+        FX.land(explosions);
 
         // Phase 3 (55%): resolve
         setTimeout(resolve, STEP * 0.55);
@@ -253,40 +278,13 @@ async function playExplosionWaves(waves, stateData) {
 
   const playWave = (waveExplosions) => {
     return new Promise(resolve => {
-      const chainLen = waveExplosions.length;
-      if (chainLen >= 4) SFX.bigChain && SFX.bigChain();
-      else SFX.explode && SFX.explode(chainLen);
-
       // Phase 1: burst + ripple + flying orbs (ทันที)
-      waveExplosions.forEach(({ r, c, owner }) => {
-        const el = document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
-        if (el) {
-          el.classList.add('bursting');
-          setTimeout(() => el.classList.remove('bursting'), 460);
-        }
-        if (window.spawnRipple) spawnRipple(r, c, owner);
-        const nbs = [];
-        if (r > 0) nbs.push([r-1, c]);
-        if (r < rows-1) nbs.push([r+1, c]);
-        if (c > 0) nbs.push([r, c-1]);
-        if (c < cols-1) nbs.push([r, c+1]);
-        if (window.spawnFlyingOrbs) spawnFlyingOrbs(r, c, owner, nbs);
-      });
+      FX.wave(waveExplosions, FX.chainStep());
 
       // Phase 2 (45%): renderGrid + flash neighbors
       setTimeout(() => {
         if (typeof renderGrid === 'function') renderGrid(false);
-        waveExplosions.forEach(({ r, c }) => {
-          const nbs = [];
-          if (r > 0) nbs.push([r-1, c]);
-          if (r < rows-1) nbs.push([r+1, c]);
-          if (c > 0) nbs.push([r, c-1]);
-          if (c < cols-1) nbs.push([r, c+1]);
-          nbs.forEach(([nr, nc]) => {
-            const nel = document.querySelector(`.cell[data-r="${nr}"][data-c="${nc}"]`);
-            if (nel) { nel.classList.add('explosion-flash'); setTimeout(() => nel.classList.remove('explosion-flash'), 200); }
-          });
-        });
+        FX.land(waveExplosions);
         // Phase 3 (55%): resolve
         setTimeout(resolve, WAVE_DELAY * 0.55);
       }, WAVE_DELAY * 0.45);
@@ -295,6 +293,7 @@ async function playExplosionWaves(waves, stateData) {
 
   // เล่นทีละ wave
   _pendingExplosionWaves = waves.length;
+  FX.chainReset();
   for (const wave of waves) {
     await playWave(wave.explosions);
     _pendingExplosionWaves--;
@@ -306,12 +305,16 @@ async function playExplosionWaves(waves, stateData) {
 function handleServerReset() {
   clearAllTimers();
   closeGroupPickOverlay();
-  // แสดง overlay ให้กลับเมนู
+  clearSession();
+  setNetBanner(false);
+  if (document.getElementById('server-reset-ov')) return;
+  // ห้องหายจริงๆ (server ถูก restart หรือห้องหมดอายุ) — ต่างจากแค่หลุดการเชื่อมต่อ ซึ่งกลับเข้าห้องเดิมได้เอง
   const ov = document.createElement('div');
+  ov.id = 'server-reset-ov';
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(10px);z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;';
   ov.innerHTML = `
-    <div style="font-family:'Fredoka One',cursive;font-size:1.4rem;color:#fff;text-align:center;">⚠️ Server ถูก restart<br><span style="font-size:.9rem;color:rgba(255,255,255,0.6);font-family:Nunito,sans-serif;">ห้องหายไปแล้ว</span></div>
-    <button id="server-reset-btn" style="background:#fff;border:none;border-radius:999px;padding:12px 32px;font-family:'Fredoka One',cursive;font-size:1.1rem;color:#2a1a4e;cursor:pointer;">กลับหน้าหลัก</button>
+    <div style="font-family:'Fredoka One','Mitr',cursive;font-size:1.4rem;color:#fff;text-align:center;">⚠️ ห้องนี้ไม่อยู่แล้ว<br><span style="font-size:.9rem;color:rgba(255,255,255,0.6);font-family:Nunito,sans-serif;">Server ถูก restart หรือห้องหมดอายุ</span></div>
+    <button id="server-reset-btn" style="background:#fff;border:none;border-radius:999px;padding:12px 32px;font-family:'Fredoka One','Mitr',cursive;font-size:1.1rem;color:#2a1a4e;cursor:pointer;">กลับหน้าหลัก</button>
   `;
   document.body.appendChild(ov);
   document.getElementById('server-reset-btn').addEventListener('click', () => {
@@ -326,31 +329,20 @@ function handleServerReset() {
 
 // ══ แจ้งเตือนถึงตาเรา ══
 let _lastNotifiedTurn = -1;
+let _lastOtherTurn = '';
 
-function notifyMyTurn() {
-  const turnKey = STATE.turnCount || 0;
+// turnKey มาจาก state ของ server (ของเดิมอ่าน STATE.turnCount ที่ไม่เคยถูก sync จึงแจ้งเตือนได้แค่ครั้งแรกของ session)
+function notifyMyTurn(turnKey) {
   if (_lastNotifiedTurn === turnKey) return;
   _lastNotifiedTurn = turnKey;
 
   const color = ['#e05c5c','#5bc4e0','#6dba6d','#e0a84a','#cc55ee','#ee8844'][mySlot] || '#fff';
 
-  // 1. เสียง 2 โน้ตขึ้นสูง
-  try {
-    const ac = new (window.AudioContext || window.webkitAudioContext)();
-    [[523,0],[784,0.12]].forEach(([freq,delay]) => {
-      const o = ac.createOscillator(), g = ac.createGain();
-      o.connect(g); g.connect(ac.destination);
-      o.type = 'sine'; o.frequency.value = freq;
-      const t = ac.currentTime + delay;
-      g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.22, t+0.01);
-      g.gain.exponentialRampToValueAtTime(0.001, t+0.35);
-      o.start(t); o.stop(t+0.4);
-    });
-  } catch(e) {}
+  // 1. เสียง "ตาเรา" — ใช้ engine เสียงกลางของเกม (ของเดิม new AudioContext ทุกครั้งที่ถึงตา)
+  SFX.myTurn(mySlot);
 
   // 2. สั่น (มือถือ) — double pulse
-  if (navigator.vibrate) navigator.vibrate([60, 30, 100]);
+  if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) navigator.vibrate([60, 30, 100]);
 
   // 3. กระดานกระพริบแรงๆ 2 รอบ
   const gWrap = document.getElementById('grid-wrap');
@@ -376,7 +368,7 @@ function notifyMyTurn() {
   }
   popup.style.cssText = [
     'position:fixed;top:44%;left:50%;transform:translate(-50%,-50%)',
-    'font-family:"Fredoka One",cursive;font-size:2.4rem;font-weight:900',
+    'font-family:"Fredoka One","Mitr",cursive;font-size:2.4rem;font-weight:900',
     `color:${color};pointer-events:none;z-index:950`,
     `text-shadow:0 0 40px ${color}, 0 0 80px ${color}88, 0 4px 0 rgba(0,0,0,0.4)`,
     'opacity:0;',
@@ -411,28 +403,117 @@ function notifyMyTurn() {
   document.head.appendChild(style);
 })();
 
+// ══ ตาใหม่เริ่มหลังเอฟเฟกต์จบ ══
+// ภาพของ update ล่าสุด (VFX การ์ด → ระเบิดทีละ wave → อนุภาคที่ค้าง) ต้องเล่นจบก่อน
+// แล้วค่อยประกาศตาใหม่ (เสียง / popup / ตัวนับเวลา) และรับ input ของเรา
+let _settling = false, _settleSeq = 0, _settleDeadline = 0;
+const isSettling = () => _settling && Date.now() < _settleDeadline; // deadline = กันค้างถ้ามีอะไรพังกลางทาง
+function announceTurn(room) {
+  if (!onlineMode || !room || !room.state || room.phase !== 'playing') return;
+  if (room.state.current === mySlot) {
+    // นาฬิกาอยู่ที่ server: แสดงเวลาที่เหลือจริง (หักเวลาที่ใช้เล่นเอฟเฟกต์ไปแล้ว) — หมดเวลาแล้วส่ง place_timeout เป็นแค่ hint
+    const left = room.turnEndsIn != null ? Math.ceil((room._at + room.turnEndsIn - Date.now()) / 1000) : TURN_LIMIT;
+    startCountdown(Math.max(1, left), '#5bc4e0', () => { socket.emit('place_timeout', {}, () => {}); });
+    notifyMyTurn(room.code + ':' + (room.state.turnCount || 0));
+  } else {
+    // เสียงเปลี่ยนเทิร์นสำหรับตาคนอื่น (เบา, โน้ตประจำตัวของคนนั้น) — ครั้งเดียวต่อเทิร์น
+    const otherKey = room.code + ':' + (room.state.turnCount || 0) + ':' + room.state.current;
+    if (_lastOtherTurn !== otherKey) { _lastOtherTurn = otherKey; SFX.turnChange(room.state.current); }
+  }
+}
+function settleThenAnnounce() {
+  const token = ++_settleSeq;
+  FX.whenIdle(() => {
+    if (token !== _settleSeq || _waveAnimating) return; // มี update ใหม่กว่า หรือ wave ยังเล่นอยู่ — ตัวนั้นจะประกาศเอง
+    _settling = false;
+    announceTurn(currentRoom);
+  });
+}
+
+// กลับเข้าที่นั่งเดิมด้วย token (เรียกทุกครั้งที่ socket ต่อติด ถ้ามีที่นั่งค้างอยู่)
+function tryRejoin(s) {
+  const silent = !session; // ลองตอนเปิดหน้า (ยังไม่ได้อยู่ในห้อง): ไม่ได้ก็เงียบๆ
+  socket.emit('rejoin_room', { code: s.code, token: s.token, takeover: s.takeover !== false }, res => {
+    if (res && res.ok) {
+      saveSession({ code: res.code, token: res.token });
+      mySlot = res.slot; isHost = !!res.isHost;
+      setNetBanner(false);
+      if (res.phase === 'lobby') { onlineMode = false; enterLobby(); }
+      else if (!(onlineMode && document.getElementById('game-screen').style.display === 'flex')) _enterGame = true;
+      showToast(silent ? `↩️ กลับเข้าห้อง ${res.code}` : '✅ เชื่อมต่อแล้ว — กลับเข้าห้องเดิม');
+      return;
+    }
+    if (res && res.busy && silent) return; // ที่นั่งนั้นมีแท็บอื่นเล่นอยู่ — ไม่ยุ่ง
+    // ห้อง/ที่นั่งไม่อยู่แล้วจริงๆ
+    const wasIn = !!session;
+    clearSession(); setNetBanner(false);
+    if (wasIn) handleServerReset();
+  });
+}
+let _pillsReady = false;
+function enterLobby() {
+  document.getElementById('game-screen').style.display = 'none';
+  showScreen('room-screen');
+  if (!_pillsReady) { _pillsReady = true; setupRoomPills(); }
+  renderCardFilter();
+}
+
 function initSocket() {
-  if (socket && socket.connected) return;
+  // socket เดียวตลอด (ของเดิมสร้างใหม่ทุกครั้งที่ยังต่อไม่ติด → handler ซ้อนกัน)
+  if (socket) { if (!socket.connected) socket.connect(); return; }
   socket = io({ autoConnect: true, reconnection: true, reconnectionDelay: 1000 });
 
-  socket.on('connect', () => console.log('[online] connected:', socket.id));
+  socket.on('connect', () => {
+    console.log('[online] connected:', socket.id);
+    const s = session ? { ...session, takeover: true } : storedSession();
+    if (s) tryRejoin(s); else setNetBanner(false);
+  });
   socket.on('disconnect', (reason) => {
-    if (onlineMode && reason !== 'io client disconnect') {
-      // ไม่แสดง toast ถ้ากำลังเลือกการ์ดอยู่ (กัน false alarm ช่วง 30s)
-      const inGroupPick = document.getElementById('group-pick-overlay')?.style.display === 'flex';
-      if (!inGroupPick) {
-        clearAllTimers();
-        showToast('⚠️ หลุดการเชื่อมต่อ กำลังเชื่อมใหม่...');
-      }
-    }
+    if (reason === 'io client disconnect' || !session) return;
+    // หลุดการเชื่อมต่อ: ที่นั่งยังอยู่ที่ server — socket.io จะต่อใหม่เอง แล้ว 'connect' ข้างบนจะพากลับเข้าห้อง
+    clearAllTimers();
+    setNetBanner(true);
+  });
+  // เปิดเกมนี้ (ที่นั่งเดียวกัน) ในแท็บอื่น
+  socket.on('session_replaced', () => {
+    session = null; try { sessionStorage.removeItem(SS_KEY); } catch (e) {}
+    clearAllTimers(); closeGroupPickOverlay(); setNetBanner(false);
+    onlineMode = false; mySlot = -1; isHost = false; myHand = [];
+    if (STATE) STATE._dead = true;
+    document.getElementById('game-screen').style.display = 'none';
+    document.getElementById('winner-overlay').classList.remove('show');
+    showScreen('main-menu');
+    showToast('ที่นั่งนี้ถูกเปิดในแท็บอื่นแล้ว');
+  });
+  socket.on('turn_skipped', ({ playerIdx, reason }) => {
+    if (!onlineMode) return;
+    const who = playerIdx === mySlot ? 'คุณ' : getPlayerName(playerIdx);
+    showToast(reason === 'forfeit' ? `🔮 ${who} ไม่ได้ใช้ Rebirth ทันเวลา — เสียสิทธิ์คืนชีพ`
+      : reason === 'disconnected' ? `⏭️ ${who} หลุดการเชื่อมต่อ — ข้ามตา` : `⏰ ${who} หมดเวลา — ข้ามตา`);
+  });
+  // server ปิดห้องรอที่ไม่มีความเคลื่อนไหวนานเกินไป
+  socket.on('room_closed', () => {
+    clearAllTimers(); closeGroupPickOverlay(); clearSession(); setNetBanner(false);
+    onlineMode = false; mySlot = -1; isHost = false; currentRoom = null; myHand = [];
+    document.getElementById('game-screen').style.display = 'none';
+    showScreen('main-menu');
+    showToast('⌛ ห้องถูกปิดเพราะไม่มีความเคลื่อนไหว');
   });
 
   socket.on('room_update', (room) => {
+    room._at = Date.now(); // เวลาที่ได้รับ — ใช้คำนวณเวลาที่เหลือของตา (turnEndsIn)
     currentRoom = room;
+    // slot และสถานะ host ของเรา: เชื่อ server ทุกครั้ง (ของเดิมจำจากตอน join แล้วคลาดเมื่อมีคนออกจาก lobby)
+    if (room.you) { mySlot = room.you.slot; isHost = !!room.you.isHost; }
+    const me = room.members && room.members.find(m => m.slot === mySlot);
+    if (me && me.name) myName = me.name;
 
     if ((room.phase === 'playing' || room.phase === 'group_pick' || room.phase === 'finished') && room.state) {
-      const wasInRoom = document.getElementById('room-screen').classList.contains('active');
+      // เข้าหน้าเกม: มาจากห้องรอ หรือเพิ่ง rejoin กลับมา (รีเฟรช/เปิดแท็บใหม่)
+      const wasInRoom = document.getElementById('room-screen').classList.contains('active') || _enterGame;
+      _enterGame = false;
       if (wasInRoom) {
+        showScreen('room-screen'); // ซ่อนเมนู/หน้าอื่นให้หมดก่อน (กรณีกลับเข้ามาจากหน้าเมนู)
         document.getElementById('room-screen').classList.remove('active');
         document.getElementById('main-menu').style.display = 'none';
         document.getElementById('game-screen').style.display = 'flex';
@@ -461,20 +542,40 @@ function initSocket() {
           });
         }
 
-        if (wasInRoom) return; // render แล้ว ไม่ต้องทำซ้ำ
-
+        // ออกจากช่วงเลือกการ์ดแล้ว: ปิดหน้าเลือกการ์ด "ก่อน" เริ่มนับเวลา
+        // (ของเดิมเรียกทีหลัง → clearAllTimers ในนั้นฆ่าตัวนับเวลาของตาเราทิ้งทุกครั้ง ตัวนับเวลาจึงไม่เคยขึ้น)
+        if (room.phase !== 'group_pick') {
+          const gp = document.getElementById('group-pick-overlay');
+          if (gp && gp.style.display === 'flex') closeGroupPickOverlay();
+          clearAllTimers();
+        }
         const waves = room.state.explosionWaves;
+        _settling = true;
+        _settleDeadline = Date.now() + (waves ? waves.length * 520 : 0) + 6000;
+
+        if (wasInRoom) {
+          // กลับเข้ามาตอนเกมจบไปแล้ว: game_over ไม่ถูกส่งซ้ำ → เปิดหน้าผู้ชนะจาก state
+          if (room.phase === 'finished' && room.state.winner >= 0 && !document.getElementById('winner-overlay').classList.contains('show')) {
+            document.getElementById('winner-title').textContent = `${getPlayerName(room.state.winner)} ชนะ! 🎉`;
+            document.getElementById('winner-title').style.color = PLAYER_COLORS_O[room.state.winner] || '#fff';
+            document.getElementById('winner-sub').textContent = 'คะแนน: ' + (room.state.scores || []).map((s, i) => `P${i + 1}:${s}`).join('  ');
+            document.getElementById('winner-overlay').classList.add('show');
+          }
+          settleThenAnnounce(); return; // render แล้ว ไม่ต้องทำซ้ำ
+        }
+
         const finalRender = () => {
-          if (_waveAnimating) return; // รอ wave animation เสร็จก่อน
+          if (_waveAnimating) return; // wave ชุดก่อนยังเล่นอยู่ — ตอนจบมันจะ sync ด้วย state ล่าสุดเอง
           syncStateFromServer(room.state);
           renderGrid(true); // render ทันทีไม่มี wave
           renderHandBar();
           renderScoreboard();
           updateTurnLabel();
+          settleThenAnnounce();
         };
 
         const doRender = () => {
-          if (waves && waves.length > 0) {
+          if (waves && waves.length > 0 && !_waveAnimating) {
             const totalWaves = waves.length;
             _animFinishTime = Date.now() + totalWaves * 520 + 200;
             _pendingExplosionWaves = totalWaves;
@@ -492,15 +593,18 @@ function initSocket() {
               renderGrid(false);
             }
 
-            playExplosionWavesIncremental(waves, room.state).then(() => {
+            playExplosionWavesIncremental(waves, room.state).catch(e => console.error('[waves]', e)).then(() => {
               _pendingExplosionWaves = 0;
               _animFinishTime = 0;
               _waveAnimating = false;
-              syncStateFromServer(room.state);
+              if (!onlineMode) return;
+              // ระหว่างเล่น wave อาจมี update ใหม่กว่าเข้ามา → จบด้วย state ล่าสุดเสมอ (ของเดิมจบด้วย state ของ update ที่เริ่มเล่น)
+              syncStateFromServer((currentRoom && currentRoom.state) || room.state);
               renderGrid(true);
               renderHandBar();
               renderScoreboard();
               updateTurnLabel();
+              settleThenAnnounce();
             });
           } else {
             finalRender();
@@ -533,22 +637,6 @@ function initSocket() {
           doRender();
         }
 
-        if (room.phase === 'playing' && room.state.current === mySlot) {
-          startCountdown(TURN_LIMIT, '#5bc4e0', () => {
-            socket.emit('place_timeout', {}, () => {});
-          });
-          // แจ้งเตือนว่าถึงตาเราแล้ว
-          notifyMyTurn();
-        } else if (room.phase !== 'group_pick') {
-          clearAllTimers();
-          // เสียงเปลี่ยนเทิร์นสำหรับตาคนอื่น (เบามาก)
-          SFX.turnChange && SFX.turnChange();
-        }
-
-        // ถ้าออกจาก group_pick แล้วกลับมา playing
-        if (room.phase === 'playing') {
-          closeGroupPickOverlay();
-        }
       }
     } else if (room.phase === 'lobby') {
       // อัปเดตชื่อในห้องรอด้วย
@@ -628,15 +716,17 @@ function initSocket() {
       SFX.card && SFX.card(cardDef.rarity);
       SFX.cardCat && SFX.cardCat(cardDef.cat);
       SFX.cardSpecial && SFX.cardSpecial(cardId);
+      FX.cardCast(cardDef, playerIdx);
     }
     if (window.spawnCardVfx) {
       // คำนวณ vfxFinishTime ก่อน เหมือน offline
       const baseDur = (vfxData && (vfxData.dur || vfxData.novaDur)) || vfxDur[cardId] || 500;
       const extraDur = cardId === 'l3' ? ((vfxData && vfxData.maxDist) || 0) * 55 + 900 : 0;
       _vfxFinishTime = Date.now() + baseDur + extraDur;
-      spawnCardVfx(cardId, targets || {}, playerIdx, vfxData || {})
+      FX.hold(baseDur + extraDur);
+      FX.track(spawnCardVfx(cardId, targets || {}, playerIdx, vfxData || {})
         .catch(() => {})
-        .finally(() => { _cardVfxPlaying = false; });
+        .finally(() => { _cardVfxPlaying = false; }));
     } else {
       _cardVfxPlaying = false;
       _vfxFinishTime = 0;
@@ -671,13 +761,17 @@ function initSocket() {
 
   socket.on('place_vfx', ({ r, c, playerIdx, isFirstPlace }) => {
     if (!onlineMode) return;
-    if (isFirstPlace) SFX.firstPlace && SFX.firstPlace();
-    else SFX.place && SFX.place();
+    if (isFirstPlace) SFX.firstPlace(playerIdx);
+    else SFX.place(playerIdx);
+    // แสดงบอลที่เพิ่งวางทันที (state จริงจะ sync ทับจาก room_update เสมอ) แล้วเล่นเอฟเฟกต์วางบอล
+    const placed = STATE.cells && STATE.cells[r] && STATE.cells[r][c];
+    if (placed && !_waveAnimating) {
+      placed.count += isFirstPlace ? 3 : 1;
+      placed.owner = playerIdx;
+      updateCellDisplay(r, c);
+    }
     // delay เล็กน้อยรอ renderGrid เสร็จก่อน
-    setTimeout(() => {
-      const el = document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
-      if (el) { el.classList.add('orb-placed'); setTimeout(() => el.classList.remove('orb-placed'), 400); }
-    }, 60);
+    setTimeout(() => FX.place(r, c, playerIdx, isFirstPlace), 60);
   });
 
   // explosion_vfx handled inline in room_update
@@ -732,6 +826,7 @@ function syncStateFromServer(serverState) {
   STATE.cols    = serverState.cols || STATE.size;
   STATE.players = serverState.players;
   STATE.current = serverState.current;
+  STATE.turnCount = serverState.turnCount || 0;
   STATE.alive   = serverState.alive;
   STATE.moved   = serverState.moved;
   STATE.scores  = serverState.scores;
@@ -759,7 +854,10 @@ function syncStateFromServer(serverState) {
 // ── Cell click (online) ──
 function onlineCellClick(r, c) {
   if (!onlineMode || !socket) return false;
+  if (!socket.connected) { showToast('⚠️ กำลังเชื่อมต่อใหม่…'); return true; } // socket.io จะ buffer คำสั่งไว้ส่งทีหลัง — ไม่เอา
   if (STATE.current !== mySlot) { showToast('⏳ ยังไม่ถึงตาคุณ'); return true; }
+  if (currentRoom && currentRoom.phase === 'group_pick') { showToast('🎴 กำลังเลือกการ์ดอยู่'); return true; }
+  if (isSettling()) return true; // เอฟเฟกต์ของตาก่อนหน้ายังเล่นไม่จบ
 
   if (selectedHandCard) {
     const { playerIdx, cardIdx } = selectedHandCard;
@@ -824,10 +922,13 @@ function onlineCellClick(r, c) {
 
 function onlineActivateCard(pi, ci, cardDef) {
   if (!onlineMode || !socket) return false;
+  if (!socket.connected) { showToast('⚠️ กำลังเชื่อมต่อใหม่…'); return true; }
   if (pi !== mySlot) { showToast('❌ ไม่ใช่การ์ดของคุณ'); return true; }
   if (STATE.current !== mySlot) { showToast('⏳ ยังไม่ถึงตาของคุณ'); return true; }
+  if (currentRoom && currentRoom.phase === 'group_pick') { showToast('🎴 กำลังเลือกการ์ดอยู่'); return true; }
+  if (isSettling()) return true;
   // anyTarget และ !needTarget → ใช้ทันที ไม่ต้องรอ click
-  if (!cardDef.needTarget || cardDef.anyTarget) {
+  if ((!cardDef.needTarget || cardDef.anyTarget) && cardDef.id !== 'e4') {
     selectedHandCard = null;
     clearAllTimers();
     socket.emit('use_card', { cardId: cardDef.id, targets: {} }, res => {
@@ -859,7 +960,7 @@ function onlineRenderHandBar() {
   nameTag.style.cssText = [
     `background:${color}22;border:2px solid ${color}88`,
     'border-radius:999px;padding:3px 14px',
-    'font-family:"Fredoka One",cursive',
+    'font-family:"Fredoka One","Mitr",cursive',
     `font-size:.78rem;color:${color}`,
     'white-space:nowrap;flex-shrink:0;align-self:center',
     'text-shadow:0 0 8px ' + color + '66',
@@ -869,7 +970,7 @@ function onlineRenderHandBar() {
 
   if (hand.length === 0) {
     const empty = document.createElement('div');
-    empty.style.cssText = 'color:rgba(255,255,255,0.4);font-size:.82rem;font-family:"Fredoka One",cursive;padding:8px 0;';
+    empty.style.cssText = 'color:rgba(255,255,255,0.4);font-size:.82rem;font-family:"Fredoka One","Mitr",cursive;padding:8px 0;';
     empty.textContent = '🎴 ไม่มีการ์ดในมือ';
     cardsRow.appendChild(empty);
     bar.appendChild(cardsRow);
@@ -920,32 +1021,71 @@ function renderRoomScreen(room) {
   document.getElementById('room-code-display').textContent = room.code;
   document.getElementById('room-code-big').textContent = room.code;
 
+  // รายชื่อผู้เล่น — สร้างด้วย DOM + textContent เท่านั้น (ชื่อมาจากผู้เล่นคนอื่น ห้ามประกอบเป็น HTML)
   const list = document.getElementById('room-members-list');
   list.innerHTML = '';
-  room.members.forEach(m => {
-    const div = document.createElement('div');
-    div.style.cssText = `display:flex;align-items:center;gap:10px;padding:9px 14px;background:${m.connected ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.04)'};border-radius:12px;border:1px solid rgba(255,255,255,${m.connected ? '0.15' : '0.05'});`;
-    div.innerHTML = `
-      <div style="width:13px;height:13px;border-radius:50%;background:${PLAYER_COLORS_O[m.slot]};flex-shrink:0;box-shadow:0 0 6px ${PLAYER_COLORS_O[m.slot]};"></div>
-      <span style="font-family:'Fredoka One',cursive;color:${m.connected ? '#fff' : 'rgba(255,255,255,0.3)'};font-size:.95rem;flex:1;">${m.name}${m.slot === mySlot ? ' (คุณ)' : ''}</span>
-      ${m.isHost ? '<span style="font-size:.62rem;background:rgba(255,200,0,0.18);color:#ffd700;border-radius:6px;padding:2px 8px;border:1px solid rgba(255,200,0,0.3);">👑 Host</span>' : ''}
-      ${!m.connected ? '<span style="font-size:.62rem;color:rgba(255,255,255,0.3);">หลุด</span>' : ''}
-    `;
-    list.appendChild(div);
+  const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+  room.members.forEach((m, i) => {
+    const row = mk('div', 'lm-row' + (m.connected ? '' : ' off'));
+    row.style.animationDelay = (i * 0.05) + 's';
+    const orb = mk('div', 'lm-orb'); orb.style.setProperty('--c', PLAYER_COLORS_O[m.slot] || '#fff');
+    row.appendChild(orb);
+    row.appendChild(mk('span', 'lm-name', m.name));
+    if (m.slot === mySlot) row.appendChild(mk('span', 'lm-chip you', 'คุณ'));
+    if (m.isHost) row.appendChild(mk('span', 'lm-chip host', '👑 Host'));
+    row.appendChild(mk('span', 'lm-stat', m.connected ? 'ออนไลน์' : 'หลุด…'));
+    list.appendChild(row);
   });
+  if (room.members.length < 6) list.appendChild(mk('div', 'lm-row empty', room.members.length < 2 ? 'รอเพื่อนเข้าห้อง…' : 'ยังเข้าได้อีก ' + (6 - room.members.length) + ' คน'));
+  const count = document.getElementById('room-count');
+  if (count) count.textContent = room.members.length + '/6';
+
+  // สรุปการตั้งค่า (ทุกคนเห็น — ของเดิมคนที่ไม่ใช่ host ไม่รู้เลยว่าจะเล่นแมพอะไร)
+  const cfg2 = room.cfg || {};
+  const rows = cfg2.mapSize || 8, cols = cfg2.mapCols || rows, iv = cfg2.cardInterval ?? 2;
+  const total = (window.CARD_DEFS || (typeof CARD_DEFS !== 'undefined' ? CARD_DEFS : [])).length, off = (cfg2.disabledCards || []).length;
+  const sum = document.getElementById('room-summary');
+  if (sum) sum.textContent = `แมพ ${rows}×${cols} · ` + (iv > 0 ? `ได้การ์ดทุก ${iv} เทิร์น` : 'ไม่ใช้การ์ด') + (iv > 0 && off ? ` · เปิดการ์ด ${total - off}/${total} ใบ` : '');
+  // ปุ่มตัวเลือกของ host ตรงกับค่าจริงของห้องเสมอ (เช่น หลังรีเฟรชแล้วกลับเข้าห้อง)
+  document.querySelectorAll('#room-map-pills .pill').forEach(p => p.classList.toggle('active', rows === cols && +p.dataset.val === rows));
+  document.querySelectorAll('#room-map-rect-pills .pill').forEach(p => p.classList.toggle('active', rows !== cols && +p.dataset.rows === rows && +p.dataset.cols === cols));
+  document.querySelectorAll('#room-card-pills .pill').forEach(p => p.classList.toggle('active', +p.dataset.val === iv));
 
   const hostPanel = document.getElementById('host-cfg-panel');
   const startBtn  = document.getElementById('btn-start-online');
   const waitMsg   = document.getElementById('waiting-msg');
+  const hint      = document.getElementById('start-hint');
+  const ready     = room.members.filter(m => m.connected).length >= 2;
   if (isHost) {
     hostPanel.style.display = 'block';
     startBtn.style.display  = 'flex';
+    startBtn.disabled       = !ready;
     waitMsg.style.display   = 'none';
+    if (hint) hint.textContent = ready ? '' : 'ต้องมีผู้เล่นอย่างน้อย 2 คนจึงจะเริ่มได้';
   } else {
     hostPanel.style.display = 'none';
     startBtn.style.display  = 'none';
     waitMsg.style.display   = 'block';
+    if (hint) hint.textContent = '';
   }
+}
+
+// คัดลอกรหัสห้อง — clipboard API ใช้ไม่ได้ใน http ธรรมดา/บางเบราว์เซอร์ จึงมีทางสำรอง
+function copyRoomCode() {
+  const code = document.getElementById('room-code-big').textContent.trim();
+  const done = (ok) => {
+    const b = document.getElementById('btn-copy-code'), l = document.getElementById('copy-label');
+    if (!ok) { showToast('คัดลอกไม่ได้ — จดรหัส ' + code); return; }
+    if (b && l) { b.classList.add('done'); l.textContent = 'คัดลอกแล้ว ✓'; clearTimeout(copyRoomCode._t); copyRoomCode._t = setTimeout(() => { b.classList.remove('done'); l.textContent = 'คัดลอกรหัส'; }, 1600); }
+  };
+  const fallback = () => {
+    try {
+      const t = document.createElement('textarea'); t.value = code; t.setAttribute('readonly', ''); t.style.cssText = 'position:fixed;left:-9999px;top:0;';
+      document.body.appendChild(t); t.select(); const ok = document.execCommand('copy'); t.remove(); done(ok);
+    } catch (e) { done(false); }
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(code).then(() => done(true), fallback);
+  else fallback();
 }
 
 // ── Card Filter ──
@@ -1112,17 +1252,13 @@ document.getElementById('btn-create-room').addEventListener('click', () => {
   socket.emit('create_room', { name: myName, cfg: roomCfg }, res => {
     if (!res?.ok) return showToast(res?.msg || 'เกิดข้อผิดพลาด');
     mySlot = res.slot; isHost = true; myHand = [];
+    if (res.token) saveSession({ code: res.code, token: res.token });
     document.getElementById('online-screen').classList.remove('active');
-    showScreen('room-screen');
-    setupRoomPills();
-    renderCardFilter();
+    enterLobby();
   });
 });
 
-document.getElementById('btn-join-room').addEventListener('click', () => {
-  const row = document.getElementById('join-code-row');
-  row.style.display = row.style.display === 'none' ? 'block' : 'none';
-});
+// แท็บ สร้างห้อง / เข้าห้อง: index.html (setOnlineTab) เป็นคนสลับ
 
 document.getElementById('btn-confirm-join').addEventListener('click', () => {
   myName = document.getElementById('online-name').value.trim() || 'ผู้เล่น';
@@ -1132,15 +1268,14 @@ document.getElementById('btn-confirm-join').addEventListener('click', () => {
   socket.emit('join_room', { code, name: myName }, res => {
     if (!res?.ok) return showToast(res?.msg || 'เข้าไม่ได้');
     mySlot = res.slot; isHost = false; myHand = [];
+    if (res.token) saveSession({ code: res.code, token: res.token });
     document.getElementById('online-screen').classList.remove('active');
-    showScreen('room-screen');
+    enterLobby();
   });
 });
 
-document.getElementById('room-code-big').addEventListener('click', () => {
-  const code = document.getElementById('room-code-big').textContent;
-  navigator.clipboard?.writeText(code).then(() => showToast('📋 คัดลอกรหัสแล้ว!'));
-});
+document.getElementById('room-code-big').addEventListener('click', copyRoomCode);
+document.getElementById('btn-copy-code').addEventListener('click', copyRoomCode);
 
 document.getElementById('btn-start-online').addEventListener('click', () => {
   if (!isHost) return showToast('ไม่ใช่ host');
@@ -1150,6 +1285,7 @@ document.getElementById('btn-start-online').addEventListener('click', () => {
 document.getElementById('btn-leave-room').addEventListener('click', () => {
   clearAllTimers(); closeGroupPickOverlay();
   socket?.emit('leave_room');
+  clearSession();
   onlineMode = false; mySlot = -1; isHost = false; currentRoom = null; myHand = [];
   STATE._dead = true;
   document.getElementById('game-screen').style.display = 'none';
@@ -1168,6 +1304,7 @@ document.getElementById('winner-menu').addEventListener('click', () => {
   if (!onlineMode) return;
   clearAllTimers(); closeGroupPickOverlay();
   socket?.emit('leave_room');
+  clearSession();
   onlineMode = false; mySlot = -1; isHost = false; myHand = [];
   STATE._dead = true;
   document.getElementById('game-screen').style.display = 'none';
@@ -1176,6 +1313,9 @@ document.getElementById('winner-menu').addEventListener('click', () => {
 }, true);
 
 // renderHandBar handled in index.html directly
+
+// เปิดหน้ามาแล้วมีที่นั่งค้างอยู่ (รีเฟรช / ปิดแท็บแล้วเปิดใหม่): ต่อ socket แล้วลองกลับเข้าห้องเดิมเอง
+if (typeof io !== 'undefined' && storedSession()) initSocket();
 
 window._onlineCellClick    = onlineCellClick;
 window.openCardFilter      = openCardFilter;
