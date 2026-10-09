@@ -244,6 +244,8 @@ function cardVfxMs(cardId, vfxData) {
   const v = vfxData || {};
   return (v.dur || v.novaDur || CARD_VFX_MS[cardId] || 500) + (cardId === 'l3' ? (v.maxDist || 0) * 55 + 900 : 0);
 }
+// Rewind: หยุดภาพ 180ms → ย้อนทีละช่อง (70ms ต่อช่อง, 360–820ms) → เล่นต่อ 360ms · ย้อนช่องเดียว ~0.9 วิ, ลูกโซ่ใหญ่ไม่เกิน ~1.4 วิ
+function rewindVfxMs(nChanged) { return 180 + Math.max(360, Math.min(820, (nChanged || 0) * 70)) + 360; }
 // เวลาต่อ wave ของลูกโซ่ n wave: ปกติ 520ms แต่ทั้งลูกโซ่ต้องจบใน CHAIN_CAP_MS
 function waveStepMs(n) { return Math.min(FX_TIMING.WAVE_MS, FX_TIMING.CHAIN_CAP_MS / Math.max(1, n)); }
 // เวลารวมที่ client ใช้เล่นเอฟเฟกต์ของ update หนึ่งก้อน
@@ -741,7 +743,7 @@ function applyCard(state, playerIdx, cardDef, targets) {
     case 'r5': { const moves=[]; const all=[]; for(let ro=0;ro<rows;ro++) for(let co=0;co<cols;co++) if(cells[ro][co].count>0) all.push([ro,co]); all.filter(()=>rnd()<.2).forEach(([ro,co])=>{const nbs2=neighbors(ro,co,rows,cols).filter(([a,b])=>!isVoidCell(state,a,b));if(nbs2.length&&cells[ro][co].count>0){const[nr,nc]=nbs2[Math.floor(rnd()*nbs2.length)];const ow=cells[ro][co].owner;cells[ro][co].count--;if(!cells[ro][co].count)cells[ro][co].owner=-1;cells[nr][nc].count++;cells[nr][nc].owner=ow;moves.push({from:[ro,co],to:[nr,nc]});}}); vfxData={moves};resultText='Tornado!'; break; }
     case 'r6': { const shAll=[]; for(let ro=0;ro<rows;ro++) for(let co=0;co<cols;co++) if(cells[ro][co].owner===cur){state.shielded[ro][co]=1;state.shieldOwner[ro][co]=cur;shAll.push([ro,co]);} vfxData={shielded:shAll};resultText='Reflect!'; break; }
     case 'r7': { if(!state.voidCells) state.voidCells={}; if(!state.voidSnapshot) state.voidSnapshot={}; state.voidCells[`${r},${c}`]=2; (state.voidOwner || (state.voidOwner = {}))[`${r},${c}`]=cur; state.voidSnapshot[`${r},${c}`]={count:cells[r][c].count,owner:cells[r][c].owner}; cells[r][c].count=0; cells[r][c].owner=-1; resultText='Void!'; break; }
-    case 'r8': { vfxData = { diff: restoreSnapshot(state) || [] }; resultText = 'Rewind!'; break; }
+    case 'r8': { const diff = restoreSnapshot(state) || []; vfxData = { diff, dur: rewindVfxMs(diff.length) }; resultText = 'Rewind!'; break; }
     case 'e1': { // Meteor: ระเบิด 2 รอบ — เติมเต็ม → ระเบิดจนนิ่ง → เติมช่องเดิมเต็มอีกครั้ง → ระเบิดอีกรอบ (เหมือนโหมดออฟไลน์)
       cells[r][c].count = Math.max(cells[r][c].count, cells[r][c].cap); cells[r][c].owner = cur;
       runExplosions(state);
@@ -791,6 +793,6 @@ return {
     processExplosionsSync, processExplosionsWithWaves, checkEliminations, checkWin,
     nextTurn, tickTimeBombs, draw3UniqueCards, drawRandomCard, neighbors, rebirthUsable,
     validateTargets, takeSnapshot, restoreSnapshot, explodeWave, tickEffects, drawPickChoices, cloneSim, countWaves,
-    FX_MAX_WAVES, FX_TIMING, CARD_VFX_MS, cardVfxMs, waveStepMs, animMs,
+    FX_MAX_WAVES, FX_TIMING, CARD_VFX_MS, cardVfxMs, rewindVfxMs, waveStepMs, animMs,
   };
 });

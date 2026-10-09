@@ -495,6 +495,23 @@ body{font-family:'Nunito','Noto Sans Thai',sans-serif;background:var(--bg);min-h
 .cell[data-fx~="burst"]::before{box-shadow:none;background:#fff;animation:cellFlash .48s ease-out both;}
 @keyframes cellFlash{0%{opacity:0;}16%{opacity:.92;}100%{opacity:0;}}
 
+/* Reflect: แผ่นกระจกฟาดลงบนช่อง — ช่องเด้งขึ้นแล้วกระแทกลง + ชั้นแสง ::before เป็นแผ่นกระจก · mir0…mir5 = จังหวะไล่ตามแนวทแยง
+   mip0…mip5 = แผ่นกระจกอย่างเดียว ไม่เด้ง (ใช้กับช่องส่วนใหญ่เมื่อมีช่องเกิน 24 ช่อง) */
+.cell[data-fx*="mir"]{animation:mirSlam .36s cubic-bezier(.3,1.3,.5,1) backwards;z-index:5;}
+.cell[data-fx*="mir"]::before,.cell[data-fx*="mip"]::before{box-shadow:inset 0 0 0 2px #fff;background:linear-gradient(135deg,#fff 0%,#d6f4ff 22%,#8fc6ee 46%,#f4fdff 54%,#9fd0f2 78%,#fff 100%);animation:mirPlate .52s ease-out both;}
+.cell[data-fx~="mir1"],.cell[data-fx~="mir1"]::before,.cell[data-fx~="mip1"]::before{animation-delay:28ms;}
+.cell[data-fx~="mir2"],.cell[data-fx~="mir2"]::before,.cell[data-fx~="mip2"]::before{animation-delay:56ms;}
+.cell[data-fx~="mir3"],.cell[data-fx~="mir3"]::before,.cell[data-fx~="mip3"]::before{animation-delay:84ms;}
+.cell[data-fx~="mir4"],.cell[data-fx~="mir4"]::before,.cell[data-fx~="mip4"]::before{animation-delay:112ms;}
+.cell[data-fx~="mir5"],.cell[data-fx~="mir5"]::before,.cell[data-fx~="mip5"]::before{animation-delay:140ms;}
+@keyframes mirSlam{0%{transform:scale(1);}20%{transform:scale(1.34) rotate(-8deg);}46%{transform:scale(.86) rotate(2deg);}72%{transform:scale(1.04);}100%{transform:scale(1);}}
+@keyframes mirPlate{0%{opacity:0;}20%{opacity:1;}46%{opacity:.9;}100%{opacity:0;}}
+/* Rewind: ช่องที่ย้อนกลับ — หดแล้วเด้งคืน + แสงวาบ + ลูกบอลเด้งกลับเข้าที่ */
+.cell[data-fx~="rw"]{animation:rwPop .32s cubic-bezier(.3,1.5,.5,1);z-index:4;}
+@keyframes rwPop{0%{transform:scale(1);}30%{transform:scale(.7) rotate(-7deg);}100%{transform:scale(1);}}
+.cell[data-fx~="rw"]::before{box-shadow:none;background:#dfe9ff;animation:nbFlash .32s ease-out both;}
+.cell[data-fx~="rw"] .orb{animation:orbPop .3s cubic-bezier(.3,1.8,.5,1) both;}
+
 /* ── เอฟเฟกต์เดิมที่ animate filter:blur → ตัดออกให้ลื่น ── */
 @keyframes cellEmojiPop{0%{opacity:0;transform:translate(-50%,-50%) scale(0.1);}20%{opacity:1;transform:translate(-50%,-50%) scale(1.5);}50%{transform:translate(-50%,-80%) scale(1.1);}80%{opacity:1;transform:translate(-50%,-130%) scale(1.0);}100%{opacity:0;transform:translate(-50%,-170%) scale(0.6);}}
 @keyframes singularityPulse{0%{transform:translate(-50%,-50%) scale(0.1);opacity:0;}25%{opacity:1;transform:translate(-50%,-50%) scale(1.8);}60%{transform:translate(-50%,-50%) scale(3.5);opacity:0.9;}100%{transform:translate(-50%,-50%) scale(0.2);opacity:0;}}
@@ -507,6 +524,12 @@ body{font-family:'Nunito','Noto Sans Thai',sans-serif;background:var(--bg);min-h
 #fx-turnframe{position:absolute;inset:-5px;border-radius:21px;pointer-events:none;border:3px solid var(--turn);box-shadow:0 0 28px var(--turn),inset 0 0 26px -8px var(--turn);opacity:.5;animation:turnBreath 2.2s ease-in-out infinite alternate;}
 @keyframes turnBreath{from{opacity:.3;}to{opacity:.85;}}
 #fx-turnpop{position:absolute;inset:-5px;border-radius:21px;pointer-events:none;border:4px solid var(--turn);box-shadow:0 0 34px var(--turn);opacity:0;}
+/* ชั้นที่ตัดขอบตามกระดาน: fx-sheen = แสงกวาดของ Reflect · fx-tape = เส้นสแกน + แถบแสงวิ่งขึ้นของ Rewind */
+#fx-sheen,#fx-tape{position:absolute;inset:0;border-radius:inherit;overflow:hidden;pointer-events:none;opacity:0;z-index:7;}
+#fx-sheen i{position:absolute;top:-30%;left:0;width:26%;height:160%;background:linear-gradient(90deg,transparent,rgba(170,232,255,.6) 28%,#fff 50%,rgba(170,232,255,.6) 72%,transparent);will-change:transform;}
+#fx-tape{background:repeating-linear-gradient(0deg,rgba(255,255,255,.1) 0 1px,transparent 1px 4px),rgba(96,126,220,.2);}
+#fx-tape b{position:absolute;left:0;bottom:0;width:100%;height:5px;background:linear-gradient(90deg,#fff,#9cc4ff);box-shadow:0 0 10px #9cc4ff;transform-origin:0 50%;transform:scaleX(0);will-change:transform;}
+#fx-tape i{position:absolute;left:0;top:0;width:100%;height:13%;background:linear-gradient(180deg,transparent,rgba(255,255,255,.5) 45%,rgba(190,215,255,.3) 60%,transparent);will-change:transform;transform:translateY(-120%);}
 #game-screen{--turn:#ffffff;}
 #game-screen::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:-1;background:radial-gradient(120% 70% at 50% 108%,var(--turn) 0%,transparent 60%);opacity:.2;}
 .fx-chain{font-family:'Fredoka One','Mitr',cursive;font-weight:900;letter-spacing:-1px;text-align:center;line-height:.9;-webkit-text-stroke:2px rgba(0,0,0,.28);paint-order:stroke fill;}
@@ -1475,7 +1498,7 @@ const FX=(()=>{
   }
   function boardEls(){
     const w=document.getElementById('grid-wrap');if(!w)return null;
-    if(!document.getElementById('fx-boardflash'))['fx-boardflash','fx-turnframe','fx-turnpop'].forEach(id=>{const d=document.createElement('div');d.id=id;w.appendChild(d);});
+    if(!document.getElementById('fx-boardflash'))[['fx-boardflash',''],['fx-turnframe',''],['fx-turnpop',''],['fx-sheen','<i></i>'],['fx-tape','<i></i><i></i><b></b>']].forEach(([id,html])=>{const d=document.createElement('div');d.id=id;d.innerHTML=html;w.appendChild(d);});
     return w;
   }
   function chainText(d,owner,g){
@@ -1710,6 +1733,121 @@ const FX=(()=>{
       const n=t===2?16:8;
       for(let i=0;i<n;i++){const ox=(Math.random()-.5)*cs*1.4,sz=Math.round(3+Math.random()*4);
         dot(sz,i%2?'#ffffff':'#7fffd4',[{transform:T(p.x+ox,p.y+cs*.3,1),opacity:0},{transform:T(p.x+ox*.8,p.y-cs*.6,1),opacity:1,offset:.25},{transform:T(p.x+ox*.4,p.y-cs*(2.2+Math.random()*2.2),.3),opacity:0}],{duration:i%2?860:1080,delay:at+Math.floor(i/4)*90,easing:'ease-out'},1,true);}
+    },
+    // Reflect: แผ่นกระจกฟาดลงทุกช่องของผู้ใช้เกือบพร้อมกัน (ไล่ตามแนวทแยงใน 140ms) + แสงกวาดทั้งกระดาน + กระแทก
+    // เวลารวมคงที่ ~0.68 วิ ไม่ขึ้นกับจำนวนช่อง (ของเดิมไล่โล่ทีละช่อง ช่องละ 60ms — 40 ช่อง = 2.4 วิ)
+    reflect(cells,owner){
+      const g=G();if(!g||!cells||!cells.length)return;
+      const t=tier(),col=PC(owner),K=6,n=cells.length;
+      let lo=Infinity,hi=-Infinity,sx=0,sy=0;
+      const ps=cells.map(([r,c])=>{const p=center(r,c),d=p.x+p.y;if(d<lo)lo=d;if(d>hi)hi=d;sx+=p.x;sy+=p.y;return{r,c,p,d};});
+      // ช่องเยอะ: ให้ "เด้งกระแทก" แค่ตัวอย่าง ~18 ช่อง ที่เหลือมีแผ่นกระจกวาบอย่างเดียว — transform ของช่องต้องสร้าง layer ใหม่ทีละช่อง
+      const slam=Array.from({length:K},()=>[]),plate=Array.from({length:K},()=>[]),every=n>24?Math.ceil(n/18):1;
+      ps.forEach((o,i)=>{const el=cell(o.r,o.c);if(el)(i%every?plate:slam)[hi>lo?Math.min(K-1,Math.floor((o.d-lo)/(hi-lo)*K)):0].push(el);});
+      slam.forEach((els,k)=>tok(els,'mir'+k,680));plate.forEach((els,k)=>tok(els,'mip'+k,680));
+      hold(680);SFX.mirror();
+      const w=boardEls();if(!w||!canAnim)return;
+      const bf=document.getElementById('fx-boardflash'),cx=sx/n,cy=sy/n;
+      const boardFlash=(peak,dur)=>{bf.style.background=`radial-gradient(circle at ${((cx-g.wx)/g.ww*100).toFixed(1)}% ${((cy-g.wy)/g.wh*100).toFixed(1)}%,rgba(255,255,255,.95) 0%,rgba(159,220,255,.55) 34%,transparent 74%)`;bf.animate([{opacity:peak},{opacity:0}],{duration:dur,easing:'cubic-bezier(.1,.7,.3,1)'});};
+      if(t===0){boardFlash(.16,420);return;}
+      // แสงกวาดเฉียงข้ามกระดาน (ตัดขอบตามกระดาน)
+      const sh=document.getElementById('fx-sheen');
+      sh.animate([{opacity:1},{opacity:1,offset:.8},{opacity:0}],{duration:300});
+      sh.firstElementChild.animate([{transform:'translateX(-140%) skewX(-18deg)'},{transform:'translateX(430%) skewX(-18deg)'}],{duration:280,easing:'cubic-bezier(.35,0,.25,1)'});
+      // แผ่นกระจกกระแทกลง: แสงวาบ + คลื่นกระแทก 2 วง + กรอบกระดานเด้ง + เขย่า + เศษแก้ว
+      setTimeout(()=>{
+        boardFlash(.5,380);
+        const big=Math.max(g.ww,g.wh)/(g.cs*2)*1.25;
+        ring(cx,cy,g.cs*2,'#ffffff',big,420,0,2,4);ring(cx,cy,g.cs*2,col,big*.8,520,70,2,3);
+        document.getElementById('fx-turnpop').animate([{transform:'scale(1.07)',opacity:1},{transform:'scale(1)',opacity:0}],{duration:420,easing:'cubic-bezier(.2,.8,.3,1)'});
+        shake(3+Math.min(4,n*.2),230);
+        const pick=Math.min(n,t===2?12:5),per=Math.max(2,Math.floor((t===2?48:16)/pick)),step=Math.max(1,Math.floor(n/pick));
+        for(let i=0,k=0;i<n&&k<pick;i+=step,k++)sparks(ps[i].p.x,ps[i].p.y,per,'#bfe9ff',g.cs*1.9,{white:true,dur:380,size:4});
+        // ประกายแสงบนแผ่นกระจก (สะท้อนแวบเดียว)
+        const fs=Math.round(g.cs*.62),gl=Math.min(n,t===2?6:3),gs=Math.max(1,Math.floor(n/gl));
+        for(let i=Math.floor(gs/2),k=0;i<n&&k<gl;i+=gs,k++)text(ps[i].p.x+g.cs*.2,ps[i].p.y-g.cs*.2,'✦',`font-size:${fs}px;color:#fff;text-shadow:0 0 ${Math.round(fs*.4)}px #9fe4ff;`,[
+          {opacity:0,transform:'translate(-50%,-50%) scale(.2) rotate(-30deg)'},{opacity:1,transform:'translate(-50%,-50%) scale(1.25) rotate(15deg)',offset:.4},{opacity:0,transform:'translate(-50%,-50%) scale(.4) rotate(60deg)'}],{duration:260,delay:110+k%3*40,easing:'ease-out'},1);
+      },190);
+    },
+    // Rewind: กรอเทปย้อนกลับ — หยุดภาพที่สภาพ "ก่อนย้อน" → เส้นสแกน + แถบแสงวิ่งขึ้น → ช่องที่เปลี่ยนย้อนกลับทีละจังหวะ
+    // จากช่องที่ไกลจุดเริ่มที่สุดไล่เข้าหาจุดเริ่ม (ลูกโซ่เดินถอยหลัง) ลูกบอลวิ่งกลับทางที่มันมา → "เล่นต่อ"
+    // diff = [{r,c,fromCount,fromOwner,toCount,toOwner}] (from = ก่อนย้อน, to = หลังย้อน) · ms = เวลารวม (CRLogic.rewindVfxMs) · คืน promise ที่จบพร้อมเอฟเฟกต์
+    rewind(diff,ms){
+      diff=diff||[];
+      const n=diff.length,g=G(),gid=STATE._gameId,total=Math.max(720,ms||1300),IN=180,OUT=360,A=total-OUT,sweep=A-IN;
+      const live=()=>STATE._gameId===gid&&!STATE._dead&&!!STATE.cells;
+      const settle=()=>{if(live())diff.forEach(d=>paintCellAs(d.r,d.c,d.toCount,d.toOwner));};
+      return new Promise(res=>{
+        if(!g||!canAnim){settle();res();return;}
+        // ออฟไลน์ state ย้อนไปแล้ว → วาดสภาพก่อนย้อนกลับมาก่อน (ออนไลน์กระดานยังเป็นสภาพนั้นอยู่ จึงไม่มีอะไรเปลี่ยน)
+        diff.forEach(d=>paintCellAs(d.r,d.c,d.fromCount,d.fromOwner));
+        hold(total+40);SFX.rewind(A);
+        const t=tier(),w=boardEls();
+        let cx=g.wx+g.ww/2,cy=g.wy+g.wh/2;
+        const items=diff.map(d=>({d,p:center(d.r,d.c),dist:0}));
+        if(n){cx=0;cy=0;items.forEach(o=>{cx+=o.p.x;cy+=o.p.y;});cx/=n;cy/=n;}
+        items.forEach(o=>{o.dist=Math.hypot(o.p.x-cx,o.p.y-cy);});
+        items.sort((a,b)=>b.dist-a.dist);
+        const K=Math.max(1,Math.min(n,t===0?3:9));
+        let ghosts=t===2?36:t===1?14:0;
+        for(let k=0;k<K&&n;k++){
+          const part=items.slice(Math.floor(k*n/K),Math.floor((k+1)*n/K));
+          setTimeout(()=>{
+            if(!live())return;
+            const els=[];
+            part.forEach(({d,p,dist})=>{
+              paintCellAs(d.r,d.c,d.toCount,d.toOwner);
+              const el=cell(d.r,d.c);if(el)els.push(el);
+              // ลูกบอลที่มาอยู่ตรงนี้เพราะ action ที่ถูกย้อน: วิ่งกลับไปทางจุดเริ่ม
+              if(ghosts>0&&dist>1&&d.fromCount>0&&(d.fromOwner!==d.toOwner||d.fromCount>d.toCount)){
+                ghosts--;const s=Math.min(dist,g.step*1.4),ux=(cx-p.x)/dist*s,uy=(cy-p.y)/dist*s,sz=Math.round(Math.max(7,g.cs*.3)),col=mix(PC(d.fromOwner),'#ffffff',.35);
+                const fly=[{transform:T(p.x,p.y,1.1),opacity:1},{transform:T(p.x+ux*.35,p.y+uy*.35,1),opacity:1,offset:.45},{transform:T(p.x+ux,p.y+uy,.35),opacity:0}];
+                dot(sz,col,fly,{duration:240,easing:'cubic-bezier(.6,0,.9,.4)'},1,t===2);
+                if(t===2)dot(Math.round(sz*.6),col,fly,{duration:240,delay:45,easing:'cubic-bezier(.6,0,.9,.4)'},0,false);
+              }
+            });
+            tok(els,'rw',340);
+          },IN+Math.round(k*sweep/K));
+        }
+        vignette('rgba(110,140,255,.4)',total,t===0?.5:1);
+        if(w){
+          const tape=document.getElementById('fx-tape');
+          tape.animate([{opacity:0},{opacity:1,offset:Math.min(.3,110/total)},{opacity:1,offset:A/total},{opacity:0}],{duration:total,easing:'linear'});
+          if(t>0){
+            // แถบแสงวิ่ง "ขึ้น" = ภาพกำลังถอยหลัง · กระดานสั่นซ้ายขวาเล็กน้อยแบบภาพเทป
+            const it=Math.max(1,Math.round(A/460)),band=[{transform:'translateY(780%)'},{transform:'translateY(-120%)'}];
+            tape.children[0].animate(band,{duration:A/it,iterations:it,easing:'linear'});
+            tape.children[1].animate(band,{duration:A/it,iterations:it,iterationStart:.5,easing:'linear'});
+            tape.children[2].animate([{transform:'scaleX(1)'},{transform:'scaleX(1)',offset:IN/A},{transform:'scaleX(0)'}],{duration:A,easing:'linear'}); // แถบเวลาด้านล่างหดกลับไปทางซ้าย
+            if(S.shake>0){const a=1.6*S.shake,fr=[];for(let i=0;i<=12;i++)fr.push({transform:`translateX(${(i===0||i===12?0:i%2?a:-a).toFixed(1)}px)`});w.animate(fr,{duration:sweep,delay:IN,easing:'steps(12,end)'});geo=null;}
+          }
+        }
+        // ป้ายแบบเครื่องเล่นเทป: ◄◄ REW กะพริบระหว่างย้อน → ► PLAY ตอนเล่นต่อ
+        const fs=Math.round(Math.max(12,Math.min(20,g.ww*.045))),Z='translate(0,0)';
+        const chip=bg=>`font:900 ${fs}px/1 ui-monospace,Menlo,Consolas,monospace;letter-spacing:.1em;color:#fff;padding:${Math.round(fs*.42)}px ${Math.round(fs*.62)}px;border-radius:5px;background:${bg};border:1.5px solid rgba(255,255,255,.78);text-shadow:0 0 8px rgba(255,255,255,.7);`;
+        const fr=[{opacity:0,transform:Z},{opacity:1,transform:Z,offset:.08}],bl=Math.max(1,Math.round(A/250));
+        for(let i=1;i<=bl;i++)fr.push({opacity:i%2?.4:1,transform:Z,offset:.08+.84*i/bl});
+        fr.push({opacity:0,transform:Z});
+        text(g.wx+10,g.wy+10,'◄◄ REW',chip('rgba(8,12,30,.84)'),fr,{duration:A,easing:'linear'},2);
+        text(g.wx+10,g.wy+10,'► PLAY',chip('rgba(10,60,34,.88)'),[{opacity:0,transform:Z},{opacity:1,transform:Z,offset:.12},{opacity:1,transform:Z,offset:.72},{opacity:0,transform:Z}],{duration:OUT,delay:A,easing:'linear'},2);
+        if(t>0){
+          // ◄◄ ใหญ่กลางกระดาน ไหลไปทางซ้ายเป็นจังหวะ
+          const big=Math.round(Math.min(g.ww,g.wh)*.3);
+          text(g.wx+g.ww/2,g.wy+g.wh/2,'◄◄',`font:900 ${big}px/1 ui-monospace,Menlo,Consolas,monospace;letter-spacing:-.12em;color:rgba(255,255,255,.95);text-shadow:0 0 ${Math.round(big*.2)}px #7da2ff;`,[
+            {opacity:0,transform:'translate(-36%,-50%) scale(.8)'},{opacity:.6,transform:'translate(-44%,-50%) scale(1)',offset:.14},{opacity:.22,transform:'translate(-50%,-50%) scale(1)',offset:.42},
+            {opacity:.55,transform:'translate(-56%,-50%) scale(1)',offset:.6},{opacity:.2,transform:'translate(-62%,-50%) scale(1)',offset:.86},{opacity:0,transform:'translate(-66%,-50%) scale(.96)'}],{duration:A,easing:'linear'},1);
+          // วงแหวนหุบเข้าหาจุดเริ่ม จบพร้อมช่องสุดท้าย
+          const el=take(1);
+          if(el){const sz=Math.round(g.cs*2);el.style.cssText=`width:${sz}px;height:${sz}px;margin:${-sz/2}px 0 0 ${-sz/2}px;border-radius:50%;border:3px solid #cfe0ff;`;
+            play(el,[{transform:T(cx,cy,Math.max(2.6,Math.max(g.ww,g.wh)/sz)),opacity:0},{transform:T(cx,cy,1.5),opacity:.85,offset:.55},{transform:T(cx,cy,.2),opacity:0}],{duration:Math.min(420,sweep),delay:A-Math.min(420,sweep),easing:'cubic-bezier(.5,0,.9,.5)'});}
+        }
+        setTimeout(()=>{
+          settle();if(!live())return;
+          flash('#cfe0ff',240,.2);
+          if(t>0)ring(cx,cy,g.cs,'#ffffff',2.4,320,0,2,3);
+        },A);
+        setTimeout(res,total);
+      });
     },
   };
 
@@ -2142,6 +2280,24 @@ const SFX=(()=>{
     tone({freq:550,freq2:660,type:'sine',dur:.14,vol:.13,decay:.18,attack:.01,at:.07,rev:.35});
     noise(.05,.1,1500,2,.07);
   }
+  // Reflect: "ชิ้ง" ตอนแสงกวาด → แผ่นกระจกกระแทกลง (0.19 วิ) → กังวานแก้วสั้นๆ
+  function mirror(){
+    noise({vol:.16,dur:.17,freq:5200,freq2:11000,q:1.4,type:'bandpass',prio:2});
+    tone({freq:1760,freq2:3520,type:'triangle',dur:.14,vol:.09,decay:.15,attack:.003,raw:true});
+    tone({freq:110,freq2:46,type:'sine',dur:.2,vol:.42,decay:.24,at:.17,raw:true,prio:2});
+    noise({vol:.2,dur:.09,freq:3800,q:.8,type:'highpass',at:.17,prio:2});
+    chord([2093,2637,3136],{type:'sine',vol:.055,decay:.42,at:.18,rev:.6,raw:true,stagger:12});
+  }
+  // Rewind: เทปกรอกลับ (เสียงหวีดไต่ขึ้น + สั่นถี่) ยาวเท่าช่วงที่ภาพย้อน → "แก๊ก" → ติ๊ดสองโน้ตตอนเล่นต่อ
+  function rewind(ms){
+    const d=Math.max(.3,(ms||900)/1000);
+    tone({freq:300,freq2:1500,type:'sawtooth',dur:d,vol:.07,attack:.03,hold:d-.09,decay:.06,lp:2600,vibrato:24,vibratoDepth:60,raw:true,prio:2});
+    tone({freq:600,freq2:3000,type:'triangle',dur:d,vol:.035,attack:.03,hold:d-.09,decay:.06,raw:true});
+    noise({vol:.07,dur:d,freq:1800,freq2:6500,q:1.2,type:'bandpass'});
+    noise({vol:.2,dur:.05,freq:900,q:.7,type:'lowpass',at:d+.01,prio:2});
+    tone({freq:160,freq2:70,type:'sine',dur:.1,vol:.3,decay:.12,at:d+.01,raw:true,prio:2});
+    seq([[660,0],[990,70]],{type:'triangle',vol:.1,decay:.12,at:d+.1,rev:.3});
+  }
   function timeBomb(){
     tone({freq:1047,type:'square',vol:.09,decay:.05,attack:.003});
     tone({freq:1319,type:'square',vol:.08,decay:.04,attack:.003,at:.12});
@@ -2168,7 +2324,6 @@ const SFX=(()=>{
       r5:()=>seq([[660,0],[560,75],[460,155],[360,245]],{type:'sine',vol:.12,decay:.14}),
       r2:()=>{seq([[600,0],[500,45],[400,95],[300,155],[200,230],[120,320]],{type:'sawtooth',vol:.12,decay:.16,rev:.4});tone({freq:140,freq2:30,type:'sine',dur:.7,vol:.34,decay:.75,raw:true});},
       r3:()=>frozen(),
-      r8:()=>seq([[880,0],[660,65],[440,135],[330,215],[220,310]],{type:'triangle',vol:.11,decay:.11}),
       ep4:()=>{tone({freq:440,freq2:220,type:'sine',vol:.11,decay:.22});tone({freq:220,freq2:110,type:'sine',vol:.09,decay:.28,at:.18});},
       u5:()=>{tone({freq:1047,type:'square',vol:.11,decay:.05,attack:.003});tone({freq:1319,type:'square',vol:.12,decay:.06,attack:.003,at:.13});},
       l2:()=>{noise({vol:.3,dur:1.2,freq:8000,freq2:120,q:.4,type:'lowpass',at:.05,rev:.8,prio:2});tone({freq:60,freq2:22,type:'sine',dur:1.1,vol:.5,decay:1.2,at:.05,raw:true,prio:2});},
@@ -2256,7 +2411,7 @@ const SFX=(()=>{
   }
   function debug(){const now=ac?ac.currentTime:0;return{state:ac?ac.state:'none',unlocked,voices:ac?ends.filter(t=>t>now).length:0,musicVoices:ac?endsM.filter(t=>t>now).length:0,I:+M.I.toFixed(2),target:+M.target.toFixed(2),tension:+M.tension.toFixed(2),scene:M.scene,music:M.on};}
 
-  return{place,firstPlace,critTick,explode,explodeWave,bigChain,card,cardCat,cardSpecial,reveal,pickCard,win,select,hover,turnChange,myTurn,tick,frozen,shield,timeBomb,
+  return{place,firstPlace,critTick,explode,explodeWave,bigChain,card,cardCat,cardSpecial,reveal,pickCard,win,select,hover,turnChange,myTurn,tick,frozen,shield,mirror,rewind,timeBomb,
     music,prefs:P,set,unlock,meter,debug,onChange(fn){listeners.push(fn);},
     get muted(){return P.mute||(!P.sfxOn&&!P.musicOn);}};
 })();
@@ -2877,6 +3032,15 @@ function updateCellDisplay(r,co){
   const el=FX.cell(r,co);
   if(el)paintCell(el,r,co,STATE._cellSize||40);
 }
+// วาดช่อง (r,c) ด้วยจำนวน/เจ้าของที่กำหนด แทนค่าใน STATE — สำหรับเอฟเฟกต์ที่ต้องโชว์กระดานคนละจังหวะกับ state (Rewind)
+// ผ่าน paintCell ตัวเดิม: cache ของช่องจึงตรงกับที่วาดจริง การวาดครั้งถัดไปจาก STATE ยังเทียบถูก
+function paintCellAs(r,c,count,owner){
+  const el=FX.cell(r,c),cell=STATE.cells&&STATE.cells[r]&&STATE.cells[r][c];
+  if(!el||!cell)return;
+  const k=cell.count,o=cell.owner;
+  cell.count=count;cell.owner=count>0?owner:-1;
+  try{paintCell(el,r,c,STATE._cellSize||40);}finally{cell.count=k;cell.owner=o;}
+}
 // ตำแหน่งของช่อง (r,c) ใน DOM ของ #grid — กระดานที่หมุนแนวตั้งเรียงลูกตาม column
 function cellIndex(r,c){return STATE._tr?c*STATE.size+r:r*(STATE.cols||STATE.size)+c;}
 // กระดานต้องพอดีจอเสมอ: ลดช่องไฟ 5→2px แล้วใช้ขนาดช่องที่ใหญ่สุดที่ยังไม่ล้น
@@ -3166,8 +3330,11 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
       await delay(600);
     }break;
 
-    // ── c8/u4/r6 Shield ──
-    case 'c8':case 'u4':case 'r6':{const cells=vfxData.shielded||[[r,c]];cells.forEach(([ro,co],i)=>{spawnCellEmoji(ro,co,'🛡️',{size:'1.8rem',delay:i*0.06});flashCell(ro,co,'#00ff88aa',i*60);});await delay(700);}break;
+    // ── r6 Reflect: แผ่นกระจกฟาดลงทุกช่องพร้อมกัน (FX.HL.reflect) ──
+    case 'r6':FX.HL.reflect(vfxData.shielded||[],playerIdx);await delay(650);break;
+
+    // ── c8/u4 Shield ──
+    case 'c8':case 'u4':{const cells=vfxData.shielded||[[r,c]];cells.forEach(([ro,co],i)=>{spawnCellEmoji(ro,co,'🛡️',{size:'1.8rem',delay:i*0.06});flashCell(ro,co,'#00ff88aa',i*60);});await delay(700);}break;
 
     // ── c9 Drain: ดูด ──
     case 'c9':{
@@ -3594,40 +3761,12 @@ async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
       await delay(400);
     }break;
     case 'r7':spawnCellEmoji(r,c,'⬛',{size:'2.5rem'});flashCell(r,c,'#000000aa');await delay(300);flashCell(r,c,'#111111bb');await delay(400);break;
-    case 'r8':{
-      const changed=vfxData.diff||[];
-      // ── icon กลางจอเสมอ ──
-      const rwEl=document.createElement('div');
-      rwEl.style.cssText=`position:fixed;left:50vw;top:50%;transform:translate(-50%,-50%);font-size:4rem;pointer-events:none;z-index:910;animation:popIn .3s cubic-bezier(.34,1.56,.64,1);`;
-      rwEl.textContent='⏮';document.body.appendChild(rwEl);
-      await delay(400);
-      // ── flash ช่องที่เปลี่ยน ──
-      changed.forEach(({r:ro,c:co,fromOwner},i)=>{
-        const col=fromOwner>=0?PLAYER_COLORS[fromOwner]+'bb':'#aaaaaa88';
-        flashCell(ro,co,col,i*35,400);
-        spawnCellEmoji(ro,co,'↩',{size:'1rem',delay:i*0.035,dur:0.5});
-      });
-      await delay(Math.max(400, changed.length*35+300));
-      // ── แสดงผลต่างทีละช่อง (cells ถูก restore ไปแล้ว ใช้ข้อมูลจาก diff) ──
-      const sorted=[...changed].sort((a,b)=>Math.abs(b.fromCount-b.toCount)-Math.abs(a.fromCount-a.toCount));
-      sorted.forEach(({r:ro,c:co,fromCount,toCount,toOwner},i)=>{
-        setTimeout(()=>{
-          updateCellDisplay(ro,co);
-          const d=fromCount-toCount;
-          if(d!==0){
-            const p2=getCellCenter(ro,co);
-            const lbl=document.createElement('div');
-            lbl.style.cssText=`position:fixed;left:${p2.x}px;top:${p2.y}px;font-family:'Fredoka One','Mitr',cursive;font-size:1rem;color:${d>0?'#ff9999':'#99ffbb'};font-weight:900;pointer-events:none;z-index:920;animation:vfxFloat .7s ease-out forwards;transform:translateX(-50%);text-shadow:0 0 8px currentColor;`;
-            lbl.textContent=d>0?`-${d}`:`+${Math.abs(d)}`;
-            document.body.appendChild(lbl);setTimeout(()=>lbl.remove(),700);
-          }
-          const nc=toOwner>=0?PLAYER_COLORS[toOwner]+'cc':'#ffffff33';
-          flashCell(ro,co,nc,0,300);
-        },i*60);
-      });
-      await delay(sorted.length*60+500);
-      rwEl.remove();
-    }break;
+    // ── r8 Rewind: กรอเทปย้อนกลับ (FX.HL.rewind) ──
+    case 'r8':
+      // ออฟไลน์: โค้ดที่เรียกเราจะวาดกระดานที่ย้อนแล้วทันทีหลังบรรทัดนี้ → ปล่อยให้มันวาดก่อน (microtask ถัดไป ยังไม่ทันขึ้นจอ) แล้วค่อยเริ่มจากสภาพก่อนย้อน
+      await null;
+      await FX.HL.rewind(vfxData.diff||[],CRLogic.cardVfxMs('r8',vfxData));
+      break;
     case 'sr1':spawnCellEmoji(r,c,'🪓',{size:'2rem'});flashCell(r,c,'#ff4400bb');await delay(500);break;
     case 'sr2':{
       const el2=document.createElement('div');el2.className='annihilate-vfx';
@@ -3881,7 +4020,7 @@ async function executeCardInner(cardDef,playerIdx,cardIdx,targets){
     case 'r7':{if(!STATE.voidCells)STATE.voidCells={};if(!STATE.voidSnapshot)STATE.voidSnapshot={};STATE.voidCells[`${r},${c}`]=2;(STATE.voidOwner||(STATE.voidOwner={}))[`${r},${c}`]=cur;STATE.voidSnapshot[`${r},${c}`]={count:STATE.cells[r][c].count,owner:STATE.cells[r][c].owner};STATE.cells[r][c].count=0;STATE.cells[r][c].owner=-1;resultText='Void!';}break;
     case 'r8':{ // Rewind: คืนกระดาน + ผู้เล่นที่ถูกคัดออก + เอฟเฟกต์ของกระดาน (shared/gameLogic.js)
     if(!STATE.rows)STATE.rows=STATE.size;
-    vfxData={diff:CRLogic.restoreSnapshot(STATE)||[]};resultText='Rewind!';}break;
+    {const diff=CRLogic.restoreSnapshot(STATE)||[];vfxData={diff,dur:CRLogic.rewindVfxMs(diff.length)};}resultText='Rewind!';}break;
     case 'sr1':{// Sever: เลือก 2 ช่อง ระเบิดออกไม่ได้ 4 เทิร์น
     if(!STATE.severed)STATE.severed={};
     if(!STATE.severedOwner)STATE.severedOwner={};
