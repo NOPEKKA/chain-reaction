@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "nodemon server/index.js",
-    "test": "node --test test/online.test.js test/firebase.test.js test/waves.test.js test/cards.test.js",
+    "test": "node --test test/online.test.js test/firebase.test.js test/waves.test.js test/cards.test.js test/bot.test.js",
+    "test:bot": "node --test test/bot.test.js",
     "test:fx": "node --test test/fx-timing.e2e.js"
   },
   "dependencies": {
