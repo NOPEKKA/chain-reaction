@@ -376,8 +376,13 @@ async function fxCard({ cardId, targets, playerIdx, vfxData }, job) {
   }
   if (fxBehind() || !window.spawnCardVfx) { await fxWait(350, job); return; } // งานค้างเยอะ: ย่อเหลือแค่ประกาศการ์ด
   const ms = cardVfxMs(cardId, vfxData);
+  // กระดาน "หลังผลของการ์ด ก่อนระเบิด" ([count, owner, ...]): fxBase ถ้ามีลูกโซ่ตามมา ไม่งั้นคือผลลัพธ์ของงานนี้
+  // เอฟเฟกต์เทียบกับกระดานบนจอ (ยังไม่ซิงก์) เพื่อเผยค่าใหม่ทีละช่องตามจังหวะของท่า
+  const st = job && job.room && job.room.state;
+  let after = st && st.fxBase;
+  if (!after && st && st.cells) { after = []; for (const row of st.cells) for (const ce of row) after.push(ce.count, ce.owner); }
   FX.hold(ms);
-  FX.track(spawnCardVfx(cardId, targets || {}, playerIdx, vfxData || {}).catch(() => {}));
+  FX.track(spawnCardVfx(cardId, targets || {}, playerIdx, Object.assign({}, vfxData, { _after: after || null })).catch(e => console.error('[vfx]', cardId, e)));
   await fxWait(ms + CARD_GAP_MS, job);
 }
 

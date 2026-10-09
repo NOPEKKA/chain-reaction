@@ -515,6 +515,72 @@ test('10 Reflect ออนไลน์: ทุกช่องของผู้�
   noErrors(g); g.P.close();
 });
 
+test('11 การ์ดทุกใบในโหมดออนไลน์: เอฟเฟกต์เล่นจบตามเวลาในตาราง กระดานบนจอตรงกับ server ไม่มีอะไรค้าง', { skip: SKIP, timeout: 900000 }, async () => {
+  const g = await game({ rows: 8, cols: 8, players: 3 });
+  await g.P.ev(`(() => { ${DOM_SIG}
+    const C = window.__cv = { last: null };
+    const _s = window.spawnCardVfx;
+    window.spawnCardVfx = function (id) { const rec = { id, start: performance.now(), end: 0 }; C.last = rec; const pr = _s.apply(this, arguments); pr.then(() => { rec.end = performance.now(); }); return pr; };
+  })()`);
+  // A (หน้าเว็บ) ซ้ายบน · B ขวา · C ล่าง — สามกลุ่มไม่ติดกัน
+  const layout = set => {
+    [[1, 1, 2], [1, 2, 1], [2, 1, 3], [2, 2, 2], [2, 3, 1], [3, 2, 2]].forEach(([r, c, n]) => set(r, c, n, 0));
+    [[1, 6, 2], [2, 6, 1], [3, 6, 2], [2, 5, 3]].forEach(([r, c, n]) => set(r, c, n, 1));
+    [[6, 1, 2], [6, 2, 1], [6, 3, 2], [5, 2, 1]].forEach(([r, c, n]) => set(r, c, n, 2));
+  };
+  const ids = logic.CARD_DEFS.filter(d => !d.offlineOnly).map(d => d.id);
+  const rows = [], bad = [];
+  for (const id of ids) {
+    const def = logic.CARD_DEFS.find(d => d.id === id), s = g.S();
+    // ล้างสิ่งที่การ์ดใบก่อนทิ้งไว้ (เอฟเฟกต์ค้าง, โควตา, ผลแพ้ชนะ)
+    Object.assign(s, { voidCells: {}, voidSnapshot: {}, voidOwner: {}, severed: {}, severedOwner: {}, pinned: {}, pinnedOwner: {}, pinnedBy: {}, catalyzed: {}, timeBombs: [], eclipse: 0, _snapshot: null, winner: -1 });
+    s.frozen = [0, 0, 0]; s.legendaryUsedBy = [0, 0, 0]; s.mythicalUsedBy = [false, false, false]; s.keyActive = [0, 0, 0];
+    s.shielded.forEach(r => r.fill(0)); s.shieldOwner.forEach(r => r.fill(-1));
+    g.room().phase = 'playing';
+    await g.board(layout);
+    let t = null;
+    if (id === 'l5') { // Rebirth: A ตายแล้ว ถือการ์ดอยู่
+      for (const row of s.cells) for (const ce of row) if (ce.owner === 0) { ce.count = 0; ce.owner = -1; }
+      s.alive = [1, 2]; s.moved = [false, true, true]; await g.sync(); t = { r: 1, c: 1 };
+    } else if (id === 'r8') { // Rewind: ต้องมี action ล่าสุดให้ย้อน
+      logic.takeSnapshot(s); s.cells[2][3].count = 3; s.cells[3][3].count = 2; s.cells[3][3].owner = 1; await g.sync();
+    }
+    await g.hand([id]);
+    if (!t && (def.needTarget || def.twoTarget)) {
+      const st = g.S();
+      outer: for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+        if (def.twoTarget) {
+          if (!logic.validateTargets(st, def, 0, { r, c }, { partial: true }).ok || !(st.cells[r][c].count > 0)) continue;
+          for (let r2 = 0; r2 < 8; r2++) for (let c2 = 0; c2 < 8; c2++) if (!(r2 === r && c2 === c) && logic.validateTargets(st, def, 0, { r, c, r2, c2 }).ok) { t = { r, c, r2, c2 }; break outer; }
+        } else if (logic.validateTargets(st, def, 0, { r, c }).ok && (!def.targetSelf || (st.cells[r][c].owner === 0 && st.cells[r][c].count === 2))) { t = { r, c }; break outer; }
+      }
+      assert.ok(t, `${id}: หาเป้าหมายที่ถูกกติกาไม่ได้ในกระดานทดสอบ`);
+    }
+    await g.P.ev(`window.__cv.last = null`);
+    if (t && t.r2 !== undefined) await g.act(`(() => { if (STATE.current !== 0 || targetingCard) return; selectedHandCard = { playerIdx: 0, cardIdx: 0, cardId: '${id}' }; targetData = {}; window._onlineCellClick(${t.r}, ${t.c}); window._onlineCellClick(${t.r2}, ${t.c2}); })()`);
+    else if (t) await g.cardAt(id, t.r, t.c);
+    else if (def.anyTarget && id === 'e4') await g.cardAt(id, 0, 2);
+    else await g.cardNow();
+    await until(() => g.P.ev(`!!(window.__cv.last && window.__cv.last.id === '${id}' && window.__cv.last.end)`), 9000, `${id}: เอฟเฟกต์จบ`);
+    const srvTurn = g.S().turnCount;
+    await until(() => g.P.ev(`STATE.turnCount === ${srvTurn} && !document.querySelector('.cell[data-fx]') && !(window._onlineFx && window._onlineFx().cur)`).catch(() => false), 12000, `${id}: หน้าซิงก์กับ server`, 100);
+    await sleep(200);
+    const m = await g.P.ev(`({ ms: Math.round(__cv.last.end - __cv.last.start), dom: __dom(), sig: __sig(), left: document.querySelectorAll('.cell[data-fx]').length, sprites: document.querySelectorAll('.fx-sprite').length,
+      styled: [...document.querySelectorAll('.cell')].filter(e => e.style.opacity).length, clip: [...document.querySelectorAll('#fx-clip i')].filter(e => getComputedStyle(e).opacity !== '0').length })`);
+    const want = id === 'r8' ? null : logic.cardVfxMs(id, {}), srv = sigOf(g.S()), why = [];
+    if (m.sig !== srv) why.push('state ของหน้า ≠ server');
+    // Eclipse ซ่อนจำนวนลูกของศัตรูโดยตั้งใจ · ช่องที่มีเกิน 4 ลูกวาดไม่ครบทุกลูก
+    if (id !== 'sr2' && !/\b([5-9]|\d\d):/.test(srv) && m.dom !== srv) why.push('กระดานที่วาด ≠ server');
+    if (want !== null && !['r2', 'r6'].includes(id) && Math.abs(m.ms - want) > 150) why.push(`เอฟเฟกต์ ${m.ms}ms ตาราง ${want}ms`);
+    if (m.left || m.sprites || m.styled || m.clip) why.push(`ค้าง: data-fx ${m.left}, sprite ${m.sprites}, style ${m.styled}, overlay ${m.clip}`);
+    rows.push(`${id}:${m.ms}`);
+    if (why.length) bad.push(`${id} ${def.name}: ${why.join(' · ')}`);
+  }
+  metrics['11 การ์ดทุกใบออนไลน์ (ms)'] = rows.join(' ');
+  assert.deepEqual(bad, [], 'การ์ดที่มีปัญหา');
+  noErrors(g); g.P.close();
+});
+
 test('7 โหมด Firebase (หน่วง 60–200ms): ชนะด้วยการ์ด — ทั้งโฮสต์และแขกเห็นลูกโซ่ครบก่อนหน้าผู้ชนะ', { skip: SKIP }, async () => {
   const memdb = fs.readFileSync(path.join(__dirname, 'support', 'memdb.js'), 'utf8');
   const chan = 'cr-fx-' + Date.now();

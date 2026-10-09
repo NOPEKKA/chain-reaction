@@ -130,6 +130,7 @@ chain-reaction/
 ├── client/
 │   ├── index.html        ← เกม + Lobby UI
 │   ├── botAI.js          ← บอท (ใช้กติกาจาก shared/gameLogic.js)
+│   ├── cardFx.js         ← เอฟเฟกต์ของการ์ดแต่ละใบ (ใช้ชุดเครื่องมือ FX.K ใน index.html)
 │   └── online.js         ← Socket client logic
 ├── shared/
 │   └── gameLogic.js      ← Game logic (ใช้ร่วมกัน server/client)

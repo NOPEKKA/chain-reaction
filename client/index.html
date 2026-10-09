@@ -511,6 +511,30 @@ body{font-family:'Nunito','Noto Sans Thai',sans-serif;background:var(--bg);min-h
 @keyframes rwPop{0%{transform:scale(1);}30%{transform:scale(.7) rotate(-7deg);}100%{transform:scale(1);}}
 .cell[data-fx~="rw"]::before{box-shadow:none;background:#dfe9ff;animation:nbFlash .32s ease-out both;}
 .cell[data-fx~="rw"] .orb{animation:orbPop .3s cubic-bezier(.3,1.8,.5,1) both;}
+/* ── ท่าของช่องที่เอฟเฟกต์การ์ดใช้ร่วมกัน (client/cardFx.js ผ่าน FX.K) ── */
+.cell[data-fx~="zap"]{animation:fxZap .26s linear;z-index:4;}
+@keyframes fxZap{0%{transform:scale(1);}25%{transform:scale(1.16) translate(1px,-1px);}50%{transform:scale(.97) translate(-1px,1px);}100%{transform:scale(1);}}
+.cell[data-fx~="zap"]::before{box-shadow:none;background:#fff9c4;animation:nbFlash .26s ease-out both;}
+.cell[data-fx~="hit"]{animation:fxHit .34s linear;z-index:4;}
+@keyframes fxHit{0%{transform:translate(0,0);}18%{transform:translate(-4px,1px) rotate(-4deg);}36%{transform:translate(4px,-1px) rotate(3deg);}54%{transform:translate(-3px,0) rotate(-2deg);}72%{transform:translate(2px,0);}100%{transform:translate(0,0);}}
+.cell[data-fx~="hit"]::before{box-shadow:none;background:#ff4d5e;animation:nbFlash .34s ease-out both;}
+.cell[data-fx~="flip"]{animation:fxFlip .3s ease-in-out;z-index:4;}
+@keyframes fxFlip{0%{transform:scaleX(1);}45%{transform:scale(0,1.08);}55%{transform:scale(0,1.08);}100%{transform:scaleX(1);}}
+.cell[data-fx~="wob"]{animation:fxWob .38s ease-out;z-index:4;}
+@keyframes fxWob{0%{transform:scale(1);}20%{transform:scale(1.18) rotate(-7deg);}45%{transform:scale(.96) rotate(5deg);}70%{transform:scale(1.04) rotate(-2deg);}100%{transform:scale(1);}}
+.cell[data-fx~="wob"]::before{box-shadow:none;background:#ffb347;animation:nbFlash .38s ease-out both;}
+.cell[data-fx~="squash"]{animation:fxSquash .3s cubic-bezier(.3,1.4,.5,1);z-index:4;}
+@keyframes fxSquash{0%{transform:scale(1.14,.78);}55%{transform:scale(.95,1.07);}100%{transform:scale(1);}}
+.cell[data-fx~="ignite"]{animation:fxIgnite .32s ease-in;z-index:4;}
+@keyframes fxIgnite{0%{transform:scale(1);}45%{transform:scale(.86);}100%{transform:scale(1.14);}}
+.cell[data-fx~="ignite"]::before{box-shadow:none;background:#fff;animation:fxHot .32s ease-in both;}
+@keyframes fxHot{0%{opacity:0;}100%{opacity:.9;}}
+.cell[data-fx~="ash"]{animation:fxAsh .3s ease-in forwards;z-index:3;}
+@keyframes fxAsh{0%{transform:scale(1);opacity:1;}100%{transform:scale(.55) rotate(8deg);opacity:.12;}}
+.cell[data-fx~="lvl"]{animation:fxLvl .32s ease-out;}
+@keyframes fxLvl{0%{transform:scale(1.06,.7);}60%{transform:scale(.98,1.06);}100%{transform:scale(1);}}
+.cell[data-fx~="lvl"]::before{box-shadow:none;background:#cfe0ff;animation:nbFlash .32s ease-out both;}
+.fx-sprite{will-change:transform,opacity;}
 
 /* ── เอฟเฟกต์เดิมที่ animate filter:blur → ตัดออกให้ลื่น ── */
 @keyframes cellEmojiPop{0%{opacity:0;transform:translate(-50%,-50%) scale(0.1);}20%{opacity:1;transform:translate(-50%,-50%) scale(1.5);}50%{transform:translate(-50%,-80%) scale(1.1);}80%{opacity:1;transform:translate(-50%,-130%) scale(1.0);}100%{opacity:0;transform:translate(-50%,-170%) scale(0.6);}}
@@ -528,6 +552,8 @@ body{font-family:'Nunito','Noto Sans Thai',sans-serif;background:var(--bg);min-h
 #fx-sheen,#fx-tape{position:absolute;inset:0;border-radius:inherit;overflow:hidden;pointer-events:none;opacity:0;z-index:7;}
 #fx-sheen i{position:absolute;top:-30%;left:0;width:26%;height:160%;background:linear-gradient(90deg,transparent,rgba(170,232,255,.6) 28%,#fff 50%,rgba(170,232,255,.6) 72%,transparent);will-change:transform;}
 #fx-tape{background:repeating-linear-gradient(0deg,rgba(255,255,255,.1) 0 1px,transparent 1px 4px),rgba(96,126,220,.2);}
+#fx-clip{position:absolute;inset:0;border-radius:inherit;overflow:hidden;pointer-events:none;z-index:7;}
+#fx-clip i{position:absolute;left:0;top:0;opacity:0;will-change:transform,opacity;}
 #fx-tape b{position:absolute;left:0;bottom:0;width:100%;height:5px;background:linear-gradient(90deg,#fff,#9cc4ff);box-shadow:0 0 10px #9cc4ff;transform-origin:0 50%;transform:scaleX(0);will-change:transform;}
 #fx-tape i{position:absolute;left:0;top:0;width:100%;height:13%;background:linear-gradient(180deg,transparent,rgba(255,255,255,.5) 45%,rgba(190,215,255,.3) 60%,transparent);will-change:transform;transform:translateY(-120%);}
 #game-screen{--turn:#ffffff;}
@@ -1498,7 +1524,7 @@ const FX=(()=>{
   }
   function boardEls(){
     const w=document.getElementById('grid-wrap');if(!w)return null;
-    if(!document.getElementById('fx-boardflash'))[['fx-boardflash',''],['fx-turnframe',''],['fx-turnpop',''],['fx-sheen','<i></i>'],['fx-tape','<i></i><i></i><b></b>']].forEach(([id,html])=>{const d=document.createElement('div');d.id=id;d.innerHTML=html;w.appendChild(d);});
+    if(!document.getElementById('fx-boardflash'))[['fx-boardflash',''],['fx-turnframe',''],['fx-turnpop',''],['fx-sheen','<i></i>'],['fx-tape','<i></i><i></i><b></b>'],['fx-clip','<i></i><i></i><i></i>']].forEach(([id,html])=>{const d=document.createElement('div');d.id=id;d.innerHTML=html;w.appendChild(d);});
     return w;
   }
   function chainText(d,owner,g){
@@ -1912,7 +1938,108 @@ const FX=(()=>{
     syncFlags();
   }
 
-  const api={S,save,tier,syncFlags,clear,center,cell,G,flash,flashCell,emoji,number,arrow,ripple,flyOrbs,sparks,ring,
+  // ══ ชุดเครื่องมือของเอฟเฟกต์การ์ด (ใช้โดย client/cardFx.js) — element จาก pool, animate เฉพาะ transform / opacity ══
+  const glowCss=(c,px)=>tier()===2?`box-shadow:0 0 ${px}px ${c};`:'';
+  // กล่องอิสระ กึ่งกลางอยู่ที่ (x,y) · frames = [{opacity, x, y (px), t:'scale(..) rotate(..)', offset}]
+  function box(x,y,w,h,css,frames,opts,prio=1){
+    const el=take(prio);if(!el)return null;
+    el.style.cssText=`width:${w}px;height:${h}px;margin:${-h/2}px 0 0 ${-w/2}px;`+(css||'');
+    play(el,frames.map(f=>{const k={opacity:f.opacity===undefined?1:f.opacity,transform:T(x+(f.x||0),y+(f.y||0))+(f.t?' '+f.t:'')};if(f.offset!==undefined)k.offset=f.offset;return k;}),opts);
+    return el;
+  }
+  // เส้นแสงจาก a ไป b: ยืดออกจาก a แล้วจาง · bg = พื้นของเส้นเอง (เช่น ไล่สีตามความกว้างสำหรับลำแสงหนา)
+  function line(a,b,o={}){
+    const el=take(o.prio===undefined?1:o.prio);if(!el)return null;
+    const dx=b.x-a.x,dy=b.y-a.y,len=Math.max(1,Math.hypot(dx,dy)),w=o.w||3,col=o.color||'#ffffff',g0=o.grow===undefined?.4:o.grow,pk=o.peak||1;
+    el.style.cssText=`width:${len.toFixed(1)}px;height:${w}px;margin:${(-w/2).toFixed(1)}px 0 0 0;border-radius:${Math.min(w,8)}px;transform-origin:0 50%;background:${o.bg||`linear-gradient(90deg,transparent,${col} 30%,#fff 88%,${col})`};`+(o.glow===false?'':glowCss(col,Math.round(w*3)));
+    const base=T(a.x,a.y)+` rotate(${Math.atan2(dy,dx).toFixed(4)}rad)`;
+    play(el,[{transform:base+' scaleX(0)',opacity:pk},{transform:base+' scaleX(1)',opacity:pk,offset:g0},{transform:base+' scaleX(1)',opacity:pk,offset:Math.max(g0,o.hold||g0)},{transform:base+' scaleX(1)',opacity:0}],{duration:o.dur||220,delay:o.delay||0,easing:'cubic-bezier(.2,.7,.3,1)'});
+    return el;
+  }
+  // หัวแสงมีหางพุ่งจาก a ไป b
+  function comet(a,b,o={}){
+    const el=take(o.prio===undefined?1:o.prio);if(!el)return null;
+    const dx=b.x-a.x,dy=b.y-a.y,sz=o.size||8,tail=o.tail||sz*5,col=o.color||'#ffffff',R=` rotate(${Math.atan2(dy,dx).toFixed(4)}rad)`;
+    el.style.cssText=`width:${tail+sz}px;height:${sz}px;margin:${-sz/2}px 0 0 ${-(tail+sz/2)}px;border-radius:${sz}px;transform-origin:${tail+sz/2}px 50%;background:linear-gradient(90deg,transparent,${col} 70%,#fff);`+glowCss(col,Math.round(sz*1.5));
+    play(el,[{transform:T(a.x,a.y)+R+' scaleX(.3)',opacity:0},{transform:T(a.x+dx*.15,a.y+dy*.15)+R+' scaleX(1)',opacity:1,offset:.15},{transform:T(b.x,b.y)+R+' scaleX(1)',opacity:1,offset:.9},{transform:T(b.x,b.y)+R+' scaleX(.2)',opacity:0}],{duration:o.dur||260,delay:o.delay||0,easing:o.ease||'cubic-bezier(.5,0,.9,.6)'});
+    return el;
+  }
+  // ลูกบอลบินจาก a ไป b · arc = โค้งออกด้านข้าง (px) · lift = โค้งขึ้น (px)
+  function fly(a,b,o={}){
+    const dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy)||1,arc=o.arc||0,mx=(a.x+b.x)/2-dy/len*arc,my=(a.y+b.y)/2+dx/len*arc-(o.lift||0);
+    return dot(o.size||10,o.color||'#ffffff',[{transform:T(a.x,a.y,o.s0||.7),opacity:1},{transform:T(mx,my,1.1),opacity:1,offset:.5},{transform:T(b.x,b.y,.85),opacity:1,offset:.92},{transform:T(b.x,b.y,.3),opacity:0}],
+      {duration:o.dur||260,delay:o.delay||0,easing:o.ease||'cubic-bezier(.4,0,.6,1)'},o.prio===undefined?1:o.prio,tier()>0);
+  }
+  // วงแหวนหุบเข้า (กลับด้านของ ring)
+  function ringIn(x,y,size,color,to,dur,delay=0,bw=3){
+    return box(x,y,size,size,`border-radius:50%;border:${bw}px solid ${color};`,[{opacity:0,t:'scale(1)'},{opacity:.9,t:`scale(${((1+to)/2).toFixed(2)})`,offset:.5},{opacity:0,t:`scale(${to})`}],{duration:dur,delay,easing:'cubic-bezier(.5,0,.9,.5)'});
+  }
+  // แผ่นขนาดเท่าช่อง วางทับช่อง (r,c)
+  function tile(r,c,o={}){
+    const g=G();if(!g)return null;const p=center(r,c),sz=g.cs*(o.size||1);
+    return box(p.x,p.y,sz,sz,`border-radius:${o.radius===undefined?Math.max(3,Math.min(10,Math.round(g.cs*.26)))+'px':o.radius};`+(o.origin?`transform-origin:${o.origin};`:'')+(o.css||''),
+      o.frames||[{opacity:0},{opacity:.9,offset:.2},{opacity:0}],{duration:o.dur||400,delay:o.delay||0,easing:o.ease||'ease-out'},o.prio===undefined?1:o.prio);
+  }
+  function glyph(x,y,str,o={}){
+    const fs=o.size||28,col=o.color||'#ffffff';
+    return text(x,y,str,`font-size:${fs}px;font-weight:900;color:${col};text-shadow:0 0 ${Math.round(fs*.35)}px ${o.glow||col};`+(o.css||''),o.frames||[
+      {opacity:0,transform:'translate(-50%,-50%) scale(.3)'},{opacity:1,transform:'translate(-50%,-50%) scale(1.25)',offset:.3},{opacity:1,transform:'translate(-50%,-50%) scale(1)',offset:.7},{opacity:0,transform:'translate(-50%,-50%) scale(.8)'}],
+      {duration:o.dur||420,delay:o.delay||0,easing:'ease-out'},o.prio===undefined?1:o.prio);
+  }
+  // สายฟ้าจากเหนือกระดานลงมาที่ (x,y)
+  function bolt(x,y,o={}){
+    const g=G(),h=Math.max(50,y-(o.top===undefined?(g?g.wy-20:0):o.top)),w=Math.max(12,Math.round(h*.11)),col=o.color||'#ffe66b',pts='50% 0,70% 30%,46% 35%,74% 64%,42% 68%,54% 100%,28% 62%,50% 57%,24% 31%,44% 27%';
+    const el=take(1);if(!el)return null;
+    el.style.cssText=`width:${w}px;height:${h}px;margin:${-h}px 0 0 ${-w/2}px;transform-origin:50% 100%;background:linear-gradient(180deg,${col},#fff 55%);clip-path:polygon(${pts});-webkit-clip-path:polygon(${pts});`;
+    const b=T(x,y);
+    play(el,[{transform:b+' scaleY(.15)',opacity:0},{transform:b+' scaleY(1)',opacity:1,offset:.2},{transform:b+' scaleY(1)',opacity:.2,offset:.45},{transform:b+' scaleY(1)',opacity:1,offset:.6},{transform:b+' scaleY(1)',opacity:0}],{duration:o.dur||230,delay:o.delay||0,easing:'linear'});
+    return el;
+  }
+  // สำเนาของช่อง (r,c) ตามที่วาดอยู่ตอนนี้ ไว้เคลื่อนย้ายบนชั้นเอฟเฟกต์ (สลับ / ย้าย / ยุบ) · ลดการเคลื่อนไหว = ไม่มี
+  function sprite(r,c){
+    const src=cell(r,c),g=G();if(!src||!g||!canAnim||tier()===0)return null;
+    const p=center(r,c),cs=g.cs,el=src.cloneNode(true);
+    el.removeAttribute('data-fx');el.removeAttribute('data-r');el.removeAttribute('data-c');el.className='cell fx-sprite';
+    el.style.cssText=src.style.cssText+`;position:absolute;left:0;top:0;margin:${-cs/2}px 0 0 ${-cs/2}px;transition:none;animation:none;pointer-events:none;opacity:0;`;
+    ensureLayer().appendChild(el);
+    return{el,p,has:!!src.querySelector('.orb'),
+      go(frames,opts){ // frames = [{x, y (px จากตำแหน่งเดิม), t, opacity, offset}]
+        el.animate(frames.map(f=>{const k={opacity:f.opacity===undefined?1:f.opacity,transform:T(p.x+(f.x||0),p.y+(f.y||0))+(f.t?' '+f.t:'')};if(f.offset!==undefined)k.offset=f.offset;return k;}),opts);
+        const end=(opts.delay||0)+opts.duration;hold(end+40);setTimeout(()=>el.remove(),end+30);}};
+  }
+  // ชิ้นที่ตัดขอบตามกระดาน (ลูกของ #fx-clip) — พิกัดเป็นของกระดาน ไม่ใช่ของจอ · ผู้เรียก animate เอง
+  function clip(i,css){
+    if(!boardEls()||!canAnim)return null;const host=document.getElementById('fx-clip'),el=host&&host.children[i];if(!el)return null;
+    if(el.getAnimations)el.getAnimations().forEach(a=>a.cancel());el.style.cssText=css||'';return el;
+  }
+  // ป้ายคะแนนของผู้เล่น: จุดเริ่มของการ์ดที่ "ยิงมาจากผู้ใช้" และที่อยู่ของเอฟเฟกต์ที่ไม่ได้เกิดบนกระดาน
+  function badge(pi){
+    const sc=document.getElementById('sc-'+pi);
+    if(sc){const b=sc.getBoundingClientRect();if(b.width)return{x:b.left+b.width/2,y:b.top+b.height/2,w:b.width,h:b.height};}
+    const g=G();return g?{x:g.wx+g.ww/2,y:g.wy-10,w:60,h:40}:{x:window.innerWidth/2,y:60,w:60,h:40};
+  }
+  const TOKMS={placed:480,first:720,zap:260,hit:340,flip:300,wob:380,squash:300,ignite:320,ash:300,lvl:320};
+  function tk(r,c,name,ms){const el=cell(r,c);if(el&&name)tok([el],name,ms||TOKMS[name]||360);}
+  // เวทีของการ์ดหนึ่งใบ: ค้างภาพ "ก่อนใช้การ์ด" ของทุกช่องที่การ์ดเปลี่ยน แล้วให้เอฟเฟกต์เผยค่าใหม่ทีละช่องตามจังหวะของมัน
+  // diff = [{r,c,fromCount,fromOwner,toCount,toOwner}] · done() เผยที่เหลือทั้งหมด (เรียกตอนเอฟเฟกต์จบเสมอ)
+  function stage(diff){
+    diff=diff||[];const map=new Map(),left=new Set(),gid=STATE._gameId;
+    const live=()=>STATE._gameId===gid&&!STATE._dead&&!!STATE.cells;
+    diff.forEach(d=>{const k=d.r+','+d.c;map.set(k,d);left.add(k);paintCellAs(d.r,d.c,d.fromCount,d.fromOwner);});
+    return{diff,live,
+      has:(r,c)=>map.has(r+','+c),get:(r,c)=>map.get(r+','+c),
+      blank(r,c){if(live())paintCellAs(r,c,0,-1);},
+      part(r,c,f){const d=map.get(r+','+c);if(d&&live())paintCellAs(r,c,Math.round(d.fromCount+(d.toCount-d.fromCount)*f),d.toCount>0?d.toOwner:d.fromOwner);},
+      reveal(r,c,token,ms){if(!live())return;const k=r+','+c,d=map.get(k);if(d){left.delete(k);paintCellAs(r,c,d.toCount,d.toOwner);}else updateCellDisplay(r,c);
+        // ช่องที่จบแล้วว่าง ไม่มีอะไรให้ "ได้ลูก"
+        const ce=STATE.cells[r]&&STATE.cells[r][c],empty=d?d.toCount<=0:!(ce&&ce.count>0);
+        if(!(empty&&(token==='placed'||token==='first')))tk(r,c,token,ms);},
+      done(){if(!live())return;left.forEach(k=>{const d=map.get(k);paintCellAs(d.r,d.c,d.toCount,d.toOwner);});left.clear();}};
+  }
+  const K={box,line,comet,fly,ringIn,tile,glyph,bolt,sprite,clip,badge,tk,stage,ring,sparks,dot,text,flash,vignette,shake,tier,hold,PC,mix,
+    num:number,rays:raysEl,rings:burstRings,mid:()=>mid(),pt:center,geo:G,cellEl:cell};
+
+  const api={K,S,save,tier,syncFlags,clear,center,cell,G,flash,flashCell,emoji,number,arrow,ripple,flyOrbs,sparks,ring,
     wave,land,chainReset,chainStep,shake,place,turn,cardCast,revealCards,HL,afterRender,init,stats,onRender:null,
     hold,track,idle,whenIdle,
     setWaveSound(fn){waveSound=fn;},
@@ -2280,6 +2407,24 @@ const SFX=(()=>{
     tone({freq:550,freq2:660,type:'sine',dur:.14,vol:.13,decay:.18,attack:.01,at:.07,rev:.35});
     noise(.05,.1,1500,2,.07);
   }
+  // เสียงสั้นๆ ของท่าในเอฟเฟกต์การ์ด (client/cardFx.js เรียกตอนท่าลงจังหวะ) — เสริมจากเสียงประจำการ์ดที่ดังตอนกดใช้
+  const FXS={
+    zap:()=>{noise({vol:.13,dur:.07,freq:6000,q:1,type:'highpass'});tone({freq:1800,freq2:300,type:'sawtooth',dur:.09,vol:.09,decay:.1,raw:true});},
+    slash:()=>noise({vol:.15,dur:.11,freq:7000,freq2:1800,q:1.2,type:'bandpass'}),
+    thud:()=>{tone({freq:130,freq2:48,type:'sine',dur:.16,vol:.32,decay:.2,raw:true});noise({vol:.09,dur:.06,freq:900,q:.7,type:'lowpass'});},
+    whoosh:()=>noise({vol:.1,dur:.24,freq:600,freq2:3600,q:.9,type:'bandpass',swell:true}),
+    chime:()=>chord([1319,1976],{type:'sine',vol:.065,decay:.35,rev:.5,raw:true,stagger:40}),
+    pop:()=>tone({freq:520,freq2:880,type:'triangle',dur:.07,vol:.11,decay:.09}),
+    tick:()=>tone({freq:1400,type:'square',vol:.06,decay:.04,attack:.002}),
+    lock:()=>{tone({freq:700,type:'square',vol:.07,decay:.04,attack:.002});tone({freq:460,type:'square',vol:.08,decay:.06,attack:.002,at:.05});},
+    rise:()=>tone({freq:330,freq2:990,type:'triangle',dur:.22,vol:.1,decay:.25,rev:.3}),
+    burn:()=>noise({vol:.12,dur:.42,freq:900,freq2:2600,q:.6,type:'bandpass'}),
+    water:()=>noise({vol:.13,dur:.45,freq:500,freq2:1800,q:.7,type:'bandpass',swell:true}),
+    dark:()=>tone({freq:90,freq2:40,type:'sawtooth',dur:.5,vol:.18,decay:.6,lp:500,raw:true}),
+    ice:()=>seq([[2637,0],[3136,50],[3520,100]],{type:'sine',vol:.05,decay:.2,rev:.6,raw:true}),
+    boom:()=>{tone({freq:80,freq2:28,type:'sine',dur:.5,vol:.42,decay:.6,raw:true,prio:2});noise({vol:.2,dur:.35,freq:3000,freq2:200,q:.5,type:'lowpass',prio:2});},
+  };
+  function fx(name){if(FXS[name])FXS[name]();}
   // Reflect: "ชิ้ง" ตอนแสงกวาด → แผ่นกระจกกระแทกลง (0.19 วิ) → กังวานแก้วสั้นๆ
   function mirror(){
     noise({vol:.16,dur:.17,freq:5200,freq2:11000,q:1.4,type:'bandpass',prio:2});
@@ -2411,7 +2556,7 @@ const SFX=(()=>{
   }
   function debug(){const now=ac?ac.currentTime:0;return{state:ac?ac.state:'none',unlocked,voices:ac?ends.filter(t=>t>now).length:0,musicVoices:ac?endsM.filter(t=>t>now).length:0,I:+M.I.toFixed(2),target:+M.target.toFixed(2),tension:+M.tension.toFixed(2),scene:M.scene,music:M.on};}
 
-  return{place,firstPlace,critTick,explode,explodeWave,bigChain,card,cardCat,cardSpecial,reveal,pickCard,win,select,hover,turnChange,myTurn,tick,frozen,shield,mirror,rewind,timeBomb,
+  return{place,firstPlace,critTick,explode,explodeWave,bigChain,card,cardCat,cardSpecial,reveal,pickCard,win,select,hover,turnChange,myTurn,tick,frozen,shield,mirror,rewind,fx,timeBomb,
     music,prefs:P,set,unlock,meter,debug,onChange(fn){listeners.push(fn);},
     get muted(){return P.mute||(!P.sfxOn&&!P.musicOn);}};
 })();
@@ -3274,638 +3419,7 @@ function spawnFloatingNumber(r,c,value,opts={}){FX.number(r,c,value,opts);}
 function spawnCellEmoji(r,c,emoji,opts={}){FX.emoji(r,c,emoji,opts);}
 function spawnArrow(fromR,fromC,toR,toC,emoji='🌀',opts={}){FX.arrow(fromR,fromC,toR,toC,emoji,opts);}
 
-async function spawnCardVfx(cardId,targets,playerIdx,vfxData={}){
-  const _onlineMode=!!(window._getOnlineMode&&window._getOnlineMode());
-  const{r,c}=targets;
-  const pos=(r!==undefined&&c!==undefined)?getCellCenter(r,c):{x:window.innerWidth/2,y:window.innerHeight/2};
-  const cx=window.innerWidth/2,cy=window.innerHeight/2;
-
-  // helper flash — ชั้น overlay ของ FX (animate เฉพาะ opacity ไม่แตะ box-shadow/background ของช่อง)
-  const flashScreen=(color,dur=300)=>FX.flash(color,dur);
-  const flashCell=(ro,co,color,delayMs=0,dur=400)=>FX.flashCell(ro,co,color,delayMs,dur);
-
-  switch(cardId){
-    // ── c1 Overload: +2 flash ──
-    case 'c1':spawnCellEmoji(r,c,'⚡',{size:'2rem'});flashCell(r,c,'#ffee2299');await delay(500);break;
-
-    // ── c2 Shockwave: ลูกศรออกทุกทิศ ──
-    case 'c2':{
-      spawnCellEmoji(r,c,'💠',{size:'2rem'});flashCell(r,c,'#00ccffaa');
-      (vfxData.area||[]).forEach(([nr,nc],i)=>{
-        spawnArrow(r,c,nr,nc,'💧',{delay:i*0.06,size:'1rem'});
-        setTimeout(()=>{
-          if(!_onlineMode){STATE.cells[nr][nc].count++;STATE.cells[nr][nc].owner=playerIdx;updateCellDisplay(nr,nc);}flashCell(nr,nc,'#00ccffbb');
-        },i*60+380);
-      });
-      await delay((vfxData.area||[]).length*60+500);
-    }break;
-
-    // ── c3 Sniper: เล็งแล้วยิง ──
-    case 'c3':{
-      if(vfxData.target){
-        const[tr,tc]=vfxData.target;
-        spawnCellEmoji(r,c,'🎯',{size:'2rem'});flashCell(r,c,'#ff000099');
-        await delay(150);spawnArrow(r,c,tr,tc,'🎯',{size:'1.1rem',delay:0.05});
-        await delay(480);
-        if(!_onlineMode){STATE.cells[tr][tc].count--;if(STATE.cells[tr][tc].count<=0)STATE.cells[tr][tc].owner=-1;updateCellDisplay(tr,tc);}spawnCellEmoji(tr,tc,'💥',{size:'1.5rem',dur:0.4});flashCell(tr,tc,'#ff0000bb');spawnFloatingNumber(tr,tc,-1,{color:'#ff6677'});
-        await delay(300);
-      }
-    }break;
-
-    // ── c4 Push: +1 bounce ──
-
-    // ── c5 Spin / u8 Mirror / u2 Swap: ลูกศรพุ่ง ──
-    case 'c5':case 'u8':case 'u2':(vfxData.moves||[]).forEach((mv,i)=>{spawnArrow(mv.from[0],mv.from[1],mv.to[0],mv.to[1],'🌀',{delay:i*0.1});flashCell(mv.to[0],mv.to[1],'#cc88ff88',i*100+300);});await delay(700);break;
-
-    // ── c6 Attract / r2 Black Hole: ดึงเข้า ──
-    case 'c6':case 'r2':{const to=vfxData.to||[r,c];if(cardId==='r2')FX.HL.blackhole(to[0],to[1]);(vfxData.pulled||[]).forEach(([pr,pc],i)=>{spawnArrow(pr,pc,to[0],to[1],'🧲',{delay:i*0.07,size:'1.3rem'});flashCell(pr,pc,'#ffaa4488',i*70);if(_onlineMode){setTimeout(()=>{const el=document.querySelector(`.cell[data-r="${pr}"][data-c="${pc}"]`);if(el){el.style.transition='opacity .3s';el.style.opacity='0.15';}},i*70+350);}});spawnCellEmoji(to[0],to[1],'⭕',{size:'2rem',delay:0.4});await delay(800);}break;
-
-    // ── c7 Poke: กดระเบิด ──
-    case 'c7':spawnCellEmoji(r,c,'💢',{size:'2rem'});flashCell(r,c,'#ff888888');await delay(400);break;
-    case 'u9':{
-      const u9r=vfxData.target?vfxData.target[0]:r,u9c=vfxData.target?vfxData.target[1]:c;
-      spawnCellEmoji(u9r,u9c,'📌',{size:'2rem'});
-      flashCell(u9r,u9c,'#ff88ffbb');flashCell(u9r,u9c,'rgba(255,100,255,0.3)',200,400);
-      const pinEl=FX.cell(u9r,u9c);if(pinEl)pinEl.classList.add('pinned');
-      await delay(600);
-    }break;
-
-    // ── r6 Reflect: แผ่นกระจกฟาดลงทุกช่องพร้อมกัน (FX.HL.reflect) ──
-    case 'r6':FX.HL.reflect(vfxData.shielded||[],playerIdx);await delay(650);break;
-
-    // ── c8/u4 Shield ──
-    case 'c8':case 'u4':{const cells=vfxData.shielded||[[r,c]];cells.forEach(([ro,co],i)=>{spawnCellEmoji(ro,co,'🛡️',{size:'1.8rem',delay:i*0.06});flashCell(ro,co,'#00ff88aa',i*60);});await delay(700);}break;
-
-    // ── c9 Drain: ดูด ──
-    case 'c9':{
-      if(vfxData.target){
-        const[tr,tc]=vfxData.target;
-        // ขั้น 1: flash ช่องศัตรูก่อน + 🪣 โผล่ที่ช่องเรา
-        spawnCellEmoji(r,c,'🪣',{size:'2rem'});
-        flashCell(tr,tc,'#cc44ccbb');
-        spawnCellEmoji(tr,tc,'💜',{size:'1.5rem',dur:0.5});
-        await delay(300);
-        // ขั้น 2: ลบบอลช่องศัตรู
-        if(!_onlineMode){STATE.cells[tr][tc].count--;if(STATE.cells[tr][tc].count<=0)STATE.cells[tr][tc].owner=-1;updateCellDisplay(tr,tc);}spawnFloatingNumber(tr,tc,-1,{color:'#ff6677'});
-        // ขั้น 3: เอฟเฟคเดินทางจากช่องศัตรู → ช่องที่+1
-        if(vfxData.bonusCell){
-          const[br,bc]=vfxData.bonusCell;
-          spawnArrow(tr,tc,br,bc,'💜',{size:'1.1rem',delay:0.05});
-          await delay(550);
-          // บวกพอลูกศรถึง
-          if(!_onlineMode){STATE.cells[br][bc].count++;updateCellDisplay(br,bc);}flashCell(br,bc,'#cc44ccbb');spawnCellEmoji(br,bc,'✨',{size:'1.3rem',dur:0.5});spawnFloatingNumber(br,bc,1,{color:'#88ffaa'});
-        }
-        await delay(300);
-      }
-    }break;
-
-    // ── c10 Cycle: วงหมุน ──
-    case 'c10':spawnCellEmoji(r,c,'🔄',{size:'2rem'});await delay(400);break;
-
-    // ── c11 Store / u3 Double Shot: flash สองช่อง ──
-    case 'c11':case 'u3':(vfxData.boosted||[]).forEach(([ro,co],i)=>{spawnCellEmoji(ro,co,'📦',{size:'1.6rem',delay:i*0.12});flashCell(ro,co,'#88ffaa88',i*120);spawnFloatingNumber(ro,co,1,{delay:i*0.12+0.1,color:'#88ffaa'});});await delay(700);break;
-
-    // ── c12 Scout: ตาส่อง ──
-    case 'c12':spawnCellEmoji(r||0,c||0,'🔍',{size:'1.8rem'});await delay(400);break;
-
-    // ── u1 Instant Burst: ระเบิดเลย ──
-    case 'u1':spawnCellEmoji(r,c,'💣',{size:'2.2rem'});flashCell(r,c,'#ffdd4488');await delay(300);break;
-
-    // ── u5 Time Bomb ──
-    case 'u5':spawnCellEmoji(r,c,'⏳',{size:'2rem'});flashCell(r,c,'#ffaa4488');await delay(400);break;
-
-    // ── u6 Raid ──
-    case 'u6':{
-      if(vfxData.target){
-        const[tr,tc]=vfxData.target;
-        spawnCellEmoji(r,c,'⚔️',{size:'2rem'});flashCell(r,c,'#dd0000bb');
-        await delay(120);spawnArrow(r,c,tr,tc,'⚔️',{size:'1.1rem',delay:0.05});
-        await delay(500);
-        if(!_onlineMode){STATE.cells[tr][tc].count=Math.max(0,STATE.cells[tr][tc].count-2);if(STATE.cells[tr][tc].count<=0)STATE.cells[tr][tc].owner=-1;updateCellDisplay(tr,tc);}spawnCellEmoji(tr,tc,'💥',{size:'1.8rem',dur:0.5});flashCell(tr,tc,'#ff0000cc');spawnFloatingNumber(tr,tc,-2,{color:'#ff6677'});
-        await delay(300);
-      }
-    }break;
-
-    // ── u7 Shuffle Zone: วนในโซน ──
-    case 'u7':(vfxData.zone||[]).forEach(([ro,co],i)=>{spawnCellEmoji(ro,co,'🎪',{size:'1.3rem',delay:i*0.05,dur:0.5});flashCell(ro,co,'#cc88ff88',i*50);});await delay(600);break;
-
-    // ── r1 Mega Burst: area flash ──
-    case 'r1':(vfxData.area||[]).forEach(([ro,co],i)=>{spawnCellEmoji(ro,co,'🌋',{size:'1.5rem',delay:i*0.04,dur:0.6});flashCell(ro,co,'#ff884488',i*40);spawnFloatingNumber(ro,co,1,{delay:i*0.04+0.1,size:'1rem'});});await delay(700);break;
-
-    // ── r3 Freeze ──
-    case 'r3':{
-      // แสดง VFX บนผู้เล่นที่ถูก Freeze
-      const frozenPi = vfxData.frozenPlayer ?? -1;
-      FX.HL.freeze(frozenPi);
-      spawnCellEmoji(r||0,c||0,'🧊',{size:'2.5rem'});
-      flashScreen('#88eeff33', 600);
-      // Flash score card ของผู้เล่นที่โดน
-      if (frozenPi >= 0) {
-        const sc = document.getElementById(`sc-${frozenPi}`);
-        if (sc) {
-          sc.style.transition = 'all .3s';
-          sc.style.background = 'rgba(100,200,255,0.4)';
-          sc.style.boxShadow = '0 0 20px #88eeff';
-          setTimeout(() => { sc.style.background=''; sc.style.boxShadow=''; }, 1200);
-        }
-        // แสดง emoji น้ำแข็งลอยบน scoreboard ตำแหน่งผู้เล่น
-        const scEl = document.getElementById(`sc-${frozenPi}`);
-        if (scEl) {
-          const rect = scEl.getBoundingClientRect();
-          const ice = document.createElement('div');
-          ice.style.cssText = `position:fixed;left:${rect.left+rect.width/2}px;top:${rect.top}px;font-size:2rem;pointer-events:none;z-index:1000;transform:translate(-50%,-50%);animation:cellEmojiPop .8s ease-out forwards;`;
-          ice.textContent = '❄️';
-          document.body.appendChild(ice);
-          setTimeout(() => ice.remove(), 900);
-        }
-      }
-      await delay(900);
-    }break;
-
-    // ── r4 Chain Strike: flash ทุกช่องศัตรู ──
-    case 'r4':{
-      const hits=vfxData.hit||[];
-      spawnCellEmoji(r||0,c||0,'🏹',{size:'2.5rem'});
-      hits.forEach(([ro,co],i)=>{
-        spawnCellEmoji(ro,co,'⚡',{size:'1.4rem',delay:i*0.04,dur:0.5});
-        flashCell(ro,co,'#ffdd00bb',i*35);
-        setTimeout(()=>{
-          if(!_onlineMode){STATE.cells[ro][co].count--;if(STATE.cells[ro][co].count<=0)STATE.cells[ro][co].owner=-1;updateCellDisplay(ro,co);}spawnFloatingNumber(ro,co,-1,{color:'#ff6677',size:'0.9rem'});
-        },i*35+300);
-      });
-      await delay(hits.length*35+500);
-    }break;
-
-    // ── r5 Tornado: ลูกศรพุ่งทุก move ──
-    case 'r5':{const gWrap=document.getElementById('grid-wrap'),rect=gWrap.getBoundingClientRect();const torEl=document.createElement('div');torEl.className='tornado-vfx';torEl.style.cssText=`left:${rect.left+rect.width/2}px;top:${rect.top+rect.height/2}px;font-size:4rem;`;torEl.textContent='🌪️';document.body.appendChild(torEl);const moves=vfxData.moves||[];const show=moves.slice(0,20);show.forEach((mv,i)=>{spawnArrow(mv.from[0],mv.from[1],mv.to[0],mv.to[1],'🌪️',{delay:i*0.04,size:'1.1rem'});});await delay(1000);torEl.remove();}break;
-
-    // ── e1 Meteor ──
-    case 'e1':spawnCellEmoji(r,c,'☄️',{size:'2.5rem'});flashCell(r,c,'#ffaa2288');await delay(400);break;
-
-    // ── e2 Tsunami: flash ทั้ง row ──
-    case 'e2':{(vfxData.row||[]).forEach(([ro,co],i)=>{spawnCellEmoji(ro,co,'🌊',{size:'1.4rem',delay:i*0.04,dur:0.6});flashCell(ro,co,'#66bbff88',i*40);});await delay(700);}break;
-
-    // ── e3 Steal ──
-    case 'e3':spawnCellEmoji(r,c,'🎭',{size:'2rem'});flashCell(r,c,'#ff88ff88');await delay(400);break;
-
-    // ── l1 Annihilate ──
-    case 'l1':{
-      const a1=document.createElement('div');a1.className='annihilate-vfx';
-      a1.style.cssText=`left:50vw;top:50vh;font-size:8rem;filter:drop-shadow(0 0 40px #ff0000) drop-shadow(0 0 80px #880000);animation:singularityPulse 1.5s ease-out forwards;`;
-      a1.textContent='💀';document.body.appendChild(a1);
-      flashScreen('#ff000088',1000);
-      for(let i=0;i<10;i++){
-        const p=document.createElement('div');const angle=(i/10)*Math.PI*2;const d=80+Math.random()*60;
-        p.style.cssText=`position:fixed;left:50vw;top:50vh;font-size:${1+Math.random()*0.8}rem;pointer-events:none;z-index:850;--tx:${Math.cos(angle)*d}px;--ty:${Math.sin(angle)*d}px;animation:arrowFly 0.7s ease-out forwards;animation-delay:${i*0.06}s;`;
-        p.textContent=['💀','🩸','⚰️','👁️'][i%4];document.body.appendChild(p);setTimeout(()=>p.remove(),1000);
-      }
-      await delay(400);
-      (vfxData.wiped||[]).forEach(([ro,co],i)=>{
-        flashCell(ro,co,'#ff0000cc',i*25,500);
-        spawnCellEmoji(ro,co,'💀',{size:'1.2rem',delay:i*0.025,dur:0.6});
-        if(_onlineMode){
-          setTimeout(()=>{
-            const el=document.querySelector(`.cell[data-r="${ro}"][data-c="${co}"]`);
-            if(el){el.style.transition='opacity .3s';el.style.opacity='0.1';}
-          },i*25+400);
-        }
-      });
-      await delay(1200);a1.remove();
-    }break;
-
-    // ── c13 Gamble ──
-    case 'c13':{
-      const v=vfxData.value??0;
-      const emoji=v>0?'📈':v<0?'📉':'➖';
-      const color=v>0?'#44ff8888':v<0?'#ff444488':'#aaaaaa88';
-      const label=v>0?`+${v}`:v<0?`${v}`:'0';
-      spawnCellEmoji(r,c,emoji,{size:'2rem'});
-      flashCell(r,c,color);
-      // แสดงตัวเลขผลลัพธ์
-      const lbl=document.createElement('div');
-      lbl.style.cssText=`position:fixed;left:${cx}px;top:${cy-30}px;font-family:'Fredoka One','Mitr',cursive;font-size:1.6rem;color:${v>=0?'#66ff88':'#ff6666'};font-weight:900;pointer-events:none;z-index:999;animation:vfxFloat .9s ease-out forwards;transform:translateX(-50%);`;
-      lbl.textContent=label;document.body.appendChild(lbl);
-      await delay(700);lbl.remove();
-    }break;
-
-    // ── c14 Boost ──
-    case 'c14':{
-      (vfxData.boosted||[[r,c]]).forEach(([ro,co],i)=>{
-        spawnCellEmoji(ro,co,'🪄',{size:'1.4rem',delay:i*0.06,dur:0.5});
-        flashCell(ro,co,'#cc88ff88',i*60);
-        spawnFloatingNumber(ro,co,1,{delay:i*0.06+0.1,color:'#cc88ff'});
-      });
-      await delay(600);
-    }break;
-
-    // ── c4 Exchange ──
-    case 'c4':{
-      spawnCellEmoji(r,c,'⚖️',{size:'2rem'});
-      flashCell(r,c,'#ffcc00bb');
-      if(vfxData.enemyCell){
-        const[er,ec]=vfxData.enemyCell;
-        await delay(350);
-        spawnArrow(r,c,er,ec,'💥',{size:'1.2rem',delay:0.05});
-        await delay(550);
-        if(!_onlineMode){STATE.cells[er][ec].count=Math.max(0,STATE.cells[er][ec].count-2);if(STATE.cells[er][ec].count===0)STATE.cells[er][ec].owner=-1;updateCellDisplay(er,ec);}spawnCellEmoji(er,ec,'💥',{size:'1.8rem',dur:0.6});flashCell(er,ec,'#ff0000cc');
-      }
-      await delay(600);
-    }break;
-
-
-    // ── u10 Gift ──
-    case 'u10':{
-      spawnCellEmoji(r,c,'🎁',{size:'2rem'});flashCell(r,c,'#44ff8888');
-      spawnFloatingNumber(r,c,2,{color:'#88ffaa'});
-      // boosted[0]=ช่องตัวเอง(+2), boosted[1,2]=ช่องศัตรู(+1)
-      const u10b=vfxData.boosted||[];
-      u10b.slice(1).forEach(([er,ec],i)=>{
-        // ยิงลูกศรจากช่องเราไปช่องศัตรู
-        spawnArrow(r,c,er,ec,'🎁',{delay:i*0.15+0.1,size:'1rem'});
-        setTimeout(()=>{
-          flashCell(er,ec,'#ffaa4488');
-          spawnFloatingNumber(er,ec,1,{color:'#ffcc44',size:'0.9rem'});
-        },i*150+500);
-      });
-      await delay(800);
-    }break;
-
-
-    // ── r7 Void ──
-    case 'r7':{
-      spawnCellEmoji(r,c,'⬛',{size:'2.5rem'});
-      flashCell(r,c,'#22222288');
-      await delay(300);
-      flashCell(r,c,'#00000099');
-      await delay(400);
-    }break;
-
-    // ── r8 Rewind ──
-    // ── sr1 Sever ──
-
-    // ── sr2 Eclipse ──
-    case 'sr2':{
-      const el=document.createElement('div');el.className='annihilate-vfx';
-      el.style.cssText=`left:${cx}px;top:${cy}px;font-size:4rem;`;el.textContent='🌑';
-      document.body.appendChild(el);
-      // flash ทุกช่องบนกระดาน
-      for(let ro=0;ro<STATE.size;ro++)for(let co=0;co<(STATE.cols||STATE.size);co++)
-        flashCell(ro,co,'#11113388',(ro+co)*15);
-      await delay(800);el.remove();
-    }break;
-
-    // ── sr3 Key ──
-    case 'sr3':{
-      spawnCellEmoji(r,c,'🔑',{size:'2.5rem'});
-      flashCell(r,c,'#ffdd0088');
-      await delay(600);
-    }break;
-
-    // ── ep2 Balance ──
-    case 'ep3':{
-      const el=document.createElement('div');el.className='card-vfx';
-      el.style.cssText=`left:${cx}px;top:${cy}px;font-size:3rem;`;el.textContent='⚖️';
-      document.body.appendChild(el);
-      for(let ro=0;ro<STATE.size;ro++)for(let co=0;co<(STATE.cols||STATE.size);co++)
-        if(STATE.cells[ro][co].count>0)flashCell(ro,co,'#88aaff55',(ro*STATE.size+co)*10);
-      await delay(800);el.remove();
-    }break;
-
-    // ── ep4 Delay ──
-    case 'ep4':spawnCellEmoji(r,c,'🕐',{size:'2.5rem'});flashCell(r,c,'#aaaaff88');await delay(600);break;
-
-    // ── ep5 Nova ──
-    // ── ep5 Nova ── ลูกศรวิ่งออกจากช่องใกล้ระเบิดสุด
-    case 'ep5':{
-      if(vfxData.best){
-        const[br,bc]=vfxData.best;
-        spawnCellEmoji(br,bc,'💫',{size:'2.5rem'});
-        flashCell(br,bc,'#ffdd00bb');
-        flashScreen('#ffee0022',400);
-        (vfxData.boosted||[]).forEach(([ro,co],i)=>{
-          spawnArrow(br,bc,ro,co,'⭐',{size:'1rem',delay:i*0.08+0.1});
-          setTimeout(()=>{
-            if(!_onlineMode){STATE.cells[ro][co].count+=2;STATE.cells[ro][co].owner=playerIdx;updateCellDisplay(ro,co);}flashCell(ro,co,'#ffcc00bb');spawnCellEmoji(ro,co,'⭐',{size:'1.4rem',dur:0.5});
-            spawnFloatingNumber(ro,co,2,{color:'#ffdd44',size:'1.1rem'});
-          },(i*80)+500);
-        });
-        await delay((vfxData.boosted||[]).length*80+600);
-      }
-    }break;
-
-    // ── ep6 Inferno ── ไฟลามทีละช่อง
-    case 'ep6':{
-      const infC=vfxData.cells||[];
-      infC.sort(([r1,c1],[r2,c2])=>(r1+c1)-(r2+c2));
-      flashScreen('#ff220033',300);
-      infC.forEach(([ro,co],i)=>{
-        const t=i*40;
-        setTimeout(()=>{
-          spawnCellEmoji(ro,co,'🔥',{size:'1.5rem',dur:0.6});flashCell(ro,co,'#ff3300cc',0,350);if(!_onlineMode){STATE.cells[ro][co].count++;updateCellDisplay(ro,co);}spawnFloatingNumber(ro,co,1,{delay:0.1,size:'0.9rem',color:'#ff8844'});
-        },t);
-      });
-      await delay(infC.length*40+400);
-    }break;
-
-    // ── l2 Big Bang ──
-    // ── l2 Nuclear ── ระเบิดออกจากกลางกระดาน ripple
-    case 'l2':{
-      FX.HL.nuclear();
-      const nEl=document.createElement('div');nEl.className='annihilate-vfx';
-      nEl.style.cssText=`left:50vw;top:50vh;font-size:8rem;filter:drop-shadow(0 0 40px #ffaa00) drop-shadow(0 0 80px #ff6600);animation:singularityPulse 1.4s ease-out forwards;`;
-      nEl.textContent='☢️';document.body.appendChild(nEl);
-      flashScreen('#ffaa0077',800);
-      const sz4=STATE.size;const nucC=vfxData.cells||[];let maxD=0;
-      nucC.forEach(([ro,co])=>{
-        const dist=Math.abs(ro-sz4/2)+Math.abs(co-sz4/2);if(dist>maxD)maxD=dist;
-        const t=dist*40;
-        flashCell(ro,co,'#ffffff99',t,200);
-        flashCell(ro,co,'#ffaa00cc',t+150,400);
-        spawnCellEmoji(ro,co,'💥',{size:'1.2rem',delay:t/1000,dur:0.5});
-        setTimeout(()=>{
-          if(!_onlineMode){STATE.cells[ro][co].count=STATE.cells[ro][co].cap;updateCellDisplay(ro,co);}
-        },t+100);
-      });
-      await delay(maxD*40+800);nEl.remove();
-    }break;
-
-    // ── l3 Dominion ──
-    case 'l3':{
-      const dEl=document.createElement('div');dEl.className='annihilate-vfx';
-      dEl.style.cssText=`left:50vw;top:50vh;font-size:7rem;filter:drop-shadow(0 0 30px gold) drop-shadow(0 0 60px #ffcc00);animation:singularityPulse 1.6s ease-out forwards;`;
-      dEl.textContent='👑';document.body.appendChild(dEl);
-      flashScreen('#ffdd0044',700);
-      const empts=vfxData.empties||[];const md=vfxData.maxDist||0;const own=vfxData.owner??playerIdx;
-      empts.forEach(([ro,co])=>{
-        const dist=Math.abs(ro-STATE.size/2)+Math.abs(co-STATE.size/2);const t=dist*55;
-        setTimeout(()=>{
-          const el=document.querySelector(`.cell[data-r="${ro}"][data-c="${co}"]`);if(!el)return;
-          spawnCellEmoji(ro,co,'👑',{size:'1.3rem',dur:0.8});
-          el.style.transition='background .1s,box-shadow .1s';
-          el.style.background='rgba(255,200,0,0.55)';
-          el.style.boxShadow='0 0 20px gold,inset 0 0 16px rgba(255,200,0,0.6)';
-          setTimeout(()=>{
-            if(!_onlineMode){STATE.cells[ro][co].owner=own;STATE.cells[ro][co].count=1;}el.style.transition='background .5s,box-shadow .5s';
-            el.style.background='';el.style.boxShadow='';
-            updateCellDisplay(ro,co);setTimeout(()=>{el.style.transition='';},500);
-          },350);
-        },t);
-      });
-      await delay(md*55+900);dEl.remove();
-    }break;
-
-    // ── l4 Invasion ──
-    case 'l4':{
-      const iEl=document.createElement('div');iEl.className='annihilate-vfx';
-      iEl.style.cssText=`left:${cx}px;top:${cy}px;font-size:4rem;filter:drop-shadow(0 0 20px #aa00ff);`;iEl.textContent='🛸';
-      document.body.appendChild(iEl);flashScreen('#44004499',500);
-      (vfxData.invaded||[]).forEach(([ro,co],i)=>{
-        spawnArrow(r,c,ro,co,'🛸',{delay:i*0.12,size:'1.1rem'});
-        setTimeout(()=>{updateCellDisplay(ro,co);spawnCellEmoji(ro,co,'🛸',{size:'1.4rem',dur:0.5});flashCell(ro,co,`${PLAYER_COLORS[playerIdx]}cc`);},i*120+550);
-      });
-      await delay((vfxData.invaded||[]).length*120+700);iEl.remove();
-    }break;
-
-    // ── m1 Singularity ──
-    case 'm1':{
-      const sgEl=document.createElement('div');sgEl.className='annihilate-vfx';
-      sgEl.style.cssText=`left:50vw;top:50vh;font-size:9rem;filter:drop-shadow(0 0 50px #aa44ff) drop-shadow(0 0 100px #6600ff);animation:singularityPulse 1.8s cubic-bezier(.2,0,.4,1) forwards;`;
-      sgEl.textContent='🪐';document.body.appendChild(sgEl);
-      flashScreen('#6600ffcc',1400);flashCell(r,c,'#ffffff99');
-      await delay(200);
-      const sz6=STATE.size;
-      for(let ro=0;ro<sz6;ro++)for(let co=0;co<sz6;co++){
-        if(ro===r&&co===c)continue;
-        if(STATE.cells[ro][co].count>0){
-          const dist=Math.abs(ro-r)+Math.abs(co-c);
-          spawnArrow(ro,co,r,c,'🟣',{delay:dist*0.04,size:'1rem'});
-          flashCell(ro,co,'#aa44ffbb',dist*40,300);
-          // online mode: ลบบอลออกทันทีเมื่อลูกศรถึงจุดหมาย
-          if(_onlineMode){
-            const arriveMs=dist*40+350;
-            const captRo=ro,captCo=co;
-            setTimeout(()=>{
-              const el=document.querySelector(`.cell[data-r="${captRo}"][data-c="${captCo}"]`);
-              if(el){
-                el.style.transition='opacity .15s,background .15s';
-                el.style.opacity='0';
-                el.style.background='transparent';
-              }
-            },arriveMs);
-          }
-        }
-      }
-      for(let i=0;i<12;i++){
-        const p=document.createElement('div');const angle=(i/12)*Math.PI*2;const d=100+Math.random()*80;
-        const pp=getCellCenter(r,c);
-        p.style.cssText=`position:fixed;left:${pp.x}px;top:${pp.y}px;font-size:${1+Math.random()*0.8}rem;pointer-events:none;z-index:850;--tx:${Math.cos(angle)*d}px;--ty:${Math.sin(angle)*d}px;animation:arrowFly 0.8s ease-out forwards;animation-delay:${0.6+i*0.04}s;`;
-        p.textContent=['⭐','💫','✨','🌟','💠'][i%5];document.body.appendChild(p);setTimeout(()=>p.remove(),1600+i*40);
-      }
-      flashCell(r,c,'#cc00ffcc');await delay(1000);flashScreen('#ffffff66',400);await delay(400);sgEl.remove();
-    }break;
-
-    // ── m2 Big Bang ──
-    case 'm2':{
-      FX.HL.bigbang();
-      const bbEl=document.createElement('div');bbEl.className='annihilate-vfx';
-      bbEl.style.cssText=`left:50vw;top:50vh;font-size:8rem;filter:drop-shadow(0 0 50px #ff6600) drop-shadow(0 0 100px #ff0000);animation:singularityPulse 1.6s ease-out forwards;`;
-      bbEl.textContent='🌌';document.body.appendChild(bbEl);
-      flashScreen('#ff440099',800);
-      for(let i=0;i<16;i++){
-        const p=document.createElement('div');const angle=(i/16)*Math.PI*2;const d=120+Math.random()*100;
-        p.style.cssText=`position:fixed;left:50vw;top:50vh;font-size:${1.2+Math.random()}rem;pointer-events:none;z-index:850;--tx:${Math.cos(angle)*d}px;--ty:${Math.sin(angle)*d}px;animation:arrowFly 1s ease-out forwards;animation-delay:${i*0.05}s;`;
-        p.textContent=['💥','⭐','🔥','✨','💫'][i%5];document.body.appendChild(p);setTimeout(()=>p.remove(),1200+i*50);
-      }
-      await delay(300);
-      (vfxData.exploded||[]).forEach(([ro,co],i)=>{
-        flashCell(ro,co,'#ff6600cc',i*18,500);
-        spawnCellEmoji(ro,co,'💥',{size:'1.6rem',delay:i*0.018,dur:0.7});
-        if(_onlineMode){
-          setTimeout(()=>{
-            const el=document.querySelector(`.cell[data-r="${ro}"][data-c="${co}"]`);
-            if(el){el.style.transition='opacity .3s';el.style.opacity='0.1';}
-          },i*18+500);
-        }
-      });
-      await delay(1400);flashScreen('#ffffff88',500);await delay(300);bbEl.remove();
-    }break;
-
-    // ── การ์ดใหม่ ──
-    case 'c13':{
-      const v=vfxData.value??0;
-      spawnCellEmoji(r,c,v>0?'📈':v<0?'📉':'➖',{size:'2rem'});
-      flashCell(r,c,v>0?'#44ff8899':v<0?'#ff444499':'#aaaaaa88');
-      const p2=getCellCenter(r,c);
-      const lbl=document.createElement('div');
-      lbl.style.cssText=`position:fixed;left:${p2.x}px;top:${p2.y-10}px;font-family:'Fredoka One','Mitr',cursive;font-size:2rem;color:${v>=0?'#66ff88':'#ff6666'};font-weight:900;pointer-events:none;z-index:999;animation:vfxFloat 1s ease-out forwards;transform:translateX(-50%);`;
-      lbl.textContent=v>=0?`+${v}`:`${v}`;document.body.appendChild(lbl);
-      await delay(700);lbl.remove();
-    }break;
-    case 'c14':{
-      spawnCellEmoji(r,c,'🪄',{size:'2.2rem'});flashCell(r,c,'#bb44ffaa');
-      if(vfxData.bonusCell){
-        const[nr,nc]=vfxData.bonusCell;const val=vfxData.bonusVal||1;
-        await delay(200);spawnArrow(r,c,nr,nc,'✨',{size:'1rem',delay:0.05});
-        await delay(500);
-        if(!_onlineMode){STATE.cells[nr][nc].count+=val;STATE.cells[nr][nc].owner=playerIdx;renderGrid();}
-        flashCell(nr,nc,'#bb44ffaa');spawnCellEmoji(nr,nc,'🪄',{size:'1.4rem',dur:0.5});
-        const p3=getCellCenter(nr,nc);const lbl2=document.createElement('div');
-        lbl2.style.cssText=`position:fixed;left:${p3.x}px;top:${p3.y-10}px;font-family:'Fredoka One','Mitr',cursive;font-size:2.2rem;color:#fff;font-weight:900;pointer-events:none;z-index:999;animation:vfxFloat 1.1s ease-out forwards;transform:translateX(-50%);text-shadow:0 0 12px #bb44ff;`;
-        lbl2.textContent=`+${val}`;document.body.appendChild(lbl2);setTimeout(()=>lbl2.remove(),1100);
-      }
-      await delay(600);
-    }break;
-    case 'u10':{
-      spawnCellEmoji(r,c,'🎁',{size:'2.2rem'});flashCell(r,c,'#00ff88bb');
-      if(vfxData.enemyCell){const[er,ec]=vfxData.enemyCell;await delay(200);spawnArrow(r,c,er,ec,'🎁',{size:'1rem',delay:0.05});await delay(500);STATE.cells[er][ec].count++;updateCellDisplay(er,ec);flashCell(er,ec,'#ff8800bb');spawnCellEmoji(er,ec,'💢',{size:'1.6rem',dur:0.5});}
-      await delay(400);
-    }break;
-    case 'r7':spawnCellEmoji(r,c,'⬛',{size:'2.5rem'});flashCell(r,c,'#000000aa');await delay(300);flashCell(r,c,'#111111bb');await delay(400);break;
-    // ── r8 Rewind: กรอเทปย้อนกลับ (FX.HL.rewind) ──
-    case 'r8':
-      // ออฟไลน์: โค้ดที่เรียกเราจะวาดกระดานที่ย้อนแล้วทันทีหลังบรรทัดนี้ → ปล่อยให้มันวาดก่อน (microtask ถัดไป ยังไม่ทันขึ้นจอ) แล้วค่อยเริ่มจากสภาพก่อนย้อน
-      await null;
-      await FX.HL.rewind(vfxData.diff||[],CRLogic.cardVfxMs('r8',vfxData));
-      break;
-    case 'sr1':spawnCellEmoji(r,c,'🪓',{size:'2rem'});flashCell(r,c,'#ff4400bb');await delay(500);break;
-    case 'sr2':{
-      const el2=document.createElement('div');el2.className='annihilate-vfx';
-      el2.style.cssText=`left:${cx}px;top:${cy}px;font-size:4rem;`;el2.textContent='🌑';
-      document.body.appendChild(el2);flashScreen('#00001188',600);
-      for(let ro=0;ro<STATE.size;ro++)for(let co=0;co<(STATE.cols||STATE.size);co++)flashCell(ro,co,'#000044cc',(ro+co)*15,500);
-      await delay(800);el2.remove();
-    }break;
-    case 'sr3':spawnCellEmoji(r,c,'🔑',{size:'2.5rem'});flashCell(r,c,'#ffcc00bb');await delay(500);break;
-    case 'ep3':{
-      const el3=document.createElement('div');el3.className='annihilate-vfx';
-      el3.style.cssText=`left:${cx}px;top:${cy}px;font-size:4rem;`;el3.textContent='⚖️';
-      document.body.appendChild(el3);
-      const sz2=STATE.size,cl2=STATE.cols||sz2,mid=sz2/2,midc=cl2/2;
-      for(let ro=0;ro<sz2;ro++)for(let co=0;co<cl2;co++){const dist=Math.abs(ro-mid)+Math.abs(co-midc);flashCell(ro,co,'#5577ffbb',dist*40);}
-      await delay(900);el3.remove();
-    }break;
-    case 'ep4':spawnCellEmoji(r,c,'🕐',{size:'2.5rem'});flashCell(r,c,'#6666ffcc');await delay(500);break;
-    case 'ep5':{
-      if(vfxData.best){
-        const[br,bc]=vfxData.best;
-        spawnCellEmoji(br,bc,'💫',{size:'2.5rem'});flashCell(br,bc,'#ffdd00bb');
-        (vfxData.boosted||[]).forEach(([ro,co],i)=>{
-          spawnArrow(br,bc,ro,co,'⭐',{size:'0.9rem',delay:i*0.08+0.1});
-          setTimeout(()=>{
-            updateCellDisplay(ro,co);flashCell(ro,co,'#ffcc00bb');spawnCellEmoji(ro,co,'⭐',{size:'1.3rem',dur:0.4});
-          },(i*80)+500);
-        });
-        await delay((vfxData.boosted||[]).length*80+600);
-      }
-    }break;
-    case 'ep6':{
-      const infC=vfxData.cells||[];
-      infC.sort(([r1,c1],[r2,c2])=>(r1+c1)-(r2+c2));
-      infC.forEach(([ro,co],i)=>{
-        const t=i*45;
-        spawnCellEmoji(ro,co,'🔥',{size:'1.4rem',delay:t/1000,dur:0.6});
-        flashCell(ro,co,'#ff2200cc',t,300);
-        setTimeout(()=>{
-          updateCellDisplay(ro,co);
-        },t+200);
-      });
-      await delay(infC.length*45+500);
-    }break;
-    case 'l2':{
-      const el4=document.createElement('div');el4.className='annihilate-vfx';
-      el4.style.cssText=`left:${cx}px;top:${cy}px;font-size:6rem;filter:drop-shadow(0 0 30px #ffaa00);`;el4.textContent='☢️';
-      document.body.appendChild(el4);flashScreen('#ffaa0055',500);
-      const sz4=STATE.size;
-      for(let ro=0;ro<sz4;ro++)for(let co=0;co<sz4;co++){
-        const dist=Math.abs(ro-sz4/2)+Math.abs(co-sz4/2);
-        flashCell(ro,co,'#ffffffcc',dist*30);flashCell(ro,co,'#ffaa00bb',dist*30+150);
-        spawnCellEmoji(ro,co,'💥',{size:'1rem',delay:dist*0.03,dur:0.4});
-      }
-      await delay(1400);el4.remove();
-    }break;
-    case 'l3':{
-      const el5=document.createElement('div');el5.className='annihilate-vfx';
-      el5.style.cssText=`left:${cx}px;top:${cy}px;font-size:5rem;filter:drop-shadow(0 0 20px gold);`;el5.textContent='👑';
-      document.body.appendChild(el5);flashScreen('#ffdd0033',600);
-      const empties=vfxData.empties||[];
-      const maxDist=vfxData.maxDist||0;
-      empties.forEach(([ro,co])=>{
-        const dist=Math.abs(ro-STATE.size/2)+Math.abs(co-STATE.size/2);
-        const t=dist*55;
-        setTimeout(()=>{
-          const el=document.querySelector(`.cell[data-r="${ro}"][data-c="${co}"]`);
-          if(!el)return;
-          spawnCellEmoji(ro,co,'👑',{size:'1.2rem',dur:0.7});
-          // flash ทอง
-          el.style.transition='background .1s, box-shadow .1s';
-          el.style.background='rgba(255,200,0,0.55)';
-          el.style.boxShadow='0 0 20px gold, inset 0 0 16px rgba(255,200,0,0.6)';
-          // fade เป็นสีผู้เล่น
-          setTimeout(()=>{
-            el.style.transition='background .5s, box-shadow .5s';
-            el.style.background='';el.style.boxShadow='';
-            updateCellDisplay(ro,co);
-            setTimeout(()=>{el.style.transition='';},500);
-          },350);
-        },t);
-      });
-      await delay(maxDist*55+800);el5.remove();
-    }break;
-    case 'l4':{
-      spawnCellEmoji(r,c,'🛸',{size:'3.5rem'});flashScreen('#44004488',400);
-      (vfxData.invaded||[]).forEach(([ro,co],i)=>{
-        spawnArrow(r,c,ro,co,'🛸',{delay:i*0.12,size:'1.1rem'});
-        setTimeout(()=>{updateCellDisplay(ro,co);spawnCellEmoji(ro,co,'🛸',{size:'1.3rem',dur:0.4});flashCell(ro,co,`${PLAYER_COLORS[playerIdx]}ee`);},i*120+550);
-      });
-      await delay((vfxData.invaded||[]).length*120+700);
-    }break;
-    case 'l5':{
-      FX.HL.rebirth(vfxData.target?vfxData.target[0]:r,vfxData.target?vfxData.target[1]:c);
-      const r5el=document.createElement('div');r5el.className='annihilate-vfx';
-      r5el.style.cssText=`left:50vw;top:50vh;font-size:8rem;filter:drop-shadow(0 0 50px #00ffcc) drop-shadow(0 0 100px #00aa88);animation:singularityPulse 1.6s ease-out forwards;`;
-      r5el.textContent='🔮';document.body.appendChild(r5el);
-      flashScreen('#00ffcc55',1200);
-      for(let i=0;i<10;i++){
-        const p=document.createElement('div');const angle=(i/10)*Math.PI*2;const d=80+Math.random()*60;
-        p.style.cssText=`position:fixed;left:50vw;top:50vh;font-size:${0.8+Math.random()*0.8}rem;pointer-events:none;z-index:850;--tx:${Math.cos(angle)*d}px;--ty:${Math.sin(angle)*d}px;animation:arrowFly 0.8s ease-out forwards;animation-delay:${0.3+i*0.07}s;`;
-        p.textContent=['✨','💫','🌟','⭐','🔮'][i%5];document.body.appendChild(p);setTimeout(()=>p.remove(),1400);
-      }
-      if(vfxData.target){
-        const[tr,tc]=vfxData.target;
-        await delay(500);
-        flashCell(tr,tc,'#00ffcccc');
-        spawnCellEmoji(tr,tc,'🔮',{size:'3rem',dur:1});
-        flashCell(tr,tc,'#ffffffcc',300,400);
-      }
-      await delay(900);r5el.remove();
-    }break;
-    case 'm1':{
-      const sgEl=document.createElement('div');sgEl.className='annihilate-vfx';
-      sgEl.style.cssText=`left:50vw;top:50vh;font-size:8rem;filter:drop-shadow(0 0 40px #aa44ff) drop-shadow(0 0 80px #6600ff);animation:singularityPulse 1.6s cubic-bezier(.2,0,.4,1) forwards;`;
-      sgEl.textContent='🪐';document.body.appendChild(sgEl);
-      flashScreen('#6600ffaa',1200);flashCell(r,c,'#ffffff99');await delay(150);
-      const sz6=STATE.size;
-      for(let ro=0;ro<sz6;ro++)for(let co=0;co<sz6;co++){
-        if(ro===r&&co===c)continue;
-        if(STATE.cells[ro][co].count>0){const dist=Math.abs(ro-r)+Math.abs(co-c);spawnArrow(ro,co,r,c,'🟣',{delay:dist*0.04,size:'0.9rem'});flashCell(ro,co,'#aa44ff88',dist*40,250);}
-      }
-      flashCell(r,c,'#aa00ffcc');await delay(900);flashScreen('#ffffff55',300);await delay(400);sgEl.remove();
-    }break;
-    case 'm2':{
-      const el7=document.createElement('div');el7.className='annihilate-vfx';
-      el7.style.cssText=`left:50vw;top:50vh;font-size:6rem;filter:drop-shadow(0 0 30px #ffaa00);`;el7.textContent='🌌';
-      document.body.appendChild(el7);flashScreen('#ff440077',700);await delay(100);
-      (vfxData.exploded||[]).forEach(([ro,co],i)=>{flashCell(ro,co,'#ff6600cc',i*20,400);spawnCellEmoji(ro,co,'💥',{size:'1.5rem',delay:i*0.02,dur:0.6});});
-      await delay(1300);el7.remove();
-    }break;
-    case 'e4':{
-      spawnCellEmoji(r,c,'🏛️',{size:'2rem'});flashCell(r,c,'#bb88ff99');
-      (vfxData.col||[]).forEach(([ro,co],i)=>{spawnCellEmoji(ro,co,'🏛️',{size:'1.4rem',delay:i*0.05,dur:0.6});flashCell(ro,co,'#aa66ffbb',i*50);});
-      await delay(700);
-    }break;
-    default:{const el=document.createElement('div');el.className='card-vfx';const def=CARD_DEFS.find(d=>d.id===cardId);el.style.cssText=`left:${pos.x}px;top:${pos.y}px;`;el.textContent=def?def.emoji:'✨';document.body.appendChild(el);await delay(700);el.remove();}
-  }
-}
+// เอฟเฟกต์ของการ์ดแต่ละใบอยู่ใน client/cardFx.js (window.spawnCardVfx)
 
 // จบเทิร์นแบบมาตรฐาน: ระเบิดที่ค้าง → time bomb → ตกรอบ → ชนะ/เปลี่ยนตา
 function finishTurn(){processExplosions(()=>{if(!tickTimeBombs()){checkEliminations();if(!checkWin())endTurn();}});}
@@ -4082,39 +3596,28 @@ async function executeCardInner(cardDef,playerIdx,cardIdx,targets){
   FX.hold(baseDur+extraDur);
   FX.track(spawnCardVfx(cardDef.id,targets,cur,vfxData).catch(e=>console.error('[vfx]',cardDef.id,e)));
   renderGrid();renderHandBar();renderScoreboard();
-  [[r,c],[r2,c2]].filter(([ro,co])=>ro!==undefined).forEach(([ro,co])=>{const el=document.querySelector(`.cell[data-r="${ro}"][data-c="${co}"]`);if(el){el.classList.add('card-fx');setTimeout(()=>el.classList.remove('card-fx'),700);}});
-  // รอ VFX ก่อน processExplosions สำหรับการ์ดที่บวกใน VFX
-  if(['c14','u10','c2','c3','c9','u6','r4','ep5','c4','l3','ep6'].includes(cardDef.id)){
-    const waitMs=Math.max(0,vfxFinishTime-Date.now()+200);
-    await new Promise(res=>setTimeout(res,waitMs));
-    animating=false;document.getElementById('blocker').classList.remove('on');
-    await new Promise(res=>processExplosions(res));
-    if(!tickTimeBombs()){checkEliminations();if(!checkWin())endTurn();}
-    return;
-  }
+  // เอฟเฟกต์ของการ์ดเล่นจบก่อน แล้วค่อยระเบิด / เปลี่ยนตา — เหมือนโหมดออนไลน์
+  // (ของเดิมมีแค่ 11 ใบที่รอ ใบที่เหลือลูกโซ่เริ่มทับเอฟเฟกต์ของการ์ดทันที)
+  const gid=STATE._gameId||0;
+  await new Promise(res=>setTimeout(res,Math.max(0,vfxFinishTime-Date.now()+120)));
+  if((STATE._gameId||0)!==gid||STATE._dead)return; // เริ่มเกมใหม่ / ออกเมนูไประหว่างรอ
+  animating=false;document.getElementById('blocker').classList.remove('on');
   // Delay: endTurn ทันที
   if(cardDef.id==='ep4'){
-    animating=false;document.getElementById('blocker').classList.remove('on');
     renderGrid();renderHandBar();renderScoreboard();
     if(!tickTimeBombs()){checkEliminations();if(!checkWin())endTurn();}
     return;
   }
-  if(cardDef.id==='u1'||cardDef.id==='e1'||cardDef.id==='m1'||cardDef.id==='m2'){
-    animating=false;document.getElementById('blocker').classList.remove('on');
-    await new Promise(res=>processExplosions(res));
-    if(cardDef.id==='e1'){STATE.cells[r][c].count=STATE.cells[r][c].cap;STATE.cells[r][c].owner=cur;renderGrid();await new Promise(res=>processExplosions(res));}
-    if(cardDef.id==='m2'){
-      // Supernova: +2 คืนให้ช่องที่ระเบิดไปแล้ว
-      (vfxData.exploded||[]).forEach(([ro,co])=>{
-        if(STATE.cells[ro][co].owner===cur||STATE.cells[ro][co].owner===-1){STATE.cells[ro][co].count+=2;STATE.cells[ro][co].owner=cur;}
-      });
-      renderGrid();await new Promise(res=>processExplosions(res));
-    }
-    if(!tickTimeBombs()){checkEliminations();if(!checkWin())endTurn();}
-  } else {
-    animating=false;document.getElementById('blocker').classList.remove('on');
-    processExplosions(()=>{if(!tickTimeBombs()){checkEliminations();if(!checkWin())endTurn();}});
+  await new Promise(res=>processExplosions(res));
+  if(cardDef.id==='e1'){STATE.cells[r][c].count=STATE.cells[r][c].cap;STATE.cells[r][c].owner=cur;renderGrid();await new Promise(res=>processExplosions(res));}
+  if(cardDef.id==='m2'){
+    // Supernova: +2 คืนให้ช่องที่ระเบิดไปแล้ว
+    (vfxData.exploded||[]).forEach(([ro,co])=>{
+      if(STATE.cells[ro][co].owner===cur||STATE.cells[ro][co].owner===-1){STATE.cells[ro][co].count+=2;STATE.cells[ro][co].owner=cur;}
+    });
+    renderGrid();await new Promise(res=>processExplosions(res));
   }
+  if(!tickTimeBombs()){checkEliminations();if(!checkWin())endTurn();}
 }
 
 let vfxFinishTime=0;
@@ -4458,6 +3961,7 @@ window.addEventListener('resize',()=>{if(document.getElementById('game-screen').
 FX.init();
 </script>
 
+<script src="cardFx.js"></script> <!-- window.spawnCardVfx: เอฟเฟกต์ของการ์ดแต่ละใบ (ใช้ FX.K) -->
 <script src="online.js"></script>
 </body>
 </html>
