@@ -4,7 +4,7 @@ const { Server } = require('socket.io');
 const path    = require('path');
 const { attach } = require('./game-server');
 
-// Global error handler - prevent Railway restart
+// Global error handler - keep the process alive
 // (เฉพาะตอนรันเป็น server จริง — ตอนถูก require จากชุดทดสอบ ปล่อยให้ error โผล่ตามปกติ)
 if (require.main === module) {
   process.on('uncaughtException', (err) => {
