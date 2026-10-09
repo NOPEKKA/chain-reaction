@@ -134,6 +134,8 @@ body{font-family:'Nunito','Noto Sans Thai',sans-serif;background:var(--bg);min-h
 .bot-slot.is-bot{background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.25);}
 .bot-slot.is-bot .bs-label{color:#fff;}
 .bot-slot.is-bot .bs-toggle{color:#ffdd88;}
+.bot-slot .bs-level{font-family:'Mitr','Nunito','Noto Sans Thai',sans-serif;font-size:.74rem;color:#fff;background:rgba(0,0,0,.32);border:1px solid rgba(255,255,255,.28);border-radius:8px;padding:0 4px;margin-left:4px;min-height:30px;cursor:pointer;}
+.bot-slot .bs-level option{background:#2b2540;color:#fff;}
 .swatch-group{display:flex;gap:8px;flex-wrap:wrap;max-width:100%;}
 .swatch{width:32px;height:32px;border-radius:8px;cursor:pointer;border:2px solid transparent;transition:all .15s;position:relative;}
 @media(hover:hover){.swatch:hover{transform:scale(1.15);}}
@@ -161,6 +163,8 @@ body{font-family:'Nunito','Noto Sans Thai',sans-serif;background:var(--bg);min-h
 .score-card.hand-full .full-badge{display:block;}
 .score-card .bot-tag{font-size:.5rem;color:rgba(255,255,255,0.5);font-weight:700;letter-spacing:.5px;}
 .score-card.active-turn .bot-tag{color:#bbb;}
+.score-card .bot-tag{white-space:nowrap;}
+@media(max-width:520px){.score-card .bot-tag .bt-ico{display:none;}}
 .score-card .score-wins{font-size:.65rem;font-family:'Fredoka One','Mitr',cursive;color:#ffd700;text-shadow:0 1px 3px rgba(0,0,0,0.4);margin-top:1px;}
 .score-card.active-turn .score-wins{color:#e6a800;}
 #grid-wrap{background:rgba(255,255,255,0.1);border-radius:16px;padding:8px;box-shadow:0 8px 32px rgba(0,0,0,0.2);max-width:100%;transition:box-shadow .4s ease;}
@@ -813,6 +817,7 @@ button.mode-card{width:100%;border:1px solid rgba(255,255,255,.14);color:#fff;te
 </style>
 <script src="/socket.io/socket.io.js"></script> <!-- มีเฉพาะเมื่อเปิดจาก server ของเกม · GitHub Pages ไม่มี → ใช้ Firebase -->
 <script src="shared/gameLogic.js"></script> <!-- window.CRLogic: กติกา + เวลาของเอฟเฟกต์ ชุดเดียวกับ server -->
+<script src="botAI.js"></script> <!-- window.CRBot: บอท — ตัดสินใจด้วยการลองเดินบนกติกาของ CRLogic -->
 <script src="fb-config.js"></script>
 <script src="fb-transport.js"></script>
 </head>
@@ -965,6 +970,15 @@ button.mode-card{width:100%;border:1px solid rgba(255,255,255,.14);color:#fff;te
     </div>
   </div>
   <div class="play-section">
+    <div class="section-label">🧠 ระดับความยากของ Bot</div>
+    <div class="pill-group" id="solo-level-pills">
+      <div class="pill" data-level="easy">Easy</div>
+      <div class="pill active" data-level="normal">Normal</div>
+      <div class="pill" data-level="hard">Hard</div>
+      <div class="pill" data-level="impossible">Impossible</div>
+    </div>
+  </div>
+  <div class="play-section">
     <div class="section-label">🗺️ ขนาดแผนที่</div>
     <div class="section-label" style="font-size:.6rem;opacity:.6;margin-bottom:4px;margin-top:-4px;">⬛ จัตุรัส</div>
     <div class="pill-group" id="map-pills" style="margin-bottom:8px;">
@@ -1014,7 +1028,7 @@ button.mode-card{width:100%;border:1px solid rgba(255,255,255,.14);color:#fff;te
     </div>
   </div>
   <div class="play-section">
-    <div class="section-label">🤖 ใครเป็น Bot?</div>
+    <div class="section-label">🤖 ใครเป็น Bot? (เลือกระดับได้ทีละตัว)</div>
     <div class="bot-slots" id="bot-slots"></div>
   </div>
   <div class="play-section">
@@ -1256,7 +1270,15 @@ const THEMES={
 const PLAYER_COLORS=['#e05c5c','#5bc4e0','#6dba6d','#e0a84a','#cc55ee','#ee8844'];
 let PLAYER_NAMES=['ผู้เล่น 1','ผู้เล่น 2','ผู้เล่น 3','ผู้เล่น 4','ผู้เล่น 5','ผู้เล่น 6'];
 function getPlayerName(i){const members=window._getRoomMembers&&window._getRoomMembers();if(members&&members.length){const m=members.find(x=>x.slot===i);if(m&&m.name)return m.name;}return PLAYER_NAMES[i]||`P${i+1}`;}
-let cfg={players:2,mapSize:8,mapCols:8,theme:'night',cardInterval:2,bots:[]};
+let cfg={players:2,mapSize:8,mapCols:8,theme:'night',cardInterval:2,bots:[],
+  botLevels:{},        // ระดับของบอทแต่ละที่นั่ง (หน้า "เครื่องเดียวกัน") — จำไว้ใน localStorage
+  soloLevel:'normal',  // ระดับของหน้า "เล่นกับบอท" (ใช้กับบอททุกตัว)
+  gameLevels:{}};      // ระดับที่ใช้จริงในเกมที่กำลังเล่น (ตั้งตอนกดเริ่ม)
+const BOT_LEVELS=['easy','normal','hard','impossible'];
+const BOT_LEVEL_NAME={easy:'Easy',normal:'Normal',hard:'Hard',impossible:'Impossible'};
+try{const o=JSON.parse(localStorage.getItem('cr.botLevels')||'{}');for(const k in o)if(BOT_LEVELS.includes(o[k]))cfg.botLevels[k]=o[k];
+  const sl=localStorage.getItem('cr.soloLevel');if(BOT_LEVELS.includes(sl))cfg.soloLevel=sl;}catch(e){}
+function saveBotLevels(){try{localStorage.setItem('cr.botLevels',JSON.stringify(cfg.botLevels));localStorage.setItem('cr.soloLevel',cfg.soloLevel);}catch(e){}}
 let STATE={};
 let animating=false,pendingPickPlayer=-1,targetingCard=null,targetData={},selectedHandCard=null,rerollsLeft=999;
 const STEP_DELAY=520,HAND_LIMIT=4;
@@ -2322,8 +2344,18 @@ function buildBotSlots(){
     const isBotP=cfg.bots.includes(i);
     const slot=document.createElement('div');
     slot.className='bot-slot'+(isBotP?' is-bot':'');slot.dataset.idx=i;
-    slot.innerHTML=`<div class="bs-dot" style="background:${PLAYER_COLORS[i]}"></div><span class="bs-label">${esc(getPlayerName(i).replace('ผู้เล่น ','P'))}</span><span class="bs-toggle">${isBotP?'🤖 Bot':'👤 คน'}</span>`;
+    const pn=esc(getPlayerName(i).replace('ผู้เล่น ','P'));
+    slot.innerHTML=`<div class="bs-dot" style="background:${PLAYER_COLORS[i]}"></div><span class="bs-label">${pn}</span><span class="bs-toggle">${isBotP?'🤖 Bot':'👤 คน'}</span>`;
     slot.addEventListener('click',()=>{if(cfg.bots.includes(i))cfg.bots=cfg.bots.filter(x=>x!==i);else cfg.bots.push(i);buildBotSlots();});
+    if(isBotP){
+      // ระดับของบอทตัวนี้ — กดที่ตัวเลือกไม่สลับ คน/บอท
+      const sel=document.createElement('select');sel.className='bs-level';sel.setAttribute('aria-label',`ระดับความยากของ Bot ${pn}`);
+      const cur=BOT_LEVELS.includes(cfg.botLevels[i])?cfg.botLevels[i]:'normal';
+      BOT_LEVELS.forEach(l=>{const o=document.createElement('option');o.value=l;o.textContent=BOT_LEVEL_NAME[l];if(l===cur)o.selected=true;sel.appendChild(o);});
+      ['click','pointerdown','mousedown','touchstart'].forEach(ev=>sel.addEventListener(ev,e=>e.stopPropagation()));
+      sel.addEventListener('change',()=>{cfg.botLevels[i]=sel.value;saveBotLevels();});
+      slot.appendChild(sel);
+    }
     wrap.appendChild(slot);
   }
 }
@@ -2602,12 +2634,20 @@ document.getElementById('solo-bot-pills').querySelectorAll('.pill').forEach(p=>{
 });
 // default solo: 1 human + 1 bot
 cfg.players=2;cfg.bots=[1];buildBotSlots();
+// ระดับความยากของหน้า Solo
+(()=>{
+  const pills=document.getElementById('solo-level-pills').querySelectorAll('.pill');
+  const sync=()=>pills.forEach(x=>x.classList.toggle('active',x.dataset.level===cfg.soloLevel));
+  pills.forEach(p=>p.addEventListener('click',()=>{cfg.soloLevel=p.dataset.level;saveBotLevels();sync();}));
+  sync();
+})();
 
 document.getElementById('solo-start-btn').addEventListener('click',()=>{
   document.getElementById('solo-screen').classList.remove('active');
   document.getElementById('main-menu').style.display='none';
   document.getElementById('game-screen').style.display='flex';
   if(!cfg.mapCols||cfg.mapCols===cfg.mapSize)cfg.mapCols=cfg.mapSize;
+  cfg.gameLevels={};cfg.bots.forEach(i=>{cfg.gameLevels[i]=cfg.soloLevel;});
   startGame();SFX.select();
 });
 
@@ -2621,6 +2661,7 @@ document.getElementById('multi-start-btn').addEventListener('click',()=>{
   document.getElementById('main-menu').style.display='none';
   document.getElementById('game-screen').style.display='flex';
   if(!cfg.mapCols||cfg.mapCols===cfg.mapSize)cfg.mapCols=cfg.mapSize;
+  cfg.gameLevels={};cfg.bots.forEach(i=>{cfg.gameLevels[i]=cfg.botLevels[i]||'normal';});
   startGame();SFX.select();
 });
 
@@ -2715,6 +2756,7 @@ function hexToRgba(hex,a){const rv=parseInt(hex.slice(1,3),16),gv=parseInt(hex.s
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
 function showToast(msg){const old=document.querySelector('.toast');if(old)old.remove();const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2200);}
 function isBot(i){return cfg.bots.includes(i);}
+function botLevel(i){const l=cfg.gameLevels&&cfg.gameLevels[i];return BOT_LEVELS.includes(l)?l:'normal';}
 function delay(ms){return new Promise(r=>setTimeout(r,ms));}
 
 // จั่วการ์ด — pi = ผู้เล่นที่จั่ว: ถ้าเขามี Key จะได้ rare ขึ้นไป แล้ว Key ของเขาถูกใช้ไป (ของเดิม Key เป็นค่ากลาง ใครจั่วก่อนได้ไป)
@@ -2770,7 +2812,7 @@ function renderScoreboard(){
     card.id=`sc-${i}`;
     const wins=STATE.scores?STATE.scores[i]||0:0;
     const orbCount=STATE.cells?STATE.cells.reduce((s,row)=>s+row.reduce((ss,ce)=>ss+(ce.owner===i?ce.count:0),0),0):0;
-    card.innerHTML=`<div class="full-badge">FULL</div><div class="player-dot" style="background:${PLAYER_COLORS[i]};box-shadow:0 2px 6px ${PLAYER_COLORS[i]}88"></div><div class="player-name">${isElim?'✕':esc(getPlayerName(i).replace('ผู้เล่น ','P'))}</div>${isBot(i)&&!(window._getOnlineMode&&window._getOnlineMode())?'<div class="bot-tag">🤖 BOT</div>':''}${wins>0?`<div class="score-wins">🏆${wins}</div>`:''}<div class="orb-count" style="font-size:.65rem;font-weight:800;color:${PLAYER_COLORS[i]};text-shadow:0 1px 4px ${PLAYER_COLORS[i]}66;margin-top:1px;">⬤ ${orbCount}</div><div class="hand-count">🎴 ${handSize}/${HAND_LIMIT}</div>`;
+    card.innerHTML=`<div class="full-badge">FULL</div><div class="player-dot" style="background:${PLAYER_COLORS[i]};box-shadow:0 2px 6px ${PLAYER_COLORS[i]}88"></div><div class="player-name">${isElim?'✕':esc(getPlayerName(i).replace('ผู้เล่น ','P'))}</div>${isBot(i)&&!(window._getOnlineMode&&window._getOnlineMode())?`<div class="bot-tag"><span class="bt-ico">🤖 </span>${BOT_LEVEL_NAME[botLevel(i)].toUpperCase()}</div>`:''}${wins>0?`<div class="score-wins">🏆${wins}</div>`:''}<div class="orb-count" style="font-size:.65rem;font-weight:800;color:${PLAYER_COLORS[i]};text-shadow:0 1px 4px ${PLAYER_COLORS[i]}66;margin-top:1px;">⬤ ${orbCount}</div><div class="hand-count">🎴 ${handSize}/${HAND_LIMIT}</div>`;
     if(testMode){
       card.style.cursor='pointer';
       card.addEventListener('click',()=>{
@@ -3008,24 +3050,31 @@ function handleCellClick(){
   if(!STATE.alive.includes(cur)){if(rebirthUsable(cur))showToast('🔮 กดการ์ด Rebirth แล้วเลือกช่องว่างเพื่อคืนชีพ');return;}
   if(STATE.moved[cur]){showToast('❌ ใช้ action ไปแล้วในเทิร์นนี้');return;}
   if(STATE.frozen[cur]>0){showToast('❄️ Frozen! ข้ามเทิร์น');SFX.frozen();endTurn();return;}
-  if(STATE.voidCells&&STATE.voidCells[`${r},${c}`]>0){showToast('⬛ ช่องนั้นหายไปจากกระดานอยู่ (Void)');return;}
-  const cell=STATE.cells[r][c];
-  const hasOwnCells=STATE.cells.some(row=>row.some(ce=>ce.owner===cur));
-  if(hasOwnCells){if(cell.owner!==cur){showToast('❌ วางได้เฉพาะช่องของตัวเองเท่านั้น');return;}}
-  else{if(cell.owner!==-1&&cell.owner!==cur)return;}
   if(STATE._placingLock)return;
-  STATE._placingLock=true;setTimeout(()=>{STATE._placingLock=false;},400);
+  if(placeOrb(cur,r,c,false)){STATE._placingLock=true;setTimeout(()=>{STATE._placingLock=false;},400);}
+}
+// วางบอล 1 ครั้ง — คนและบอทใช้ทางเดียวกัน: ตรวจกติกา → เก็บ snapshot (Rewind) → วาง → เสียง/เอฟเฟกต์ → ระเบิด → จบตา
+// คืน false ถ้าวางไม่ได้ (ยังไม่มีอะไรเปลี่ยน) · quiet = ไม่ขึ้นข้อความ (บอท)
+function placeOrb(cur,r,c,quiet){
+  const say=m=>{if(!quiet)showToast(m);};
+  if(STATE.voidCells&&STATE.voidCells[`${r},${c}`]>0){say('⬛ ช่องนั้นหายไปจากกระดานอยู่ (Void)');return false;}
+  const cell=STATE.cells[r]&&STATE.cells[r][c];
+  if(!cell)return false;
+  const hasOwnCells=STATE.cells.some(row=>row.some(ce=>ce.owner===cur));
+  if(hasOwnCells){if(cell.owner!==cur){say('❌ วางได้เฉพาะช่องของตัวเองเท่านั้น');return false;}}
+  else{if(cell.owner!==-1&&cell.owner!==cur)return false;}
   takeSnapshot();
 
   const isFirstPlace=!hasOwnCells;
   STATE.moved[cur]=true;
   cell.count+=isFirstPlace?3:1;
   cell.owner=cur;
-  if(isFirstPlace){showToast('🎯 วางครั้งแรก! +3 ลูกบอล');SFX.firstPlace(cur);}else{SFX.place(cur);}
+  if(isFirstPlace){say('🎯 วางครั้งแรก! +3 ลูกบอล');SFX.firstPlace(cur);}else{SFX.place(cur);}
 
   renderGrid();
   FX.chainReset();FX.place(r,c,cur,isFirstPlace);
   processExplosions(()=>{if(!tickTimeBombs()){checkEliminations();if(!checkWin())endTurn();}});
+  return true;
 }
 
 function initiateTarget(cardDef,playerIdx,cardIdx,firstR,firstC){
@@ -3972,7 +4021,13 @@ function endTurnNow(){
   const cardDue=!delayStillActive&&cfg.cardInterval>0&&STATE.playerTurns[justPlayed]%cfg.cardInterval===0;
   if(cardDue){
     if(isBot(justPlayed)){
-      if(STATE.hands[justPlayed].length<HAND_LIMIT)STATE.hands[justPlayed].push({...draw3UniqueCards(justPlayed)[0]});
+      if(STATE.hands[justPlayed].length<HAND_LIMIT){
+        const choices=draw3UniqueCards(justPlayed);let id=null;
+        try{id=CRBot.chooseCardPick(botView(),justPlayed,choices,{level:botLevel(justPlayed),rng:Math.random});}
+        catch(err){console.error('[bot pick]',err);id=choices[0].id;}
+        const got=id&&choices.find(x=>x.id===id); // null = ไม่รับ (ทุกใบไม่คุ้มช่องในมือ)
+        if(got)STATE.hands[justPlayed].push({...got});
+      }
       renderHandBar();renderScoreboard();if(isBot(STATE.current))scheduleBot(400);
     } else {
       const waitMs=Math.max(0,vfxFinishTime-Date.now());
@@ -4048,38 +4103,17 @@ function scheduleBot(ms=700){
   clearTimeout(botTimer);const gid=STATE._gameId||0;
   botTimer=setTimeout(()=>{if((STATE._gameId||0)===gid)doBotTurn();},ms);
 }
-const BOT_RANK={mythical:7,legendary:6,epic:5,super_rare:4,rare:3,uncommon:2,common:1};
-function botCanUse(d,pi){
-  if(d.rebirthOnly)return false; // ใช้ตอนตายเท่านั้น — จัดการแยกใน doBotTurn
-  if(d.rarity==='legendary'&&(STATE.legendaryUsedBy[pi]||0)>=2)return false;
-  if(d.rarity==='mythical'&&STATE.mythicalUsedBy[pi])return false;
-  return true;
-}
-// คืน targets ของการ์ด หรือ null ถ้าหาเป้าไม่ได้
-function botTargets(cardDef,cur,size){
-  if(cardDef.twoTarget){
-    const t1=botPickTarget(cardDef,cur,size);if(!t1)return null;
-    let t2=null;
-    if(cardDef.id==='c5'){const nb=neighbors(t1[0],t1[1],size,STATE.cols);t2=nb.length?nb[Math.floor(Math.random()*nb.length)]:null;} // Spin: ช่องที่ 2 ต้องติดกับช่องแรก
-    else t2=botPickTarget(cardDef,cur,size,t1);
-    return t2?{r:t1[0],c:t1[1],r2:t2[0],c2:t2[1]}:null;
-  }
-  if(cardDef.needTarget){const t=botPickTarget(cardDef,cur,size);return t?{r:t[0],c:t[1]}:null;}
-  // anyTarget (เช่น Pillar ใช้ column ของช่องที่กด): คนเล่นต้องกดช่อง บอทก็ต้องมีช่องเหมือนกัน — ของเดิมส่ง {} แล้วพัง
-  if(cardDef.anyTarget){const t=botPickTarget({targetSelf:true},cur,size)||[0,0];return{r:t[0],c:t[1]};}
-  return {};
-}
-// ช่องว่างสำหรับคืนชีพ: ไกลศัตรูที่สุด (+สุ่มเล็กน้อย)
-function botRebirthSpot(cur){
-  if(!rebirthUsable(cur))return null;
-  const size=STATE.size,cols=STATE.cols||size,foes=[];let best=null,bs=-1;
-  for(let r=0;r<size;r++)for(let c=0;c<cols;c++)if(STATE.cells[r][c].owner>=0&&STATE.cells[r][c].owner!==cur)foes.push([r,c]);
-  for(let r=0;r<size;r++)for(let c=0;c<cols;c++){
-    if(STATE.cells[r][c].owner!==-1)continue;
-    let d=99;foes.forEach(([fr,fc])=>{d=Math.min(d,Math.abs(fr-r)+Math.abs(fc-c));});
-    const s=d+Math.random();if(s>bs){bs=s;best=[r,c];}
-  }
-  return best;
+// สิ่งที่ส่งให้ CRBot: STATE ของโหมดออฟไลน์ + ชื่อ field แบบ shared/gameLogic.js
+// CRBot คัดลอกเองและตัดสิ่งที่บอทไม่ควรรู้ออก (มือของคนอื่น, จำนวนลูกของศัตรูช่วง Eclipse) — ไม่แตะ STATE
+function botView(){return Object.assign({},STATE,{rows:STATE.size,cardInterval:cfg.cardInterval,_offline:true});}
+// การ์ดที่บอทเลือกยังใช้ได้จริงตอนนี้ไหม (เงื่อนไขเดียวกับที่ executeCard ปฏิเสธ) — กันเทิร์นค้างถ้าไม่ผ่าน
+function botCardOk(def,cur,targets){
+  if(!def)return false;
+  if(def.rarity==='legendary'&&(STATE.legendaryUsedBy[cur]||0)>=2)return false;
+  if(def.rarity==='mythical'&&STATE.mythicalUsedBy[cur])return false;
+  if(def.id==='r8'&&!(STATE._snapshot&&STATE._snapshot.cells))return false;
+  if(def.rebirthOnly&&(STATE.alive.includes(cur)||!rebirthUsable(cur)))return false;
+  return CRLogic.validateTargets(botView(),def,cur,targets||{}).ok;
 }
 async function doBotTurn(){
   if(STATE._dead||botBusy)return;
@@ -4088,31 +4122,32 @@ async function doBotTurn(){
   if(document.getElementById('winner-overlay').classList.contains('show'))return;
   // ยังมีแอนิเมชัน/หน้าเลือกการ์ดค้างอยู่: รอแล้วลองใหม่ (ของเดิม return ทิ้งเลย → บอทค้างถาวร)
   if(animating||pendingPickPlayer>=0){scheduleBot(250);return;}
-  const myGameId=STATE._gameId||0,cur=STATE.current,turn=STATE.turnCount,size=STATE.size;
+  const myGameId=STATE._gameId||0,cur=STATE.current,turn=STATE.turnCount;
   const stale=()=>(STATE._gameId||0)!==myGameId||STATE._dead||STATE.current!==cur||STATE.turnCount!==turn;
   const think=document.getElementById('bot-thinking');
   botBusy=true;
   try{
     if(STATE.moved[cur]){finishTurn();return;} // เดินไปแล้วแต่เทิร์นไม่ปิด
-    // บอทที่ตายแล้วได้ตาเพราะถือ Rebirth: ใช้เลย (ของเดิม return เฉยๆ → เกมค้าง)
-    if(!STATE.alive.includes(cur)){
-      const ri=STATE.hands[cur].findIndex(d=>d.id==='l5'),spot=botRebirthSpot(cur);
-      if(ri<0||!spot){endTurn();return;}
-      await delay(500);if(stale())return;
-      await executeCard(STATE.hands[cur][ri],cur,ri,{r:spot[0],c:spot[1]});
-      return;
+    const dead=!STATE.alive.includes(cur),level=botLevel(cur);
+    if(!dead&&STATE.frozen[cur]>0){ // โดน Freeze: ข้ามตา (เหมือนคนกดแล้วเจอ Frozen)
+      await delay(450);if(stale())return;
+      showToast(`❄️ ${getPlayerName(cur)} ถูก Freeze!`);SFX.frozen();endTurn();return;
     }
-    think.classList.add('show');
-    await delay(600+Math.random()*600);
+    // คิดไปพร้อมกับจังหวะ "กำลังคิด" ของระดับนั้น — การคิดแบ่งเป็นช่วงสั้นๆ หน้าจอไม่ค้าง
+    if(!dead)think.classList.add('show');
+    const pace=dead?500:CRBot.LEVELS[level].thinkMs+Math.random()*250;
+    const[act]=await Promise.all([CRBot.chooseActionAsync(botView(),cur,{level,rng:Math.random}),delay(pace)]);
     think.classList.remove('show');
     if(stale())return;
-    const hand=STATE.hands[cur],usable=hand.filter(d=>botCanUse(d,cur));
-    if(STATE.frozen[cur]<=0&&usable.length>0&&Math.random()<0.45){
-      const cardDef=usable.slice().sort((a,b)=>(BOT_RANK[b.rarity]||0)-(BOT_RANK[a.rarity]||0))[0];
-      const targets=botTargets(cardDef,cur,size);
-      if(targets){await executeCard(cardDef,cur,hand.indexOf(cardDef),targets);return;}
+    if(act&&act.type==='card'){
+      const idx=STATE.hands[cur].findIndex(d=>d.id===act.cardId),def=STATE.hands[cur][idx];
+      if(botCardOk(def,cur,act.targets)){await executeCard(def,cur,idx,act.targets||{});return;}
     }
-    await doBotPlace(cur,size);
+    if(act&&act.type==='place'&&placeOrb(cur,act.r,act.c,true))return;
+    if(dead){endTurn();return;} // ตายแล้วและคืนชีพไม่ได้
+    // ตัวเลือกของบอทใช้ไม่ได้ (ไม่ควรเกิด): วางช่องที่ถูกกติกาช่องไหนก็ได้ ไม่งั้นข้ามตา — ห้ามปล่อยเทิร์นค้าง
+    const fb=CRBot.randomAction(botView(),cur,Math.random);
+    if(!(fb.type==='place'&&placeOrb(cur,fb.r,fb.c,true)))endTurn();
   }catch(err){
     console.error('[bot]',err);think.classList.remove('show');
     if(!stale()){animating=false;document.getElementById('blocker').classList.remove('on');if(STATE.moved[cur])finishTurn();else endTurn();}
@@ -4130,64 +4165,6 @@ setInterval(()=>{
   wdAt=now;console.warn('[bot] watchdog',key);
   if(STATE.moved[cur])finishTurn();else scheduleBot(0);
 },1000);
-function botPickTarget(cardDef,playerIdx,size,exclude=null){
-  const cols=STATE.cols||size;
-  if(cardDef.targetSelf){let best=null,bestScore=-1;for(let r=0;r<size;r++)for(let c=0;c<cols;c++){if(exclude&&exclude[0]===r&&exclude[1]===c)continue;const cell=STATE.cells[r][c];if(cell.owner===playerIdx||cell.owner===-1){const score=cell.count/cell.cap;if(score>bestScore){bestScore=score;best=[r,c];}}}return best;}
-  else{let best=null,bestCount=-1;for(let r=0;r<size;r++)for(let c=0;c<cols;c++){if(exclude&&exclude[0]===r&&exclude[1]===c)continue;const cell=STATE.cells[r][c];if(cell.owner!==-1&&cell.owner!==playerIdx&&cell.count>bestCount){bestCount=cell.count;best=[r,c];}}return best;}
-}
-async function doBotPlace(playerIdx,size){
-  if(STATE._dead)return;
-  if(STATE.frozen[playerIdx]>0){showToast(`❄️ ${getPlayerName(playerIdx)} ถูก Freeze!`);endTurn();return;}
-  const hasOwnCells=STATE.cells.some(row=>row.some(ce=>ce.owner===playerIdx));
-  let best=null,bestScore=-999;
-  const MIN_DIST=Math.max(2,Math.floor(size/3)); // ระยะขั้นต่ำจากบอทอื่น
-  const EDGE=1; // ไม่วางติดขอบ 1 ช่อง
-
-  const bCols=STATE.cols||size;for(let r=0;r<size;r++){for(let c=0;c<bCols;c++){
-    const cell=STATE.cells[r][c];
-    if(hasOwnCells){
-      if(cell.owner!==playerIdx)continue;
-    } else {
-      if(cell.owner!==-1&&cell.owner!==playerIdx)continue;
-    }
-    let score=0;
-    if(cell.owner===playerIdx) score+=(cell.count/cell.cap)*10;
-    else score+=1;
-
-    if(!hasOwnCells){
-      // ไม่วางติดขอบ
-      if(r<EDGE||r>=size-EDGE||c<EDGE||c>=bCols-EDGE){score-=100;}
-      // ลดคะแนนถ้าใกล้บอทอื่นเกินไป
-      STATE.alive.forEach(pi=>{
-        if(pi===playerIdx)return;
-        for(let ro=0;ro<size;ro++)for(let co=0;co<bCols;co++){
-          if(STATE.cells[ro][co].owner===pi){
-            const d=Math.abs(r-ro)+Math.abs(c-co);
-            if(d<MIN_DIST) score-=(MIN_DIST-d)*8;
-          }
-        }
-      });
-      // เพิ่ม random เยอะๆ เพื่อให้กระจาย
-      score+=Math.random()*6;
-    }
-
-    neighbors(r,c,size,STATE.cols).forEach(([nr,nc])=>{
-      if(STATE.cells[nr][nc].owner!==-1&&STATE.cells[nr][nc].owner!==playerIdx)score+=2;
-      if(STATE.cells[nr][nc].owner===playerIdx)score+=1;
-    });
-    if(hasOwnCells) score+=Math.random()*0.5;
-    if(score>bestScore){bestScore=score;best=[r,c];}
-  }}
-  if(!best){endTurn();return;}
-  const[r,c]=best;
-  STATE.moved[playerIdx]=true;
-  STATE.cells[r][c].count+=hasOwnCells?1:3;
-  STATE.cells[r][c].owner=playerIdx;
-  renderGrid();
-  if(hasOwnCells)SFX.place(playerIdx);else SFX.firstPlace(playerIdx);
-  FX.chainReset();FX.place(r,c,playerIdx,!hasOwnCells);
-  processExplosions(()=>{if(!tickTimeBombs()){checkEliminations();if(!checkWin())endTurn();}});
-}
 
 // ระเบิดทีละ wave พร้อมแอนิเมชัน — กติกาของแต่ละ wave มาจาก shared/gameLogic.js (explodeWave) ตัวเดียวกับ server และบอท
 async function processExplosions(done){
