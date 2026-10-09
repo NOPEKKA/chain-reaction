@@ -10,3 +10,8 @@ window.CR_FIREBASE_CONFIG = {
   messagingSenderId: "162743480375",
   appId: "1:162743480375:web:f0b0200e6acbcb11d30fb2"
 };
+
+// App Check (ไม่บังคับ — ปิดอยู่เมื่อไม่ได้ตั้งค่า): กันสคริปต์ที่ไม่ได้มาจากหน้าเว็บนี้ไม่ให้ใช้ฐานข้อมูล
+// วิธีเปิด: Firebase console → App Check → ลงทะเบียนเว็บแอปด้วย reCAPTCHA v3 → เอา site key มาใส่บรรทัดล่าง
+//          → ลองเล่นให้แน่ใจว่าใช้ได้ แล้วค่อยกด Enforce ที่ Realtime Database (ดู README หัวข้อความปลอดภัย)
+// window.CR_APPCHECK_SITE_KEY = "วาง site key ของ reCAPTCHA v3 ที่นี่";

@@ -211,98 +211,263 @@ function closeGroupPickOverlay() {
   window._onlineSkipCard = null;
 }
 
-// ══ SOCKET ══
-// ══ Play explosion waves ทีละ wave ══
-const WAVE_DELAY = 520; // ms ต่อ wave (เท่ากับ STEP_DELAY ใน offline)
-let _pendingExplosionWaves = 0;
-let _cardVfxPlaying = false;
-let _vfxFinishTime = 0;
-let _animFinishTime = 0; // เวลาที่ animation ทั้งหมดจะจบ
-let _waveAnimating = false; // กำลังเล่น wave animation อยู่
+// ══ คิวเอฟเฟกต์ ══
+// ทุก room_update ของเกม = งานหนึ่งชิ้น เล่นทีละชิ้นตามลำดับที่ได้รับ ไม่มีชิ้นไหนถูกข้าม:
+//   VFX การ์ด → ลูกโซ่ทุก wave → รออนุภาคนิ่ง → ซิงก์ state ของ "งานนั้น" (ไม่ใช่ state ล่าสุด)
+//   → จบเกม: หน้าผู้ชนะ · ไม่งั้น: ประกาศตาใหม่ → งานถัดไป
+// หน้าเลือกการ์ด (group_pick_start) เข้าคิวเดียวกัน จึงขึ้นหลังเอฟเฟกต์ของตาที่มาก่อนเสมอ โดยไม่ต้องคำนวณเวลารอเอง
+// งานแต่ละชิ้นมีข้อมูลครบในตัว (state.last = การ์ด/การวาง/การโดน Freeze ของตานั้น) — ไม่พึ่งลำดับของ card_vfx / place_vfx / game_over
+// เวลาทั้งหมดมาจาก shared/gameLogic.js (window.CRLogic) ชุดเดียวกับที่ server ใช้ต่อเวลานาฬิกาตา
+const { cardVfxMs, waveStepMs, animMs } = window.CRLogic;
+const { WAVE_FAST_MS, WAVE_MIN_MS, CARD_GAP_MS, SETTLE_MS } = window.CRLogic.FX_TIMING;
+const FX_IDLE_MAX_MS = 2500; // รออนุภาคนิ่งนานสุดเท่านี้
 
-// เล่น explosion ทีละ wave พร้อม apply cells ทีละขั้น (เหมือน offline explodeWave)
-async function playExplosionWavesIncremental(waves, finalState) {
-  const rows = STATE.size || finalState.rows || 8;
-  const cols = STATE.cols || finalState.cols || rows;
-  const STEP = 520; // เหมือน STEP_DELAY offline
-  FX.chainReset();
+const FXQ = { jobs: [], cur: null, epoch: 0, stats: { jobs: 0, waves: 0, warpCells: 0, forced: 0 } };
+let _winnerKey = null;   // เกมที่เปิดหน้าผู้ชนะไปแล้ว — กันขึ้นซ้ำ
+let _gameOver = null;    // payload ล่าสุดของ game_over (ชื่อผู้ชนะที่ server ส่ง)
+let _resyncNext = false; // เพิ่ง rejoin: update ถัดไปให้ล้างคิวแล้วซิงก์ตรงๆ
 
-  for (const wave of waves) {
-    const explosions = wave.explosions || [];
-    if (!explosions.length) continue;
+// เอฟเฟกต์ของตาก่อนหน้ายังเล่นไม่จบ → ยังไม่รับ input (watchdog ของแต่ละงานกันค้างแทน deadline แบบเดิม)
+const isSettling = () => !!FXQ.cur || FXQ.jobs.length > 0;
+const fxUpdatesQueued = () => FXQ.jobs.reduce((n, j) => n + (j.type === 'update' ? 1 : 0), 0);
 
-    // Phase 1: burst + ripple + flying orbs + เสียง ทันที — ใช้ FX ชุดเดียวกับ offline (แรงขึ้นตามลำดับ wave)
-    FX.wave(explosions, FX.chainStep());
-
-    // Phase 2 (45%): apply cells ของ wave นี้ + renderGrid + flash
-    await new Promise(resolve => {
-      setTimeout(() => {
-        // Apply wave นี้ให้ STATE.cells
-        explosions.forEach(({ r, c, owner }) => {
-          if (!STATE.cells[r] || !STATE.cells[r][c]) return;
-          const cell = STATE.cells[r][c];
-          const cap = cell.cap || 4;
-          cell.count -= cap;
-          if (cell.count <= 0) { cell.count = 0; cell.owner = -1; }
-          // บวกให้ neighbors
-          const nbs = [];
-          if (r > 0) nbs.push([r-1, c]);
-          if (r < rows-1) nbs.push([r+1, c]);
-          if (c > 0) nbs.push([r, c-1]);
-          if (c < cols-1) nbs.push([r, c+1]);
-          nbs.forEach(([nr, nc]) => {
-            if (STATE.cells[nr] && STATE.cells[nr][nc]) {
-              STATE.cells[nr][nc].count++;
-              STATE.cells[nr][nc].owner = owner;
-            }
-          });
-        });
-
-        // Render หลัง apply
-        renderGrid(false);
-
-        // Flash neighbors
-        FX.land(explosions);
-
-        // Phase 3 (55%): resolve
-        setTimeout(resolve, STEP * 0.55);
-      }, STEP * 0.45);
-    });
+function fxEnqueue(job) { FXQ.jobs.push(job); fxPump(); }
+// ล้างคิวทิ้งทั้งหมด (rejoin / ออกจากห้อง / ห้องปิด) — งานที่กำลังเล่นอยู่จะเลิกเองเมื่อเห็นว่า epoch เปลี่ยน
+function fxReset() {
+  FXQ.epoch++;
+  const cur = FXQ.cur;
+  FXQ.jobs.length = 0; FXQ.cur = null;
+  if (cur) fxRush(cur);
+}
+async function fxPump() {
+  if (FXQ.cur) return;
+  const ep = FXQ.epoch;
+  while (FXQ.jobs.length) {
+    const job = FXQ.jobs.shift();
+    FXQ.cur = job;
+    try { await fxRun(job, ep); }
+    catch (e) { console.error('[fx] งานพัง — ซิงก์ตรงแล้วไปต่อ', e); if (ep === FXQ.epoch && job.room && onlineMode) fxFinal(job); }
+    if (ep !== FXQ.epoch) return; // คิวถูกล้างระหว่างเล่น: รอบใหม่เริ่มไปแล้วโดย fxEnqueue ตัวถัดไป
+    FXQ.cur = null; FXQ.stats.jobs++;
   }
 }
 
-async function playExplosionWaves(waves, stateData) {
-  // ใช้ STATE โดยตรงเพราะ sync แล้ว
-  const rows = STATE.size || stateData.rows || stateData.size || 8;
-  const cols = STATE.cols || stateData.cols || rows;
-
-  const playWave = (waveExplosions) => {
-    return new Promise(resolve => {
-      // Phase 1: burst + ripple + flying orbs (ทันที)
-      FX.wave(waveExplosions, FX.chainStep());
-
-      // Phase 2 (45%): renderGrid + flash neighbors
-      setTimeout(() => {
-        if (typeof renderGrid === 'function') renderGrid(false);
-        FX.land(waveExplosions);
-        // Phase 3 (55%): resolve
-        setTimeout(resolve, WAVE_DELAY * 0.55);
-      }, WAVE_DELAY * 0.45);
-    });
-  };
-
-  // เล่นทีละ wave
-  _pendingExplosionWaves = waves.length;
-  FX.chainReset();
-  for (const wave of waves) {
-    await playWave(wave.explosions);
-    _pendingExplosionWaves--;
-  }
-  _pendingExplosionWaves = 0;
+// รอแบบ "ปลุกได้": watchdog / การล้างคิว ปลุกให้งานเดินต่อทันทีโดยไม่ต้องรอ timer
+function fxRush(job) { job.rush = true; if (job._wake) job._wake(); }
+function fxWait(ms, job) {
+  if (job.rush || ms <= 0) return Promise.resolve();
+  return new Promise(res => {
+    const t = setTimeout(done, ms);
+    function done() { clearTimeout(t); if (job._wake === done) job._wake = null; res(); }
+    job._wake = done;
+  });
 }
+const fxUntil = (t, job) => fxWait(t - performance.now(), job); // เทียบเวลาจริง: timer ที่ถูกยืดจะไม่ทำให้ขั้นถัดไปเลื่อนตาม
+function fxIdle(job, max) {
+  if (job.rush) return Promise.resolve();
+  return new Promise(res => {
+    let done = false;
+    const fin = () => { if (done) return; done = true; if (job._wake === fin) job._wake = null; res(); };
+    job._wake = fin;
+    FX.whenIdle(fin, max);
+  });
+}
+
+// เวลาที่งานนี้ควรใช้ (ms) — ใช้ตั้ง watchdog
+function fxEstimate(job) {
+  if (job.type !== 'update' || job.instant) return 300;
+  const st = job.room.state, card = st.last && st.last.card;
+  return animMs((st.explosionWaves || []).length, card && card.cardId, card && card.vfxData) + FX_IDLE_MAX_MS;
+}
+// งานค้างเยอะ (≥ 3 ชิ้นรวมชิ้นที่เล่นอยู่ หรือที่รออยู่รวมกันเกิน ~6 วินาที) → เร่ง
+function fxBehind() {
+  const waiting = FXQ.jobs.filter(j => j.type === 'update');
+  if (waiting.length >= 2) return true;
+  return waiting.reduce((ms, j) => ms + fxEstimate(j) - FX_IDLE_MAX_MS, 0) > 6000;
+}
+
+async function fxRun(job, ep) {
+  const alive = () => ep === FXQ.epoch && onlineMode;
+  if (job.type === 'pick') { if (alive()) fxPick(job); return; }
+  const room = job.room, st = room.state, last = st.last || {};
+  const waves = st.explosionWaves || [];
+  const est = fxEstimate(job);
+  const dog = setTimeout(() => {
+    if (FXQ.cur !== job || ep !== FXQ.epoch) return;
+    console.warn('[fx] งานค้างเกินเวลาที่ประมาณไว้ (' + est + 'ms) — ซิงก์แล้วเดินต่อ');
+    FXQ.stats.forced++; fxRush(job);
+  }, est * 1.5 + 1000);
+  try {
+    // ออกจากช่วงเลือกการ์ดแล้ว: ปิดหน้าเลือกการ์ด + ตัวนับเวลาเก่า ก่อนเริ่มเล่นเอฟเฟกต์ของตานี้
+    if (room.phase !== 'group_pick') {
+      const gp = document.getElementById('group-pick-overlay');
+      if (gp && gp.style.display === 'flex') closeGroupPickOverlay();
+      clearAllTimers();
+    }
+    if (room.phase !== 'finished') hideWinner();
+    // แท็บถูกซ่อน / มือถือล็อกจอ: ไม่เล่นแอนิเมชัน (timer ถูกเบราว์เซอร์ยืด คิวจะค้าง) — ซิงก์งานนี้ตรงๆ แล้วไปต่อ
+    if (document.hidden) job.instant = true;
+    if (!job.instant) {
+      if (last.frozen) fxFrozen(last.frozen);
+      if (last.place) fxPlace(last.place);
+      if (last.card) { await fxCard(last.card, job); if (!alive()) return; }
+      if (waves.length) { await fxWaves(job, waves, alive); if (!alive()) return; }
+      await fxIdle(job, FX_IDLE_MAX_MS); if (!alive()) return;
+    }
+    fxFinal(job);
+    if (room.phase === 'finished') {
+      if (!job.instant) { await fxWait(SETTLE_MS, job); if (!alive()) return; }
+      showWinner(room, job.instant);
+    } else if (!fxUpdatesQueued()) {
+      announceTurn(room); // มีงานรออยู่อีก = ตานี้ผ่านไปแล้ว ให้งานสุดท้ายเป็นคนประกาศ
+    }
+  } finally { clearTimeout(dog); }
+}
+
+// ซิงก์ state ของงานนี้ลงกระดาน (ทุกงานจบด้วยขั้นนี้เสมอ ไม่ว่าจะเล่นเอฟเฟกต์ครบหรือถูกเร่ง)
+function fxFinal(job) {
+  const st = job.room.state;
+  if (job.played && STATE.cells) { // ภาพหลัง wave สุดท้ายควรเท่ากับผลลัพธ์จริงอยู่แล้ว — นับไว้ให้เทสต์จับการ "วาร์ป"
+    let diff = 0;
+    for (let r = 0; r < st.cells.length; r++) for (let c = 0; c < st.cells[r].length; c++) {
+      const a = STATE.cells[r] && STATE.cells[r][c], b = st.cells[r][c];
+      if (!a || a.count !== b.count || (b.count > 0 && a.owner !== b.owner)) diff++;
+    }
+    FXQ.stats.warpCells += diff;
+  }
+  syncStateFromServer(st);
+  renderGrid(true);
+  renderHandBar();
+  renderScoreboard();
+  updateTurnLabel();
+}
+
+function fxFrozen({ playerIdx }) {
+  SFX.frozen && SFX.frozen();
+  const pName = (window.PLAYER_NAMES && window.PLAYER_NAMES[playerIdx]) || `P${playerIdx + 1}`;
+  showToast(playerIdx === mySlot ? '❄️ คุณโดน Freeze! action ไม่มีผลในเทิร์นนี้' : `❄️ ${pName} โดน Freeze! action ไม่มีผล`);
+  const sc = document.getElementById(`sc-${playerIdx}`);
+  if (!sc) return;
+  sc.style.transition = 'all .2s';
+  sc.style.background = 'rgba(100,200,255,0.4)';
+  sc.style.boxShadow = '0 0 20px #88eeff';
+  const rect = sc.getBoundingClientRect();
+  const ice = document.createElement('div');
+  ice.style.cssText = `position:fixed;left:${rect.left + rect.width / 2}px;top:${rect.top}px;font-size:2.5rem;pointer-events:none;z-index:1200;transform:translate(-50%,-50%);animation:cellEmojiPop 1s ease-out forwards;`;
+  ice.textContent = '❄️';
+  document.body.appendChild(ice);
+  setTimeout(() => { sc.style.background = ''; sc.style.boxShadow = ''; ice.remove(); }, 1500);
+}
+
+function fxPlace({ r, c, playerIdx, isFirstPlace }) {
+  if (isFirstPlace) SFX.firstPlace(playerIdx); else SFX.place(playerIdx);
+  const cell = STATE.cells && STATE.cells[r] && STATE.cells[r][c];
+  if (cell) { cell.count += isFirstPlace ? 3 : 1; cell.owner = playerIdx; updateCellDisplay(r, c); }
+  setTimeout(() => { if (onlineMode) FX.place(r, c, playerIdx, isFirstPlace); }, 60);
+}
+
+async function fxCard({ cardId, targets, playerIdx, vfxData }, job) {
+  const def = (window.CARD_DEFS || []).find(d => d.id === cardId);
+  if (def) {
+    SFX.card && SFX.card(def.rarity);
+    SFX.cardCat && SFX.cardCat(def.cat);
+    SFX.cardSpecial && SFX.cardSpecial(cardId);
+    FX.cardCast(def, playerIdx);
+  }
+  if (fxBehind() || !window.spawnCardVfx) { await fxWait(350, job); return; } // งานค้างเยอะ: ย่อเหลือแค่ประกาศการ์ด
+  const ms = cardVfxMs(cardId, vfxData);
+  FX.hold(ms);
+  FX.track(spawnCardVfx(cardId, targets || {}, playerIdx, vfxData || {}).catch(() => {}));
+  await fxWait(ms + CARD_GAP_MS, job);
+}
+
+// เล่นลูกโซ่ทีละ wave: ระเบิด (45% ของช่วง) → กระดานเปลี่ยน + ลูกลงช่อง (55%)
+// ภาพทุกขั้นมาจาก server: เริ่มที่ fxBase (กระดานก่อน wave แรก) แล้ววาดค่าที่แต่ละ wave บอก — client ไม่คำนวณกฎระเบิดเอง
+function fxSet(list) { // [r, c, count, owner, ...]
+  for (let i = 0; i + 3 < list.length; i += 4) {
+    const cell = STATE.cells[list[i]] && STATE.cells[list[i]][list[i + 1]];
+    if (cell) { cell.count = list[i + 2]; cell.owner = list[i + 3]; }
+  }
+}
+async function fxWaves(job, waves, alive) {
+  const st = job.room.state, base = st.fxBase;
+  if (base) {
+    let i = 0;
+    for (let r = 0; r < st.rows; r++) for (let c = 0; c < st.cols; c++, i += 2) {
+      const cell = STATE.cells[r] && STATE.cells[r][c];
+      if (cell) { cell.count = base[i]; cell.owner = base[i + 1]; }
+    }
+    renderGrid(false);
+  }
+  const n = waves.length, perWave = waveStepMs(n);
+  const group = perWave >= WAVE_MIN_MS ? 1 : Math.ceil(WAVE_MIN_MS / perWave); // ลูกโซ่ยาวมาก: รวมหลาย wave เป็นขั้นภาพเดียว
+  FX.chainReset();
+  let cursor = performance.now();
+  for (let w = 0; w < n; w += group) {
+    const part = waves.slice(w, w + group);
+    const step = fxBehind() ? Math.min(WAVE_FAST_MS, perWave * part.length) : perWave * part.length;
+    const explosions = [];
+    part.forEach(wave => { for (let i = 0; i + 2 < wave.e.length; i += 3) explosions.push({ r: wave.e[i], c: wave.e[i + 1], owner: wave.e[i + 2] }); });
+    await fxUntil(cursor, job); if (!alive()) return;
+    if (part[0].b) { fxSet(part[0].b); if (!job.rush) renderGrid(false); } // เปลี่ยนก่อนระเบิด (เช่น Time Bomb เติมช่อง)
+    if (!job.rush) { FX.wave(explosions, FX.chainStep()); FXQ.stats.waves += part.length; }
+    job.played = true;
+    cursor += step * .45;
+    await fxUntil(cursor, job); if (!alive()) return;
+    part.forEach((wave, k) => { if (k && wave.b) fxSet(wave.b); fxSet(wave.d); });
+    if (!job.rush) { renderGrid(false); FX.land(explosions); }
+    cursor += step * .55;
+  }
+  await fxUntil(cursor, job);
+  if (st.wavesTruncated) job.played = false; // server เลิกบันทึกกลางทาง: ภาพจบไม่เท่าผลลัพธ์ เป็นเรื่องที่รู้อยู่ — ไม่นับเป็นการวาร์ป
+}
+
+function fxPick(job) {
+  const left = Math.max(3, Math.round((job.timeLimit || CARD_LIMIT) - (Date.now() - job.at) / 1000)); // หักเวลาที่รอในคิวไปแล้ว
+  SFX.select && SFX.select();
+  closeGroupPickOverlay();
+  showGroupPickOverlay(job.cards, job.handSize, left, myName);
+}
+
+function hideWinner() {
+  const wo = document.getElementById('winner-overlay');
+  if (wo.classList.contains('show')) wo.classList.remove('show');
+}
+// เปิดหน้าผู้ชนะ: ครั้งเดียวต่อเกม (game_over ซ้ำ / กลับเข้าห้องตอนจบแล้ว ไม่เปิดรอบสอง) · เสียงและพลุเริ่มพร้อมกันที่นี่
+function showWinner(room, silent) {
+  const st = room.state, w = st.winner;
+  if (!(w >= 0)) return;
+  const key = room.code + ':' + (room.gameId || 0);
+  const wo = document.getElementById('winner-overlay');
+  if (_winnerKey === key && wo.classList.contains('show')) return;
+  const already = _winnerKey === key;
+  _winnerKey = key;
+  clearAllTimers(); closeGroupPickOverlay();
+  const m = (room.members || []).find(x => x.slot === w);
+  const name = (_gameOver && _gameOver.winner === w && _gameOver.winnerName) || (m && m.name) || getPlayerName(w);
+  document.getElementById('winner-title').textContent = `${name} ชนะ! 🎉`;
+  document.getElementById('winner-title').style.color = PLAYER_COLORS_O[w] || '#fff';
+  document.getElementById('winner-sub').textContent = 'คะแนน: ' + (st.scores || []).map((s, i) => `P${i + 1}:${s}`).join('  ');
+  wo.classList.add('show');
+  if (!silent && !already) SFX.win && SFX.win();
+}
+
+// ซ่อนแท็บกลางคัน: เร่งงานที่เล่นอยู่ให้จบ (งานถัดไปจะซิงก์ตรงเองเพราะ document.hidden)
+// กลับมามองเห็น: ล้างอนุภาคค้าง ซิงก์ไปที่ state ล่าสุด แล้วนับเวลาตาใหม่จากเวลาที่เหลือจริง
+document.addEventListener('visibilitychange', () => {
+  if (!onlineMode) return;
+  if (document.hidden) { if (FXQ.cur) fxRush(FXQ.cur); return; }
+  FX.clear();
+  if (isSettling() || !currentRoom || !currentRoom.state) return; // มีงานเข้ามาพอดี: คิวจัดการเอง
+  fxFinal({ room: currentRoom });
+  if (currentRoom.phase !== 'finished') announceTurn(currentRoom);
+});
+
+window._onlineFx = () => ({ queued: FXQ.jobs.length, running: !!FXQ.cur, jobsDone: FXQ.stats.jobs, wavesPlayed: FXQ.stats.waves, warpCells: FXQ.stats.warpCells, forced: FXQ.stats.forced });
 
 // ══ Handle server reset (Railway restart) ══
 function handleServerReset() {
+  fxReset();
   clearAllTimers();
   closeGroupPickOverlay();
   clearSession();
@@ -395,6 +560,10 @@ function notifyMyTurn(turnKey) {
       75%  { opacity:1; transform:translate(-50%,-50%) scale(1.05); }
       100% { opacity:0; transform:translate(-50%,-68%) scale(0.85); }
     }
+    .hand-card .discard-hint { display: none; }
+    .hand-card.selected-card .discard-hint { display: block; margin-top: 6px; width: 100%; min-height: 32px; padding: 6px 4px; border: 0; border-radius: 10px;
+      background: rgba(0,0,0,.06); color: #8a3b3b; font: 700 .58rem/1.2 Nunito, 'Noto Sans Thai', sans-serif; cursor: pointer; }
+    .hand-card.selected-card .discard-hint.armed { background: #e05c5c; color: #fff; }
     @keyframes myTurnFlash {
       0%   { opacity:1; }
       100% { opacity:0; }
@@ -404,10 +573,7 @@ function notifyMyTurn(turnKey) {
 })();
 
 // ══ ตาใหม่เริ่มหลังเอฟเฟกต์จบ ══
-// ภาพของ update ล่าสุด (VFX การ์ด → ระเบิดทีละ wave → อนุภาคที่ค้าง) ต้องเล่นจบก่อน
-// แล้วค่อยประกาศตาใหม่ (เสียง / popup / ตัวนับเวลา) และรับ input ของเรา
-let _settling = false, _settleSeq = 0, _settleDeadline = 0;
-const isSettling = () => _settling && Date.now() < _settleDeadline; // deadline = กันค้างถ้ามีอะไรพังกลางทาง
+// คิวเอฟเฟกต์ (fxRun) เรียกเมื่อเอฟเฟกต์ของ update ล่าสุดเล่นจบและกระดานซิงก์แล้ว: เสียง / popup / ตัวนับเวลา
 function announceTurn(room) {
   if (!onlineMode || !room || !room.state || room.phase !== 'playing') return;
   if (room.state.current === mySlot) {
@@ -421,15 +587,6 @@ function announceTurn(room) {
     if (_lastOtherTurn !== otherKey) { _lastOtherTurn = otherKey; SFX.turnChange(room.state.current); }
   }
 }
-function settleThenAnnounce() {
-  const token = ++_settleSeq;
-  FX.whenIdle(() => {
-    if (token !== _settleSeq || _waveAnimating) return; // มี update ใหม่กว่า หรือ wave ยังเล่นอยู่ — ตัวนั้นจะประกาศเอง
-    _settling = false;
-    announceTurn(currentRoom);
-  });
-}
-
 // กลับเข้าที่นั่งเดิมด้วย token (เรียกทุกครั้งที่ socket ต่อติด ถ้ามีที่นั่งค้างอยู่)
 function tryRejoin(s) {
   const silent = !session; // ลองตอนเปิดหน้า (ยังไม่ได้อยู่ในห้อง): ไม่ได้ก็เงียบๆ
@@ -437,6 +594,7 @@ function tryRejoin(s) {
     if (res && res.ok) {
       saveSession({ code: res.code, token: res.token });
       mySlot = res.slot; isHost = !!res.isHost;
+      _resyncNext = true; // update ที่ตามมาคือ state ล่าสุดทั้งก้อน: ล้างคิวแล้วซิงก์ตรงๆ
       setNetBanner(false);
       if (res.phase === 'lobby') { onlineMode = false; enterLobby(); }
       else if (!(onlineMode && document.getElementById('game-screen').style.display === 'flex')) _enterGame = true;
@@ -485,7 +643,7 @@ function initSocket() {
   // เปิดเกมนี้ (ที่นั่งเดียวกัน) ในแท็บอื่น
   socket.on('session_replaced', () => {
     session = null; try { sessionStorage.removeItem(SS_KEY); } catch (e) {}
-    clearAllTimers(); closeGroupPickOverlay(); setNetBanner(false);
+    fxReset(); clearAllTimers(); closeGroupPickOverlay(); setNetBanner(false);
     onlineMode = false; mySlot = -1; isHost = false; myHand = [];
     if (STATE) STATE._dead = true;
     document.getElementById('game-screen').style.display = 'none';
@@ -501,7 +659,7 @@ function initSocket() {
   });
   // server ปิดห้องรอที่ไม่มีความเคลื่อนไหวนานเกินไป
   socket.on('room_closed', (info) => {
-    clearAllTimers(); closeGroupPickOverlay(); clearSession(); setNetBanner(false);
+    fxReset(); clearAllTimers(); closeGroupPickOverlay(); clearSession(); setNetBanner(false);
     onlineMode = false; mySlot = -1; isHost = false; currentRoom = null; myHand = [];
     document.getElementById('game-screen').style.display = 'none';
     showScreen('main-menu');
@@ -519,7 +677,8 @@ function initSocket() {
     if ((room.phase === 'playing' || room.phase === 'group_pick' || room.phase === 'finished') && room.state) {
       // เข้าหน้าเกม: มาจากห้องรอ หรือเพิ่ง rejoin กลับมา (รีเฟรช/เปิดแท็บใหม่)
       const wasInRoom = document.getElementById('room-screen').classList.contains('active') || _enterGame;
-      _enterGame = false;
+      const resync = wasInRoom || _resyncNext; // เข้าเกม / เพิ่ง rejoin: ไม่เล่นเอฟเฟกต์ย้อนหลัง
+      _enterGame = false; _resyncNext = false;
       if (wasInRoom) {
         showScreen('room-screen'); // ซ่อนเมนู/หน้าอื่นให้หมดก่อน (กรณีกลับเข้ามาจากหน้าเมนู)
         document.getElementById('room-screen').classList.remove('active');
@@ -527,16 +686,6 @@ function initSocket() {
         document.getElementById('game-screen').style.display = 'flex';
         onlineMode = true;
         STATE._dead = false;
-        _pendingExplosionWaves = 0;
-        _waveAnimating = false;
-        _vfxFinishTime = 0;
-        _animFinishTime = 0;
-        // Force render เมื่อเกมเริ่ม (ไม่ว่า _waveAnimating จะเป็นยังไง)
-        syncStateFromServer(room.state);
-        renderGrid(true);
-        renderHandBar();
-        renderScoreboard();
-        updateTurnLabel();
       }
       if (onlineMode) {
         // reset animating ทุกครั้ง
@@ -550,101 +699,9 @@ function initSocket() {
           });
         }
 
-        // ออกจากช่วงเลือกการ์ดแล้ว: ปิดหน้าเลือกการ์ด "ก่อน" เริ่มนับเวลา
-        // (ของเดิมเรียกทีหลัง → clearAllTimers ในนั้นฆ่าตัวนับเวลาของตาเราทิ้งทุกครั้ง ตัวนับเวลาจึงไม่เคยขึ้น)
-        if (room.phase !== 'group_pick') {
-          const gp = document.getElementById('group-pick-overlay');
-          if (gp && gp.style.display === 'flex') closeGroupPickOverlay();
-          clearAllTimers();
-        }
-        const waves = room.state.explosionWaves;
-        _settling = true;
-        _settleDeadline = Date.now() + (waves ? waves.length * 520 : 0) + 6000;
-
-        if (wasInRoom) {
-          // กลับเข้ามาตอนเกมจบไปแล้ว: game_over ไม่ถูกส่งซ้ำ → เปิดหน้าผู้ชนะจาก state
-          if (room.phase === 'finished' && room.state.winner >= 0 && !document.getElementById('winner-overlay').classList.contains('show')) {
-            document.getElementById('winner-title').textContent = `${getPlayerName(room.state.winner)} ชนะ! 🎉`;
-            document.getElementById('winner-title').style.color = PLAYER_COLORS_O[room.state.winner] || '#fff';
-            document.getElementById('winner-sub').textContent = 'คะแนน: ' + (room.state.scores || []).map((s, i) => `P${i + 1}:${s}`).join('  ');
-            document.getElementById('winner-overlay').classList.add('show');
-          }
-          settleThenAnnounce(); return; // render แล้ว ไม่ต้องทำซ้ำ
-        }
-
-        const finalRender = () => {
-          if (_waveAnimating) return; // wave ชุดก่อนยังเล่นอยู่ — ตอนจบมันจะ sync ด้วย state ล่าสุดเอง
-          syncStateFromServer(room.state);
-          renderGrid(true); // render ทันทีไม่มี wave
-          renderHandBar();
-          renderScoreboard();
-          updateTurnLabel();
-          settleThenAnnounce();
-        };
-
-        const doRender = () => {
-          if (waves && waves.length > 0 && !_waveAnimating) {
-            const totalWaves = waves.length;
-            _animFinishTime = Date.now() + totalWaves * 520 + 200;
-            _pendingExplosionWaves = totalWaves;
-            _waveAnimating = true;
-
-            // การ์ดที่ดูดบอลทั้งหมดก่อน (m1,l1,l2): sync cells ก่อนเล่น waves
-            // เพื่อให้เห็น state ที่ถูกต้อง (หลัง absorb แต่ก่อน explosion)
-            const absorbCards = ['m1','l1','l2'];
-            const lastCard = room.state.lastCardId;
-            if (lastCard && absorbCards.includes(lastCard)) {
-              // sync เฉพาะ cells ไม่ sync ทั้งหมด (เพื่อให้ wave apply ได้)
-              // แต่ pre-wave cells จาก waves[0] ก็ไม่มี → ใช้ final state แทน
-              // เพราะ m1 explosion มักแค่ 1-2 waves จาก center เท่านั้น
-              syncStateFromServer(room.state);
-              renderGrid(false);
-            }
-
-            playExplosionWavesIncremental(waves, room.state).catch(e => console.error('[waves]', e)).then(() => {
-              _pendingExplosionWaves = 0;
-              _animFinishTime = 0;
-              _waveAnimating = false;
-              if (!onlineMode) return;
-              // ระหว่างเล่น wave อาจมี update ใหม่กว่าเข้ามา → จบด้วย state ล่าสุดเสมอ (ของเดิมจบด้วย state ของ update ที่เริ่มเล่น)
-              syncStateFromServer((currentRoom && currentRoom.state) || room.state);
-              renderGrid(true);
-              renderHandBar();
-              renderScoreboard();
-              updateTurnLabel();
-              settleThenAnnounce();
-            });
-          } else {
-            finalRender();
-          }
-        };
-
-        // รอ card VFX เสร็จก่อน (เหมือน offline waitMs = vfxFinishTime - now + 200)
-        // รอ card VFX เสร็จก่อน
-        let waitMs = Math.max(0, _vfxFinishTime - Date.now() + 200);
-        if (waitMs < 50 && room.state.lastCardId) {
-          // room_update มาก่อน card_vfx - คำนวณ wait จาก vfxDur table
-          const _vfxDurTable = {
-            c1:600,c2:1400,c3:1100,c4:1400,c5:700,c6:900,c7:500,c8:700,c9:1300,
-            c10:500,c11:700,c13:800,c14:1300,
-            u1:400,u2:700,u3:700,u4:700,u5:500,u6:1100,u7:600,u8:700,u9:600,u10:1100,
-            r1:700,r2:900,r3:900,r4:1500,r5:1300,r6:700,r7:700,r8:1400,
-            sr1:600,sr2:900,sr3:500,
-            ep3:1000,ep4:600,ep5:1400,ep6:1200,e1:500,e2:800,e3:500,e4:800,
-            l1:1400,l2:1800,l3:1800,l4:1400,l5:1300,m1:1800,m2:1500,
-          };
-          const _cid = room.state.lastCardId;
-          const _vd = room.state.lastCardVfxData || {};
-          const _base = _vd.dur || _vd.novaDur || _vfxDurTable[_cid] || 500;
-          const _extra = _cid === 'l3' ? (_vd.maxDist || 0) * 55 + 900 : 0;
-          waitMs = _base + _extra + 200;
-        }
-        if (waitMs > 50) {
-          setTimeout(doRender, waitMs);
-        } else {
-          doRender();
-        }
-
+        // ปกติ: ต่อคิวเอฟเฟกต์ (เล่นตามลำดับ ไม่ข้าม) · เข้าเกม / rejoin: ล้างคิวแล้วซิงก์ตรงไปที่ state นี้
+        if (resync) fxReset();
+        fxEnqueue({ type: 'update', room, instant: resync });
       }
     } else if (room.phase === 'lobby') {
       // อัปเดตชื่อในห้องรอด้วย
@@ -669,18 +726,10 @@ function initSocket() {
   });
 
   // ── Group pick ──
-  socket.on('group_pick_start', ({ cards, handSize, timeLimit, isReroll }) => {
+  // เข้าคิวเดียวกับ room_update: หน้าเลือกการ์ดจึงขึ้นหลังเอฟเฟกต์ของตาที่มาก่อนเล่นจบเสมอ
+  socket.on('group_pick_start', ({ cards, handSize, timeLimit }) => {
     if (!onlineMode) return;
-    clearAllTimers();
-    // รอ animation ระเบิดและ card VFX เสร็จก่อนแสดงการ์ด
-    const waveWait = Math.max(0, _animFinishTime - Date.now());
-    const cardWait = Math.max(0, _vfxFinishTime - Date.now() + 200);
-    const animDelay = Math.max(waveWait, cardWait, 100);
-    setTimeout(() => {
-      SFX.select && SFX.select();
-      closeGroupPickOverlay();
-      showGroupPickOverlay(cards, handSize, timeLimit || CARD_LIMIT, myName);
-    }, animDelay);
+    fxEnqueue({ type: 'pick', cards, handSize, timeLimit, at: Date.now() });
   });
 
   socket.on('group_pick_progress', ({ done, total }) => {
@@ -705,111 +754,12 @@ function initSocket() {
   });
 
   // ── VFX ──
-  socket.on('card_vfx', ({ cardId, targets, playerIdx, vfxData }) => {
-    if (!onlineMode) return;
-    _cardVfxPlaying = true;
-    // Cards that modify orbs need extra wait (match offline vfxFinishTime)
-    const ORB_CARDS = ['c14','u10','c2','c3','c9','u6','r4','ep5','c4','l3','ep6'];
-    const vfxDur = {
-      c1:600,c2:1400,c3:1100,c4:1400,c5:700,c6:900,c7:500,c8:700,c9:1300,c10:500,c11:700,c13:800,c14:1300,
-      u1:400,u2:700,u3:700,u4:700,u5:500,u6:1100,u7:600,u8:700,u9:600,u10:1100,
-      r1:700,r2:900,r3:900,r4:1500,r5:1300,r6:700,r7:700,r8:1400,
-      sr1:600,sr2:900,sr3:500,
-      ep3:1000,ep4:600,ep5:1400,ep6:1200,e1:500,e2:800,e3:500,e4:800,
-      l1:1400,l2:1800,l3:1800,l4:1400,l5:1300,
-      m1:1800,m2:1500,
-    };
-    const cardDef = (window.CARD_DEFS || []).find(d => d.id === cardId);
-    if (cardDef) {
-      SFX.card && SFX.card(cardDef.rarity);
-      SFX.cardCat && SFX.cardCat(cardDef.cat);
-      SFX.cardSpecial && SFX.cardSpecial(cardId);
-      FX.cardCast(cardDef, playerIdx);
-    }
-    if (window.spawnCardVfx) {
-      // คำนวณ vfxFinishTime ก่อน เหมือน offline
-      const baseDur = (vfxData && (vfxData.dur || vfxData.novaDur)) || vfxDur[cardId] || 500;
-      const extraDur = cardId === 'l3' ? ((vfxData && vfxData.maxDist) || 0) * 55 + 900 : 0;
-      _vfxFinishTime = Date.now() + baseDur + extraDur;
-      FX.hold(baseDur + extraDur);
-      FX.track(spawnCardVfx(cardId, targets || {}, playerIdx, vfxData || {})
-        .catch(() => {})
-        .finally(() => { _cardVfxPlaying = false; }));
-    } else {
-      _cardVfxPlaying = false;
-      _vfxFinishTime = 0;
-    }
-  });
-
-  // ── Frozen cancel notification ──
-  socket.on('frozen_cancel', ({ playerIdx, action, cardId }) => {
-    if (!onlineMode) return;
-    SFX.frozen && SFX.frozen();
-    const pName = (window.PLAYER_NAMES && window.PLAYER_NAMES[playerIdx]) || `P${playerIdx+1}`;
-    showToast(`❄️ ${pName} โดน Freeze! action ไม่มีผล`);
-    // Flash score card สีฟ้า
-    const sc = document.getElementById(`sc-${playerIdx}`);
-    if (sc) {
-      sc.style.transition = 'all .2s';
-      sc.style.background = 'rgba(100,200,255,0.4)';
-      sc.style.boxShadow = '0 0 20px #88eeff';
-      // แสดง ❄️ ลอยบน score card
-      const rect = sc.getBoundingClientRect();
-      const ice = document.createElement('div');
-      ice.style.cssText = `position:fixed;left:${rect.left+rect.width/2}px;top:${rect.top}px;font-size:2.5rem;pointer-events:none;z-index:1200;transform:translate(-50%,-50%);animation:cellEmojiPop 1s ease-out forwards;`;
-      ice.textContent = '❄️';
-      document.body.appendChild(ice);
-      setTimeout(() => { sc.style.background=''; sc.style.boxShadow=''; ice.remove(); }, 1500);
-    }
-    // ถ้าเราเป็นคนโดน Freeze - แสดง overlay แจ้งเตือน
-    if (playerIdx === mySlot) {
-      showToast('❄️ คุณโดน Freeze! action ไม่มีผลในเทิร์นนี้');
-    }
-  });
-
-  socket.on('place_vfx', ({ r, c, playerIdx, isFirstPlace }) => {
-    if (!onlineMode) return;
-    if (isFirstPlace) SFX.firstPlace(playerIdx);
-    else SFX.place(playerIdx);
-    // แสดงบอลที่เพิ่งวางทันที (state จริงจะ sync ทับจาก room_update เสมอ) แล้วเล่นเอฟเฟกต์วางบอล
-    const placed = STATE.cells && STATE.cells[r] && STATE.cells[r][c];
-    if (placed && !_waveAnimating) {
-      placed.count += isFirstPlace ? 3 : 1;
-      placed.owner = playerIdx;
-      updateCellDisplay(r, c);
-    }
-    // delay เล็กน้อยรอ renderGrid เสร็จก่อน
-    setTimeout(() => FX.place(r, c, playerIdx, isFirstPlace), 60);
-  });
-
-  // explosion_vfx handled inline in room_update
+  // card_vfx / place_vfx / frozen_cancel: server ยังส่งตามเดิม แต่ข้อมูลเดียวกันมากับ room_update แล้ว (state.last)
+  // คิวเอฟเฟกต์เล่นจากตรงนั้น จึงไม่ขึ้นกับว่า event ไหนมาถึงก่อน (โหมด Firebase อาจหน่วง)
 
   // ── Game over ──
-  socket.on('game_over', ({ winner, winnerName, scores }) => {
-    if (!onlineMode) return;
-    clearAllTimers();
-    closeGroupPickOverlay();
-    if (STATE) STATE.scores = scores;
-
-    const showWinner = () => {
-      document.getElementById('winner-title').textContent = `${winnerName} ชนะ! 🎉`;
-      document.getElementById('winner-title').style.color = PLAYER_COLORS_O[winner] || '#fff';
-      const scoreStr = scores.map((s, i) => `P${i+1}:${s}`).join('  ');
-      document.getElementById('winner-sub').textContent = `คะแนน: ${scoreStr}`;
-      document.getElementById('winner-overlay').classList.add('show');
-      SFX.win && SFX.win();
-    };
-
-    // รอ VFX และ wave animation เสร็จก่อนขึ้น winner screen
-    const vfxWait = Math.max(0, _vfxFinishTime - Date.now());
-    const waveWait = Math.max(0, _animFinishTime - Date.now());
-    const totalWait = Math.max(vfxWait, waveWait);
-    if (totalWait > 50) {
-      setTimeout(showWinner, totalWait + 300);
-    } else {
-      showWinner();
-    }
-  });
+  // เก็บไว้เฉยๆ: หน้าผู้ชนะเปิดโดยงานในคิวที่มี phase = finished หลังลูกโซ่ครบทุก wave + อนุภาคนิ่งแล้วเท่านั้น
+  socket.on('game_over', (payload) => { _gameOver = payload; });
 
   socket.on('you_are_host', () => {
     isHost = true;
@@ -838,7 +788,8 @@ function syncStateFromServer(serverState) {
   STATE.alive   = serverState.alive;
   STATE.moved   = serverState.moved;
   STATE.scores  = serverState.scores;
-  STATE.cells   = serverState.cells;
+  // สำเนา: เอฟเฟกต์ (wave / VFX การ์ด) แก้ STATE.cells ระหว่างเล่น — ต้องไม่ไปแก้ state ที่ server ส่งมาซึ่งยังรอซิงก์อยู่ในคิว
+  STATE.cells   = serverState.cells.map(row => row.map(cell => ({ ...cell })));
   STATE.shielded    = serverState.shielded;
   STATE.shieldOwner = serverState.shieldOwner;
   STATE.timeBombs   = serverState.timeBombs || [];
@@ -859,6 +810,14 @@ function syncStateFromServer(serverState) {
   STATE.hands[mySlot] = myHand;
 }
 
+// ผลของการ์ดที่ส่งให้เราคนเดียว (ไม่ได้ broadcast) — ตอนนี้มี Scout: รายชื่อการ์ดในมือของผู้เล่นที่สุ่มได้
+function cardResult(res) {
+  if (!res || !res.scout) return;
+  const who = getPlayerName(res.scout.player);
+  const cards = (res.scout.cards || []).map(c => `${c.emoji || ''} ${c.name}`.trim());
+  showToast(`🔍 ${who}: ${cards.length ? cards.join(' · ') : 'ไม่มีการ์ดในมือ'}`);
+}
+
 // ── Cell click (online) ──
 function onlineCellClick(r, c) {
   if (!onlineMode || !socket) return false;
@@ -877,20 +836,16 @@ function onlineCellClick(r, c) {
     const realIdx = cardDef ? STATE.hands[playerIdx].indexOf(cardDef) : cardIdx;
     if (cardDef) {
       if (cardDef.twoTarget && !targetData.r1Done) {
+        const v1 = window.CRLogic.validateTargets(STATE, cardDef, mySlot, { r, c }, { partial: true });
+        if (!v1.ok) { showToast('❌ ' + v1.msg); return true; }
         targetData = { r1: r, c1: c, r1Done: true, playerIdx, cardIdx: realIdx, cardDef };
         document.getElementById('target-text').textContent = `✅ ช่อง 1 แล้ว — เลือกช่องที่ 2`;
         renderGridHighlight();
         return true;
       }
       if (cardDef.twoTarget && targetData.r1Done) {
-        if (r === targetData.r1 && c === targetData.c1) { showToast('เลือกช่องคนละช่อง'); return true; }
-        // c5 Spin: ช่องที่ 2 ต้องอยู่ติดกับช่องที่ 1
-        if (cardDef.id === 'c5') {
-          const size = STATE.size, cols = STATE.cols || STATE.size;
-          const r1 = targetData.r1, c1 = targetData.c1;
-          const isNb = (Math.abs(r-r1)===1&&c===c1) || (Math.abs(c-c1)===1&&r===r1);
-          if (!isNb) { showToast('❌ ต้องเลือกช่องที่ติดกัน'); return true; }
-        }
+        const v2 = window.CRLogic.validateTargets(STATE, cardDef, mySlot, { r: targetData.r1, c: targetData.c1, r2: r, c2: c });
+        if (!v2.ok) { showToast('❌ ' + v2.msg); return true; }
         selectedHandCard = null;
         document.getElementById('target-banner').classList.remove('show');
         clearAllTimers();
@@ -898,11 +853,13 @@ function onlineCellClick(r, c) {
           if (!res?.ok) {
         if (res?.msg === 'ไม่พบห้อง' || res?.msg === 'ไม่พบผู้เล่น') handleServerReset();
         else showToast(res?.msg || 'ใช้การ์ดไม่ได้');
-      }
+      } else cardResult(res);
         });
         targetData = {}; renderGridHighlight();
         return true;
       }
+      const v = window.CRLogic.validateTargets(STATE, cardDef, mySlot, { r, c });
+      if (!v.ok) { showToast('❌ ' + v.msg); return true; }
       selectedHandCard = null;
       document.getElementById('target-banner').classList.remove('show');
       clearAllTimers();
@@ -910,7 +867,7 @@ function onlineCellClick(r, c) {
         if (!res?.ok) {
         if (res?.msg === 'ไม่พบห้อง' || res?.msg === 'ไม่พบผู้เล่น') handleServerReset();
         else showToast(res?.msg || 'ใช้การ์ดไม่ได้');
-      }
+      } else cardResult(res);
       });
       renderGridHighlight();
       return true;
@@ -943,7 +900,7 @@ function onlineActivateCard(pi, ci, cardDef) {
       if (!res?.ok) {
         if (res?.msg === 'ไม่พบห้อง' || res?.msg === 'ไม่พบผู้เล่น') handleServerReset();
         else showToast(res?.msg || 'ใช้การ์ดไม่ได้');
-      }
+      } else cardResult(res);
     });
     return true;
   }
@@ -1000,10 +957,22 @@ function onlineRenderHandBar() {
       <span class="card-rarity-badge ${RARITY_COLORS[cardDef.rarity]}">${RARITY_LABEL[cardDef.rarity]}</span>
       <span class="card-desc">${cardDef.desc}</span>
       <div class="use-hint">${hint}</div>
+      ${isMyTurn ? '<button type="button" class="discard-hint">🗑 ทิ้งการ์ดใบนี้</button>' : ''}
     `;
     if (isMyTurn) {
+      // ทิ้งการ์ด (ไม่เสีย action): กดครั้งแรกเพื่อยืนยัน กดอีกครั้งภายใน 3 วินาทีจึงทิ้งจริง
+      const dis = el.querySelector('.discard-hint');
+      let armed = 0;
+      dis.addEventListener('click', e => {
+        e.stopPropagation();
+        if (isSettling()) return;
+        if (Date.now() - armed > 3000) { armed = Date.now(); dis.textContent = '🗑 กดอีกครั้งเพื่อทิ้ง'; dis.classList.add('armed'); setTimeout(() => { if (dis.isConnected && Date.now() - armed >= 3000) { dis.textContent = '🗑 ทิ้งการ์ดใบนี้'; dis.classList.remove('armed'); } }, 3100); return; }
+        selectedHandCard = null; targetData = {};
+        document.getElementById('target-banner').classList.remove('show');
+        socket.emit('discard_card', { cardId: cardDef.id }, res => { if (!res?.ok) showToast(res?.msg || 'ทิ้งการ์ดไม่ได้'); else showToast(`🗑 ทิ้ง ${cardDef.name} แล้ว`); });
+      });
       el.addEventListener('click', e => {
-        if (e.target.closest('.use-hint')) return;
+        if (e.target.closest('.use-hint') || e.target.closest('.discard-hint')) return;
         onHandCardClick(mySlot, ci, cardDef);
       });
       el.querySelector('.use-hint').addEventListener('click', e => {
@@ -1051,7 +1020,7 @@ function renderRoomScreen(room) {
   // สรุปการตั้งค่า (ทุกคนเห็น — ของเดิมคนที่ไม่ใช่ host ไม่รู้เลยว่าจะเล่นแมพอะไร)
   const cfg2 = room.cfg || {};
   const rows = cfg2.mapSize || 8, cols = cfg2.mapCols || rows, iv = cfg2.cardInterval ?? 2;
-  const total = (window.CARD_DEFS || (typeof CARD_DEFS !== 'undefined' ? CARD_DEFS : [])).length, off = (cfg2.disabledCards || []).length;
+  const total = (window.CARD_DEFS || (typeof CARD_DEFS !== 'undefined' ? CARD_DEFS : [])).filter(c => !c.offlineOnly).length, off = (cfg2.disabledCards || []).length;
   const sum = document.getElementById('room-summary');
   if (sum) sum.textContent = `แมพ ${rows}×${cols} · ` + (iv > 0 ? `ได้การ์ดทุก ${iv} เทิร์น` : 'ไม่ใช้การ์ด') + (iv > 0 && off ? ` · เปิดการ์ด ${total - off}/${total} ใบ` : '');
   // ปุ่มตัวเลือกของ host ตรงกับค่าจริงของห้องเสมอ (เช่น หลังรีเฟรชแล้วกลับเข้าห้อง)
@@ -1119,8 +1088,9 @@ function renderCardFilter() {
   if (!list) return;
 
   // ดึง CARD_DEFS จาก gameLogic ที่โหลดใน index.html
-  const cards = (typeof CARD_DEFS !== 'undefined' ? CARD_DEFS : null)
-    || window.CARD_DEFS || [];
+  // การ์ดเฉพาะโหมดออฟไลน์ (offlineOnly) ไม่ถูกแจกในห้องออนไลน์ จึงไม่ต้องให้เลือกเปิด/ปิด
+  const cards = ((typeof CARD_DEFS !== 'undefined' ? CARD_DEFS : null)
+    || window.CARD_DEFS || []).filter(c => !c.offlineOnly);
 
   if (!cards.length) {
     list.innerHTML = '<div style="text-align:center;opacity:.5;padding:20px;">โหลดข้อมูลการ์ดไม่สำเร็จ</div>';
@@ -1191,7 +1161,7 @@ function renderCardFilter() {
 function updateCardFilterSummary() {
   const el = document.getElementById('card-filter-summary');
   if (!el) return;
-  const total = (window.CARD_DEFS || []).length;
+  const total = (window.CARD_DEFS || []).filter(c => !c.offlineOnly).length;
   const disabled = disabledCards.size;
   if (disabled === 0) el.textContent = `การ์ดทั้งหมด (เปิดทั้งหมด)`;
   else if (disabled === total) el.textContent = `ไม่มีการ์ด (ปิดทั้งหมด)`;
@@ -1200,7 +1170,7 @@ function updateCardFilterSummary() {
 
 function setAllCards(enable) {
   if (enable) disabledCards.clear();
-  else { (window.CARD_DEFS || []).forEach(c => disabledCards.add(c.id)); }
+  else { (window.CARD_DEFS || []).filter(c => !c.offlineOnly).forEach(c => disabledCards.add(c.id)); }
   renderCardFilter();
   updateCardFilterSummary();
   emitCardFilter();
@@ -1255,9 +1225,18 @@ document.getElementById('btn-online').addEventListener('click', () => {
   SFX.select && SFX.select();
 });
 
+let _createRetry = 0;
 document.getElementById('btn-create-room').addEventListener('click', () => {
   myName = document.getElementById('online-name').value.trim() || 'ผู้เล่น';
-  if (!socket?.connected) { showToast('กำลังเชื่อมต่อ...'); initSocket(); setTimeout(() => document.getElementById('btn-create-room').click(), 1500); return; }
+  if (!socket?.connected) {
+    // ยังต่อไม่ติด: ลองใหม่เอง — มีตัวจับเวลาได้ทีละตัว และเลิกลองถ้าออกจากหน้านี้ไปแล้ว
+    // (ของเดิมกดกี่ครั้งก็ตั้งเวลาซ้อนกันเท่านั้น → create_room ถูกยิงซ้ำทีหลัง ทั้งที่เข้าห้อง/เริ่มเกมไปแล้ว แล้วหลุดออกจากห้องตัวเอง)
+    showToast('กำลังเชื่อมต่อ...'); initSocket();
+    clearTimeout(_createRetry);
+    _createRetry = setTimeout(() => { if (document.getElementById('online-screen').classList.contains('active')) document.getElementById('btn-create-room').click(); }, 1500);
+    return;
+  }
+  clearTimeout(_createRetry);
   socket.emit('create_room', { name: myName, cfg: roomCfg }, res => {
     if (!res?.ok) return showToast(res?.msg || 'เกิดข้อผิดพลาด');
     mySlot = res.slot; isHost = true; myHand = [];
@@ -1294,7 +1273,7 @@ document.getElementById('btn-start-online').addEventListener('click', () => {
 });
 
 document.getElementById('btn-leave-room').addEventListener('click', () => {
-  clearAllTimers(); closeGroupPickOverlay();
+  fxReset(); clearAllTimers(); closeGroupPickOverlay();
   socket?.emit('leave_room');
   clearSession();
   onlineMode = false; mySlot = -1; isHost = false; currentRoom = null; myHand = [];
@@ -1313,7 +1292,7 @@ document.getElementById('winner-replay').addEventListener('click', () => {
 
 document.getElementById('winner-menu').addEventListener('click', () => {
   if (!onlineMode) return;
-  clearAllTimers(); closeGroupPickOverlay();
+  fxReset(); clearAllTimers(); closeGroupPickOverlay();
   socket?.emit('leave_room');
   clearSession();
   onlineMode = false; mySlot = -1; isHost = false; myHand = [];

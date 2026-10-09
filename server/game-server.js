@@ -8,8 +8,8 @@ const crypto = require('crypto');
 const {
   createInitialState, applyPlace, applyCard,
   processExplosionsWithWaves, checkEliminations, checkWin,
-  nextTurn, tickTimeBombs, draw3UniqueCards,
-  PLAYER_NAMES, HAND_LIMIT, CARD_DEFS,
+  nextTurn, tickTimeBombs, drawPickChoices,
+  PLAYER_NAMES, HAND_LIMIT, CARD_DEFS, animMs,
 } = require('../shared/gameLogic');
 
 function attach(io, opts = {}) {
@@ -27,8 +27,6 @@ const LOBBY_GRACE_MS    = envMs('LOBBY_GRACE_MS', 15000);      // หลุด�
 const ROOM_TTL_EMPTY_MS = envMs('ROOM_TTL_EMPTY_MS', 10 * 60 * 1000); // ห้องที่ไม่มีใครเชื่อมต่ออยู่เลย
 const ROOM_TTL_LOBBY_MS = envMs('ROOM_TTL_LOBBY_MS', 30 * 60 * 1000); // ห้องรอ (lobby) ที่ไม่มีความเคลื่อนไหว
 const ROOM_SWEEP_MS     = envMs('ROOM_SWEEP_MS', 30000);
-const WAVE_MS     = 520;  // client เล่นระเบิด wave ละ 520ms
-const CARD_VFX_MS = 2000; // เผื่อเวลา VFX ของการ์ดฝั่ง client
 
 const rooms     = new Map();
 const socketRoom= new Map();
@@ -65,14 +63,14 @@ function cleanName(name, fallback) {
 // rate limit ต่อ socket ต่อ event: [จำนวนครั้งสูงสุด, ภายในกี่ ms]
 const RATE = {
   create_room: [5, 10000], join_room: [10, 10000], rejoin_room: [10, 10000],
-  update_cfg: [40, 5000], place: [30, 5000], use_card: [30, 5000], place_timeout: [20, 5000],
+  update_cfg: [40, 5000], place: [30, 5000], use_card: [30, 5000], discard_card: [20, 5000], place_timeout: [20, 5000],
   group_pick_response: [20, 5000], group_pick_skip: [20, 5000], start_game: [10, 10000], restart_game: [10, 10000],
 };
 const NO_PAYLOAD = new Set(['start_game', 'restart_game']); // event ที่ client ส่งแค่ callback
 
 // opts.genCode: โหมด Firebase จองรหัสห้องไว้ล่วงหน้า (ไม่ให้ซ้ำกับห้องของโฮสต์คนอื่น) แล้วส่งมาทางนี้
 function genCode() {
-  if (opts.genCode) return String(opts.genCode());
+  if (opts.genCode) { const c = opts.genCode(); return c === null || c === undefined ? '' : String(c); }
   return String(Math.floor(1000 + Math.random() * 9000));
 }
 const newToken = () => crypto.randomBytes(16).toString('hex');
@@ -94,6 +92,7 @@ function broadcastRoom(room) {
   const payload = {
     code:    room.code,
     phase:   room.phase,
+    gameId:  room.gameId || 0, // client ใช้แยก "เกมไหน" (เช่น เปิดหน้าผู้ชนะครั้งเดียวต่อเกม)
     members: room.members.map(m => ({
       name: m.name, slot: m.slot, connected: m.connected,
       isHost: m.socketId === room.host,
@@ -126,12 +125,20 @@ function sanitizeState(state) {
   for (const k of STATE_FIELDS) pick[k] = state[k];
   const s = JSON.parse(JSON.stringify(pick));
   s.handsCount = state.hands.map(h => h.length); // จำนวนการ์ดในมือเท่านั้น — มือจริงส่งแยกให้เจ้าของ (your_hand)
+  // สิ่งที่เกิดในตานี้ (การ์ด / การวาง / โดน Freeze) — ส่งมากับ state เลย client จะได้เล่นเอฟเฟกต์ได้จาก update ก้อนเดียว
+  // ไม่ต้องพึ่งว่า card_vfx / place_vfx มาถึงก่อนหรือหลัง · เป็นของ broadcast ครั้งเดียว ส่งแล้วล้าง
+  s.last = state._last || null;
+  delete state._last;
   s.lastCardId = state._lastCardId || null;
   s.lastCardVfxData = state._lastCardVfxData || null;
-  // waves ของเทิร์นล่าสุด (ไม่เกิน 20 wave กัน message ใหญ่) — เป็นของ broadcast ครั้งเดียว ส่งแล้วล้าง
-  s.explosionWaves = state._allWaves ? state._allWaves.slice(0, 20) : null;
+  // ลูกโซ่ของเทิร์นล่าสุด: ครบทุก wave ในรูปกะทัดรัด + กระดานก่อน wave แรก (fxBase) — ดูรูปแบบที่ shared/gameLogic.js
+  // (ของเดิมตัดที่ 20 wave เงียบๆ: ลูกโซ่ที่ยาวกว่านั้นหายท้ายแล้วกระดานกระโดด) · เป็นของ broadcast ครั้งเดียว ส่งแล้วล้าง
+  const fx = state._fx;
+  s.explosionWaves = fx && fx.waves.length ? fx.waves : null;
+  s.fxBase = s.explosionWaves ? fx.base : null;
+  if (fx && fx.truncated) s.wavesTruncated = true; // เกินเพดาน: client เล่นเท่าที่ได้แล้วจบด้วยการซิงก์
+  state._fx = null;
   delete state._lastCardId; delete state._lastCardVfxData;
-  state._allWaves = null;
   state._lastExplosions = null;
   return s;
 }
@@ -151,10 +158,9 @@ function sendAllHands(room) {
 const turnKey = room => `${room.gameId || 0}:${room.state.turnCount}:${room.state.current}`;
 
 // เวลาที่ client ใช้เล่นแอนิเมชันของ update นี้ (ระเบิดทีละ wave + VFX การ์ด) — บวกเพิ่มให้ตาถัดไป จะได้ไม่เสียเวลาคิดไปกับการดูเอฟเฟกต์
+// ตัวเลขมาจาก shared/gameLogic.js (animMs) ตัวเดียวกับที่คิวเอฟเฟกต์ของ client ใช้ — ของเดิมเผื่อ VFX การ์ด 2 วินาทีตายตัว ไม่ตรงกับของจริงรายใบ
 function animMsOf(state) {
-  const waves = state._allWaves ? Math.min(state._allWaves.length, 20) : 0;
-  const card  = state._lastCardId ? CARD_VFX_MS : 0;
-  return waves * WAVE_MS + card + (waves || card ? 300 : 0);
+  return animMs(state._fx ? state._fx.waves.length : 0, state._lastCardId, state._lastCardVfxData);
 }
 
 function clearTurnTimer(room) {
@@ -227,7 +233,7 @@ function startGroupPick(room) {
 
   const choices = {};
   eligible.forEach(slot => {
-    choices[slot] = draw3UniqueCards(state.keyActive, state.disabledCards || []);
+    choices[slot] = drawPickChoices(state, slot); // Key ของผู้เล่นคนนั้นเท่านั้น และถูกใช้ไปตรงนี้
   });
 
   room.groupPick = {
@@ -320,12 +326,9 @@ function processTurnEnd(room) {
   if (!room?.state) return;
   const state = room.state;
 
-  const waves = processExplosionsWithWaves(state);
-  if (tickTimeBombs(state)) {
-    const bombWaves = processExplosionsWithWaves(state);
-    waves.push(...bombWaves);
-  }
-  state._allWaves = waves.length > 0 ? waves : null;
+  // ลูกโซ่ถูกบันทึกสะสมไว้ใน state._fx (รวมของ Time Bomb ที่ระเบิดตามหลัง) → sanitizeState ส่งให้ client
+  processExplosionsWithWaves(state);
+  if (tickTimeBombs(state)) processExplosionsWithWaves(state);
   const aliveB4 = [...state.alive];
   checkEliminations(state);
   if (aliveB4.length !== state.alive.length) {
@@ -482,12 +485,13 @@ io.on('connection', (socket) => {
   const leaveCurrent = () => { const old = getRoomBySocket(socket.id); if (old) cleanupMember(socket.id, old, { left: true }); };
 
   socket.on('create_room', ({ name, cfg }, cb) => {
-    leaveCurrent();
-
+    // หารหัสให้ได้ก่อน แล้วค่อยออกจากห้องเดิม — สร้างไม่สำเร็จต้องไม่ทำให้หลุดจากห้องที่อยู่
     let code;
     let tries = 0;
     do { code = genCode(); } while (rooms.has(code) && ++tries < 50);
-    if (rooms.has(code)) return cb?.({ ok: false, msg: 'สร้างห้องไม่ได้ ลองใหม่อีกครั้ง' });
+    // ไม่มีรหัส (โหมด Firebase: create_room ที่ไม่ได้มาจากแท็บโฮสต์เอง จะไม่มีรหัสที่จองไว้) หรือรหัสซ้ำ → ไม่สร้าง
+    if (!/^\d{4}$/.test(code) || rooms.has(code)) return cb?.({ ok: false, msg: 'สร้างห้องไม่ได้ ลองใหม่อีกครั้ง' });
+    leaveCurrent();
 
     const token = newToken();
     const c = cleanCfg(cfg);
@@ -627,6 +631,7 @@ io.on('connection', (socket) => {
       log(`[place] slot=${member.slot} frozen - cancelling`);
       cb?.({ ok: true, isFirstPlace: false });
       io.to(room.code).emit('frozen_cancel', { playerIdx: member.slot, action: 'place' });
+      state._last = { frozen: { playerIdx: member.slot, action: 'place' } };
       state.moved[member.slot] = true;
       processTurnEnd(room);
       return;
@@ -639,6 +644,7 @@ io.on('connection', (socket) => {
     log(`[place] OK cell=${JSON.stringify(state.cells[r][c])}`);
     cb?.({ ok: true, isFirstPlace: result.isFirstPlace });
     io.to(room.code).emit('place_vfx', { r, c, playerIdx: member.slot, isFirstPlace: result.isFirstPlace });
+    state._last = { place: { r, c, playerIdx: member.slot, isFirstPlace: !!result.isFirstPlace } };
     processTurnEnd(room);
   });
 
@@ -673,6 +679,7 @@ io.on('connection', (socket) => {
     if (state.frozen[member.slot] > 0) {
       cb?.({ ok: true, vfxData: {}, resultText: '' });
       io.to(room.code).emit('frozen_cancel', { playerIdx: member.slot, action: 'card', cardId });
+      state._last = { frozen: { playerIdx: member.slot, action: 'card', cardId } };
       state.moved[member.slot] = true;
       processTurnEnd(room);
       return;
@@ -690,12 +697,34 @@ io.on('connection', (socket) => {
       return cb?.({ ok: false, msg: 'การ์ดใบนี้ใช้ไม่ได้ตอนนี้ (ไม่มีอะไรเปลี่ยน)' });
     }
     if (!result.ok) return cb?.({ ok: false, msg: result.msg });
-    cb?.({ ok: true, vfxData: result.vfxData, resultText: result.resultText });
+    // result.private (เช่น ผลของ Scout) ไปที่ callback ของคนใช้เท่านั้น — ไม่อยู่ใน card_vfx / room_update
+    cb?.({ ok: true, vfxData: result.vfxData, resultText: result.resultText, ...(result.private || {}) });
     io.to(room.code).emit('card_vfx', { cardId, targets: targets||{}, playerIdx: member.slot, vfxData: result.vfxData||{} });
     // บันทึกการ์ดล่าสุดใน state เพื่อให้ room_update รู้ว่ามี VFX
     state._lastCardId = cardId;
+    state._last = { card: { cardId, targets: targets || {}, playerIdx: member.slot, vfxData: result.vfxData || {} } };
     state._lastCardVfxData = result.vfxData || {};
     processTurnEnd(room);
+  });
+
+  // ทิ้งการ์ดในมือ: ในตาของตัวเอง ไม่เสีย action
+  // (การ์ดที่ใช้ไม่ได้แล้ว เช่น Legendary ใบที่ 3 ค้างในมือได้ตลอด — มือเต็ม 4 ใบแล้วจะไม่ได้การ์ดใหม่อีกเลย)
+  socket.on('discard_card', ({ cardId }, cb) => {
+    const room = getRoomBySocket(socket.id);
+    if (!room) return cb?.({ ok: false, msg: 'ไม่พบห้อง' });
+    if (!isPlaying(room)) return cb?.({ ok: false, msg: room.phase === 'group_pick' ? 'กำลังเลือกการ์ดอยู่' : 'ยังไม่ถึงเวลาเล่น' });
+    const member = room.members.find(m => m.socketId === socket.id);
+    if (!member) return cb?.({ ok: false, msg: 'ไม่พบผู้เล่น' });
+    const state = room.state;
+    if (state.current !== member.slot) return cb?.({ ok: false, msg: 'ทิ้งการ์ดได้เฉพาะในตาของตัวเอง' });
+    const hand = state.hands[member.slot] || [];
+    const idx = typeof cardId === 'string' ? hand.findIndex(d => d.id === cardId) : -1;
+    if (idx < 0) return cb?.({ ok: false, msg: 'ไม่มีการ์ดนี้ในมือ' });
+    hand.splice(idx, 1);
+    touch(room);
+    cb?.({ ok: true });
+    broadcastRoom(room);              // คนอื่นเห็นจำนวนการ์ดในมือลดลง
+    sendPrivateHand(room, member.slot);
   });
 
   // ── Group pick: เลือกการ์ด ──
@@ -785,8 +814,17 @@ io.on('connection', (socket) => {
   });
 });
 
+// ปิดห้องจากภายนอก (โหมด Firebase: โฮสต์เปิดห้องใหม่ / เสียสิทธิ์ในรหัสห้อง): แจ้งสมาชิกแล้วลบ
+function closeRoom(code, reason) {
+  const room = rooms.get(String(code));
+  if (!room) return false;
+  io.to(room.code).emit('room_closed', { reason: reason || 'closed' });
+  deleteRoom(room);
+  return true;
+}
+
 return {
-  rooms, socketRoom,
+  rooms, socketRoom, closeRoom,
   stop() { clearInterval(sweeper); [...rooms.values()].forEach(deleteRoom); },
 };
 }
