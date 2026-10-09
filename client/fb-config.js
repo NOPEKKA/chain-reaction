@@ -1,6 +1,6 @@
 // ค่าเชื่อม Firebase สำหรับโหมดออนไลน์แบบไม่มีเซิร์ฟเวอร์ (GitHub Pages)
 // ค่าพวกนี้เปิดเผยได้ — ใครเปิดหน้าเว็บก็เห็นอยู่แล้ว ความปลอดภัยอยู่ที่ database.rules.json ไม่ใช่การซ่อนค่า
-// ถ้าเปิดเกมจาก server ของเกม (npm start / Railway) จะใช้ socket.io แทน ไม่แตะ Firebase
+// ถ้าเปิดเกมจาก server ของเกม (npm start) จะใช้ socket.io แทน ไม่แตะ Firebase
 window.CR_FIREBASE_CONFIG = {
   apiKey: "AIzaSyBw7hVW7nS89SulURFKdWalbguCq1AWAks",
   authDomain: "chain-reaction-acde2.firebaseapp.com",

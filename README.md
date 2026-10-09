@@ -4,26 +4,9 @@
 
 ---
 
-## 🚀 Deploy บน Railway (ฟรี)
+## 🎮 เล่นเลย
 
-### ขั้นตอน
-
-```bash
-# 1. ติดตั้ง dependencies
-npm install
-
-# 2. ทดสอบ local
-npm start
-# เปิด http://localhost:3000
-```
-
-### Deploy Railway
-
-1. ไปที่ **railway.app** → Login ด้วย GitHub
-2. กด **"New Project"** → **"Deploy from GitHub repo"**
-3. เลือก repo นี้
-4. Railway จะ detect `package.json` และ deploy อัตโนมัติ
-5. ได้ link เช่น `https://chain-reaction-production.up.railway.app`
+https://nopekka.github.io/chain-reaction/ — เปิดแล้วเล่นได้ทันที ทั้งออฟไลน์และออนไลน์ (ไม่ต้องมีเซิร์ฟเวอร์)
 
 ---
 
@@ -40,7 +23,7 @@ GitHub Pages รันโปรแกรมไม่ได้ จึงให้
 4. **GitHub → Settings → Pages → Build and deployment → Source = GitHub Actions**
 5. push เข้า `main` → workflow [`pages.yml`](.github/workflows/pages.yml) เผยแพร่เอง ได้ลิงก์ `https://<user>.github.io/<repo>/`
 
-เปิดจาก `npm start` หรือ Railway จะใช้ socket.io ตามเดิม ไม่แตะ Firebase
+เปิดจาก `npm start` ในเครื่อง จะใช้ socket.io แทน ไม่แตะ Firebase
 
 ### ความปลอดภัยของโหมด Firebase
 
@@ -134,8 +117,7 @@ chain-reaction/
 │   └── online.js         ← Socket client logic
 ├── shared/
 │   └── gameLogic.js      ← Game logic (ใช้ร่วมกัน server/client)
-├── package.json
-└── railway.toml
+└── package.json
 ```
 
 ---
@@ -150,12 +132,6 @@ chain-reaction/
 5. เพื่อนกด "เข้าห้อง" → ใส่รหัส
 6. Host กด "เริ่มเกม!"
 ```
-
----
-
-## ⚙️ Environment Variables
-
-ไม่ต้องตั้งค่าอะไรพิเศษ — Railway จัดการ PORT ให้อัตโนมัติ
 
 ---
 

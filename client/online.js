@@ -479,7 +479,7 @@ document.addEventListener('visibilitychange', () => {
 
 window._onlineFx = () => ({ queued: FXQ.jobs.length, running: !!FXQ.cur, jobsDone: FXQ.stats.jobs, wavesPlayed: FXQ.stats.waves, warpCells: FXQ.stats.warpCells, forced: FXQ.stats.forced });
 
-// ══ Handle server reset (Railway restart) ══
+// ══ Handle server reset (server restart) ══
 function handleServerReset() {
   fxReset();
   clearAllTimers();
