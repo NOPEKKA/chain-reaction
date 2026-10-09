@@ -450,6 +450,145 @@ test('8 งานค้างสามชิ้น (ผู้เล่นอี�
 
 // ── โหมด Firebase (ไม่มี server): โฮสต์รัน game-server ในหน้าเว็บ ข้อมูลวิ่งผ่านฐานข้อมูลจำลองที่หน่วง 60–200ms ──
 // วัดทั้งสองฝั่ง — แขกได้ทุกอย่างผ่าน Firebase: ลูกโซ่ต้องครบ และหน้าผู้ชนะต้องขึ้นหลังลูกโซ่จบ เหมือนโหมด socket.io
+// ลายเซ็นของกระดานที่ "วาดอยู่จริง" (นับลูกบอลใน DOM) — รูปแบบเดียวกับ sigOf
+const DOM_SIG = `window.__dom = () => STATE.cells.map((row, r) => row.map((ce, c) => { const el = FX.cell(r, c), n = el ? el.querySelectorAll('.orb').length : 0; return n + ':' + (n ? PLAYER_COLORS.indexOf(el._pc) : -1); }).join(',')).join('/');`;
+
+test('9 Rewind ออนไลน์: กระดานย้อนกลับทีละจังหวะจากสภาพก่อนย้อน และจบตรงกับ server', { skip: SKIP }, async () => {
+  const g = await game();
+  // ตาของ B: ช่อง 3 ลูกของ B ที่ (2,2) ติดช่องของ A สี่ด้าน → B เติมให้ระเบิด ยึดช่องของ A (action ที่ A จะย้อน)
+  await g.board(set => { set(2, 2, 3, 1); set(2, 3, 3, 0); set(1, 2, 2, 0); set(3, 2, 1, 0); set(2, 1, 2, 0); set(4, 5, 1, 0); set(5, 6, 2, 1); }, { current: 1 });
+  const before = sigOf(g.S());
+  g.B.emit('place', { r: 2, c: 2 });
+  await until(() => g.S().current === 0 && g.S().turnCount === 3, 5000, 'B เดินแล้ว');
+  await g.settle({ quietMs: 900 });
+  const after = sigOf(g.S());
+  const changed = before.split(/[,/]/).filter((v, i) => v !== after.split(/[,/]/)[i]).length;
+  assert.ok(changed >= 5, `action ของ B ต้องเปลี่ยนหลายช่อง (ได้ ${changed})`);
+  await g.hand(['r8']);
+  await g.P.ev(`(() => { ${DOM_SIG}
+    const R = window.__rw = { frames: [], on: true, start: 0, end: 0 };
+    const grab = () => { if (!R.on) return; R.frames.push([performance.now(), __dom()]); requestAnimationFrame(grab); }; requestAnimationFrame(grab);
+    const _s = window.spawnCardVfx;
+    window.spawnCardVfx = function (id) { const t = performance.now(), pr = _s.apply(this, arguments); if (id === 'r8') { R.start = t; pr.then(() => { R.end = performance.now(); }); } return pr; };
+  })()`);
+  await g.cardNow();
+  await until(() => g.P.ev(`!!__rw.end`), 8000, 'เอฟเฟกต์ Rewind จบ');
+  await g.settle({ quietMs: 500 });
+  const m = await g.P.ev(`(() => { __rw.on = false; return { start: __rw.start, end: __rw.end, frames: __rw.frames, dom: __dom(), sig: __sig(), left: document.querySelectorAll('.cell[data-fx]').length }; })()`);
+  const during = m.frames.filter(f => f[0] >= m.start && f[0] <= m.end).map(f => f[1]);
+  const distinct = [...new Set(during)], ms = Math.round(m.end - m.start), want = logic.rewindVfxMs(changed);
+  metrics['9 Rewind ออนไลน์'] = { cellsChanged: changed, effectMs: ms, sharedTimingMs: want, framesSampled: during.length, distinctBoardPictures: distinct.length };
+  assert.equal(sigOf(g.S()), before, 'server ย้อนกระดานกลับไปก่อน action ของ B');
+  assert.equal(m.sig, before, 'state ของหน้าตรงกับ server');
+  assert.equal(m.dom, before, 'กระดานที่วาดอยู่ตรงกับ server');
+  assert.equal(m.left, 0, 'ไม่มีสถานะเอฟเฟกต์ค้างบนช่อง');
+  assert.ok(during.length > 20, `ต้องมีเฟรมระหว่างเอฟเฟกต์ (ได้ ${during.length})`);
+  assert.equal(during[0], after, 'เฟรมแรกของเอฟเฟกต์ยังเป็นกระดานก่อนย้อน');
+  assert.ok(distinct.length >= 4, `กระดานต้องย้อนทีละจังหวะ (ได้ ${distinct.length} ภาพ)`);
+  const B4 = before.split(/[,/]/), AF = after.split(/[,/]/);
+  assert.ok(during.every(f => f.split(/[,/]/).every((v, i) => v === B4[i] || v === AF[i])), 'ทุกช่องในทุกเฟรมต้องเป็นค่าก่อนย้อนหรือหลังย้อนเท่านั้น');
+  assert.equal(during[during.length - 1], before, 'เฟรมสุดท้ายของเอฟเฟกต์คือกระดานที่ย้อนแล้ว');
+  assert.ok(Math.abs(ms - want) <= 150, `เอฟเฟกต์ยาว ${ms}ms (เวลาที่ server ใช้ต่อเวลาตา: ${want}ms)`);
+  assert.equal(g.S().current, 1, 'ใช้การ์ดแล้วเปลี่ยนตา');
+  noErrors(g); g.P.close();
+});
+
+test('10 Reflect ออนไลน์: ทุกช่องของผู้ใช้ได้แผ่นกระจกพร้อมกัน เอฟเฟกต์สั้นคงที่ แล้วโล่ขึ้นครบ', { skip: SKIP }, async () => {
+  const g = await game();
+  const own = [[0, 0], [0, 1], [1, 1], [2, 2], [3, 3], [4, 4], [5, 5], [5, 6], [4, 6]];
+  await g.board(set => { own.forEach(([r, c], i) => set(r, c, 1 + i % 3, 0)); set(0, 7, 2, 1); set(1, 7, 1, 1); });
+  await g.hand(['r6']);
+  await g.P.ev(`(() => { const R = window.__mir = { tokens: 0, start: 0, end: 0 }; const _s = window.spawnCardVfx;
+    window.spawnCardVfx = function (id) { const t = performance.now(), pr = _s.apply(this, arguments); if (id === 'r6') { R.start = t; R.tokens = document.querySelectorAll('.cell[data-fx*="mi"]').length; pr.then(() => { R.end = performance.now(); }); } return pr; };
+  })()`);
+  await g.cardNow();
+  await until(() => g.P.ev(`!!__mir.end`), 6000, 'เอฟเฟกต์ Reflect จบ');
+  await until(() => g.P.ev(`STATE.current === 1 && !document.querySelector('.cell[data-fx]')`), 5000, 'หน้าซิงก์ state หลังเอฟเฟกต์'); // Reflect ไม่เปลี่ยนจำนวนลูก: รอจากตาที่เปลี่ยนแทน
+  const m = await g.P.ev(`({ tokens: __mir.tokens, ms: Math.round(__mir.end - __mir.start), shielded: document.querySelectorAll('.cell.shielded').length, left: document.querySelectorAll('.cell[data-fx]').length })`);
+  metrics['10 Reflect ออนไลน์'] = { ownCells: own.length, cellsWithMirror: m.tokens, effectMs: m.ms };
+  assert.equal(m.tokens, own.length, 'ทุกช่องของผู้ใช้ได้แผ่นกระจกตั้งแต่เฟรมแรก');
+  assert.ok(m.ms >= 500 && m.ms <= 760, `เอฟเฟกต์ยาว ${m.ms}ms (ไม่ขึ้นกับจำนวนช่อง)`);
+  assert.equal(g.S().shielded.flat().filter(x => x > 0).length, own.length, 'server ตั้งโล่ครบทุกช่อง');
+  assert.equal(m.shielded, own.length, 'หน้าแสดงโล่ครบหลังเอฟเฟกต์');
+  assert.equal(m.left, 0, 'ไม่มีสถานะเอฟเฟกต์ค้างบนช่อง');
+  assert.equal(g.S().current, 1, 'ใช้การ์ดแล้วเปลี่ยนตา');
+  noErrors(g); g.P.close();
+});
+
+test('11 การ์ดทุกใบในโหมดออนไลน์: เอฟเฟกต์เล่นจบตามเวลาในตาราง กระดานบนจอตรงกับ server ไม่มีอะไรค้าง', { skip: SKIP, timeout: 900000 }, async () => {
+  const g = await game({ rows: 8, cols: 8, players: 3 });
+  await g.P.ev(`(() => { ${DOM_SIG}
+    const C = window.__cv = { last: null, second: [] };
+    const _s = window.spawnCardVfx;
+    window.spawnCardVfx = function (id) {
+      if (id === 'e1b') { C.second.push({ at: performance.now(), wavesBefore: window.__m.waves.length }); return _s.apply(this, arguments); } // Meteor ลูกที่สอง: ไม่ใช่การ์ดใบใหม่
+      const rec = { id, start: performance.now(), end: 0 }; C.last = rec; const pr = _s.apply(this, arguments); pr.then(() => { rec.end = performance.now(); }); return pr; };
+  })()`);
+  // A (หน้าเว็บ) ซ้ายบน · B ขวา · C ล่าง — สามกลุ่มไม่ติดกัน
+  const layout = set => {
+    [[1, 1, 2], [1, 2, 1], [2, 1, 3], [2, 2, 2], [2, 3, 1], [3, 2, 2]].forEach(([r, c, n]) => set(r, c, n, 0));
+    [[1, 6, 2], [2, 6, 1], [3, 6, 2], [2, 5, 3]].forEach(([r, c, n]) => set(r, c, n, 1));
+    [[6, 1, 2], [6, 2, 1], [6, 3, 2], [5, 2, 1]].forEach(([r, c, n]) => set(r, c, n, 2));
+  };
+  const ids = logic.CARD_DEFS.filter(d => !d.offlineOnly).map(d => d.id);
+  const rows = [], bad = [];
+  for (const id of ids) {
+    const def = logic.CARD_DEFS.find(d => d.id === id), s = g.S();
+    // ล้างสิ่งที่การ์ดใบก่อนทิ้งไว้ (เอฟเฟกต์ค้าง, โควตา, ผลแพ้ชนะ)
+    Object.assign(s, { voidCells: {}, voidSnapshot: {}, voidOwner: {}, severed: {}, severedOwner: {}, pinned: {}, pinnedOwner: {}, pinnedBy: {}, catalyzed: {}, timeBombs: [], eclipse: 0, _snapshot: null, winner: -1 });
+    s.frozen = [0, 0, 0]; s.legendaryUsedBy = [0, 0, 0]; s.mythicalUsedBy = [false, false, false]; s.keyActive = [0, 0, 0];
+    s.shielded.forEach(r => r.fill(0)); s.shieldOwner.forEach(r => r.fill(-1));
+    g.room().phase = 'playing';
+    await g.board(layout);
+    let t = null;
+    if (id === 'l5') { // Rebirth: A ตายแล้ว ถือการ์ดอยู่
+      for (const row of s.cells) for (const ce of row) if (ce.owner === 0) { ce.count = 0; ce.owner = -1; }
+      s.alive = [1, 2]; s.moved = [false, true, true]; await g.sync(); t = { r: 1, c: 1 };
+    } else if (id === 'r8') { // Rewind: ต้องมี action ล่าสุดให้ย้อน
+      logic.takeSnapshot(s); s.cells[2][3].count = 3; s.cells[3][3].count = 2; s.cells[3][3].owner = 1; await g.sync();
+    }
+    await g.hand([id]);
+    if (!t && (def.needTarget || def.twoTarget)) {
+      const st = g.S();
+      outer: for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+        if (def.twoTarget) {
+          if (!logic.validateTargets(st, def, 0, { r, c }, { partial: true }).ok || !(st.cells[r][c].count > 0)) continue;
+          for (let r2 = 0; r2 < 8; r2++) for (let c2 = 0; c2 < 8; c2++) if (!(r2 === r && c2 === c) && logic.validateTargets(st, def, 0, { r, c, r2, c2 }).ok) { t = { r, c, r2, c2 }; break outer; }
+        } else if (logic.validateTargets(st, def, 0, { r, c }).ok && (!def.targetSelf || (st.cells[r][c].owner === 0 && st.cells[r][c].count === 2))) { t = { r, c }; break outer; }
+      }
+      assert.ok(t, `${id}: หาเป้าหมายที่ถูกกติกาไม่ได้ในกระดานทดสอบ`);
+    }
+    await g.P.ev(`window.__cv.last = null; window.__cv.second = []; window.__m.reset()`);
+    if (t && t.r2 !== undefined) await g.act(`(() => { if (STATE.current !== 0 || targetingCard) return; selectedHandCard = { playerIdx: 0, cardIdx: 0, cardId: '${id}' }; targetData = {}; window._onlineCellClick(${t.r}, ${t.c}); window._onlineCellClick(${t.r2}, ${t.c2}); })()`);
+    else if (t) await g.cardAt(id, t.r, t.c);
+    else if (def.anyTarget && id === 'e4') await g.cardAt(id, 0, 2);
+    else await g.cardNow();
+    await until(() => g.P.ev(`!!(window.__cv.last && window.__cv.last.id === '${id}' && window.__cv.last.end)`), 9000, `${id}: เอฟเฟกต์จบ`);
+    const srvTurn = g.S().turnCount;
+    await until(() => g.P.ev(`STATE.turnCount === ${srvTurn} && !document.querySelector('.cell[data-fx]') && !(window._onlineFx && window._onlineFx().cur)`).catch(() => false), 12000, `${id}: หน้าซิงก์กับ server`, 100);
+    await sleep(200);
+    const m = await g.P.ev(`({ ms: Math.round(__cv.last.end - __cv.last.start), dom: __dom(), sig: __sig(), left: document.querySelectorAll('.cell[data-fx]').length, sprites: document.querySelectorAll('.fx-sprite').length,
+      styled: [...document.querySelectorAll('.cell')].filter(e => e.style.opacity).length, clip: [...document.querySelectorAll('#fx-clip i')].filter(e => getComputedStyle(e).opacity !== '0').length })`);
+    const want = id === 'r8' ? null : logic.cardVfxMs(id, {}), srv = sigOf(g.S()), why = [];
+    if (m.sig !== srv) why.push('state ของหน้า ≠ server');
+    // Eclipse ซ่อนจำนวนลูกของศัตรูโดยตั้งใจ · ช่องที่มีเกิน 4 ลูกวาดไม่ครบทุกลูก
+    if (id !== 'sr2' && !/\b([5-9]|\d\d):/.test(srv) && m.dom !== srv) why.push('กระดานที่วาด ≠ server');
+    if (want !== null && !['r2', 'r6'].includes(id) && Math.abs(m.ms - want) > 150) why.push(`เอฟเฟกต์ ${m.ms}ms ตาราง ${want}ms`);
+    if (m.left || m.sprites || m.styled || m.clip) why.push(`ค้าง: data-fx ${m.left}, sprite ${m.sprites}, style ${m.styled}, overlay ${m.clip}`);
+    if (id === 'e1') { // ระเบิดสองรอบ = อุกกาบาตสองลูก
+      const e = await g.P.ev(`({ second: window.__cv.second, waves: window.__m.waves.length })`);
+      if (e.second.length !== 1) why.push(`อุกกาบาตลูกที่สองเล่น ${e.second.length} ครั้ง (ต้อง 1)`);
+      else if (!(e.second[0].wavesBefore >= 1 && e.second[0].wavesBefore < e.waves)) why.push(`ลูกที่สองต้องตกระหว่างลูกโซ่สองรอบ (ก่อนหน้า ${e.second[0].wavesBefore} wave จากทั้งหมด ${e.waves})`);
+      metrics['11 Meteor ออนไลน์'] = { wavesBeforeSecondStrike: e.second[0] && e.second[0].wavesBefore, wavesTotal: e.waves };
+    }
+    rows.push(`${id}:${m.ms}`);
+    if (why.length) bad.push(`${id} ${def.name}: ${why.join(' · ')}`);
+  }
+  metrics['11 การ์ดทุกใบออนไลน์ (ms)'] = rows.join(' ');
+  assert.deepEqual(bad, [], 'การ์ดที่มีปัญหา');
+  noErrors(g); g.P.close();
+});
+
 test('7 โหมด Firebase (หน่วง 60–200ms): ชนะด้วยการ์ด — ทั้งโฮสต์และแขกเห็นลูกโซ่ครบก่อนหน้าผู้ชนะ', { skip: SKIP }, async () => {
   const memdb = fs.readFileSync(path.join(__dirname, 'support', 'memdb.js'), 'utf8');
   const chan = 'cr-fx-' + Date.now();

@@ -232,24 +232,27 @@ const FX_TIMING = {
   SETTLE_MS: 300,      // เผื่อให้อนุภาคนิ่งก่อนตาถัดไป
 };
 const CARD_VFX_MS = {
-  c1:600,c2:1400,c3:1100,c4:1400,c5:700,c6:900,c7:500,c8:700,c9:1300,c10:500,c11:700,c12:500,c13:800,c14:1300,
-  u1:400,u2:700,u3:700,u4:700,u5:500,u6:1100,u7:600,u8:700,u9:600,u10:1100,u11:500,
-  r1:700,r2:900,r3:900,r4:1500,r5:1300,r6:700,r7:700,r8:1400,
-  sr1:600,sr2:900,sr3:500,
-  ep3:1000,ep4:600,ep5:1400,ep6:1200,e1:500,e2:800,e3:500,e4:800,
-  l1:1400,l2:1800,l3:1800,l4:1400,l5:1300,m1:1800,m2:1500,
+  c1:560,c2:760,c3:620,c4:900,c5:560,c6:620,c7:440,c8:520,c9:820,c10:480,c11:680,c12:520,c13:820,c14:700,
+  u1:400,u2:640,u3:560,u4:620,u5:600,u6:620,u7:720,u8:640,u9:540,u10:900,u11:500,
+  r1:900,r2:900,r3:900,r4:1100,r5:1150,r6:700,r7:720,r8:1400,
+  sr1:560,sr2:950,sr3:540,
+  ep3:1000,ep4:600,ep5:1000,ep6:1300,e1:520,e2:820,e3:820,e4:820,
+  e1b:460, // Meteor ลูกที่สอง (ตกหลังลูกโซ่รอบแรก ก่อนระเบิดรอบสอง)
+  l1:1500,l2:1500,l3:1500,l4:1050,l5:1300,m1:1700,m2:1300,
 };
-// VFX ของการ์ดใบนี้ยาวกี่ ms (บางใบขึ้นกับผลของมัน เช่น Dominion ไล่ตามระยะ)
+// VFX ของการ์ดใบนี้ยาวกี่ ms — ทุกใบยาวคงที่ตามตาราง (ไม่ขึ้นกับจำนวนช่องที่โดน) ยกเว้น Rewind ที่ยาวตามขนาดของสิ่งที่ย้อน
 function cardVfxMs(cardId, vfxData) {
-  const v = vfxData || {};
-  return (v.dur || v.novaDur || CARD_VFX_MS[cardId] || 500) + (cardId === 'l3' ? (v.maxDist || 0) * 55 + 900 : 0);
+  if (cardId === 'r8' && vfxData && vfxData.dur) return vfxData.dur;
+  return CARD_VFX_MS[cardId] || 500;
 }
+// Rewind: หยุดภาพ 180ms → ย้อนทีละช่อง (70ms ต่อช่อง, 360–820ms) → เล่นต่อ 360ms · ย้อนช่องเดียว ~0.9 วิ, ลูกโซ่ใหญ่ไม่เกิน ~1.4 วิ
+function rewindVfxMs(nChanged) { return 180 + Math.max(360, Math.min(820, (nChanged || 0) * 70)) + 360; }
 // เวลาต่อ wave ของลูกโซ่ n wave: ปกติ 520ms แต่ทั้งลูกโซ่ต้องจบใน CHAIN_CAP_MS
 function waveStepMs(n) { return Math.min(FX_TIMING.WAVE_MS, FX_TIMING.CHAIN_CAP_MS / Math.max(1, n)); }
 // เวลารวมที่ client ใช้เล่นเอฟเฟกต์ของ update หนึ่งก้อน
 function animMs(nWaves, cardId, vfxData) {
   const n = nWaves || 0;
-  return Math.round((cardId ? cardVfxMs(cardId, vfxData) + FX_TIMING.CARD_GAP_MS : 0) + n * waveStepMs(n) + (n || cardId ? FX_TIMING.SETTLE_MS : 0));
+  return Math.round((cardId ? cardVfxMs(cardId, vfxData) + FX_TIMING.CARD_GAP_MS : 0) + (cardId === 'e1' ? CARD_VFX_MS.e1b : 0) + n * waveStepMs(n) + (n || cardId ? FX_TIMING.SETTLE_MS : 0));
 }
 
 // ── บันทึกลูกโซ่ให้ client เล่นตาม (state._fx) ──
@@ -741,7 +744,7 @@ function applyCard(state, playerIdx, cardDef, targets) {
     case 'r5': { const moves=[]; const all=[]; for(let ro=0;ro<rows;ro++) for(let co=0;co<cols;co++) if(cells[ro][co].count>0) all.push([ro,co]); all.filter(()=>rnd()<.2).forEach(([ro,co])=>{const nbs2=neighbors(ro,co,rows,cols).filter(([a,b])=>!isVoidCell(state,a,b));if(nbs2.length&&cells[ro][co].count>0){const[nr,nc]=nbs2[Math.floor(rnd()*nbs2.length)];const ow=cells[ro][co].owner;cells[ro][co].count--;if(!cells[ro][co].count)cells[ro][co].owner=-1;cells[nr][nc].count++;cells[nr][nc].owner=ow;moves.push({from:[ro,co],to:[nr,nc]});}}); vfxData={moves};resultText='Tornado!'; break; }
     case 'r6': { const shAll=[]; for(let ro=0;ro<rows;ro++) for(let co=0;co<cols;co++) if(cells[ro][co].owner===cur){state.shielded[ro][co]=1;state.shieldOwner[ro][co]=cur;shAll.push([ro,co]);} vfxData={shielded:shAll};resultText='Reflect!'; break; }
     case 'r7': { if(!state.voidCells) state.voidCells={}; if(!state.voidSnapshot) state.voidSnapshot={}; state.voidCells[`${r},${c}`]=2; (state.voidOwner || (state.voidOwner = {}))[`${r},${c}`]=cur; state.voidSnapshot[`${r},${c}`]={count:cells[r][c].count,owner:cells[r][c].owner}; cells[r][c].count=0; cells[r][c].owner=-1; resultText='Void!'; break; }
-    case 'r8': { vfxData = { diff: restoreSnapshot(state) || [] }; resultText = 'Rewind!'; break; }
+    case 'r8': { const diff = restoreSnapshot(state) || []; vfxData = { diff, dur: rewindVfxMs(diff.length) }; resultText = 'Rewind!'; break; }
     case 'e1': { // Meteor: ระเบิด 2 รอบ — เติมเต็ม → ระเบิดจนนิ่ง → เติมช่องเดิมเต็มอีกครั้ง → ระเบิดอีกรอบ (เหมือนโหมดออฟไลน์)
       cells[r][c].count = Math.max(cells[r][c].count, cells[r][c].cap); cells[r][c].owner = cur;
       runExplosions(state);
@@ -791,6 +794,6 @@ return {
     processExplosionsSync, processExplosionsWithWaves, checkEliminations, checkWin,
     nextTurn, tickTimeBombs, draw3UniqueCards, drawRandomCard, neighbors, rebirthUsable,
     validateTargets, takeSnapshot, restoreSnapshot, explodeWave, tickEffects, drawPickChoices, cloneSim, countWaves,
-    FX_MAX_WAVES, FX_TIMING, CARD_VFX_MS, cardVfxMs, waveStepMs, animMs,
+    FX_MAX_WAVES, FX_TIMING, CARD_VFX_MS, cardVfxMs, rewindVfxMs, waveStepMs, animMs,
   };
 });
