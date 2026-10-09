@@ -69,8 +69,22 @@ function play(state, p, action) {
   return s;
 }
 
-// เกมยืดเยื้อแค่ไหน (0 → 1): เริ่มนับหลังเล่นไปคนละ ~40 ตา เต็มที่ที่คนละ ~120 ตา
-function lateness(s) { const per = (s.turnCount || 0) / s.players; return per <= 40 ? 0 : Math.min(1, (per - 40) / 80); }
+// เกมยืดเยื้อแค่ไหน: เริ่มนับหลังเล่นไปคนละ ~40 ตา (กระดานใหญ่: 35% ของจำนวนช่อง) · 1 = เล่นไป 3 เท่าของจุดเริ่ม · เกิน 1 = มาราธอน
+function lateRaw(s) { const per = (s.turnCount || 0) / s.players, start = Math.max(40, s.rows * s.cols * 0.35); return per <= start ? 0 : (per - start) / (start * 2); }
+function lateness(s) { return Math.min(1, lateRaw(s)); }
+// เกมมาราธอน: ฝ่ายที่ตามหลังผู้นำอยู่ "หมดแรง" — เดินมั่วบ่อยขึ้นเรื่อยๆ จนเกมจบ
+// ทำไมต้องมี: กติกานี้ทุกช่องจุ 4 ลูก ลูกที่ระเบิดออกนอกขอบหายไป → กระดานที่เต็มแล้วไม่มีลูกโซ่ปิดเกมเอง และยิ่งมีช่องมากยิ่งมีช่อง 3 ลูกให้อีกฝ่ายระเบิดลาม
+// บอทที่ฝีมือพอกันจึงผลัดกันนำไปมาไม่จบ (วัดได้เกิน 6,000 เทิร์น) · คนที่กำลังนำไม่ถูกแตะ จึงไม่ทำให้บอทอ่อนลงในเกมปกติ
+function fatigue(s, me) {
+  const raw = lateRaw(s);
+  if (raw < 1) return 0;
+  const score = new Array(s.players).fill(0);
+  for (let r = 0; r < s.rows; r++) for (let c = 0; c < s.cols; c++) { const ce = s.cells[r][c]; if (ce.count > 0) score[ce.owner] += 3 + ce.count; }
+  let lead = 0;
+  for (const p of s.alive) if (p !== me && score[p] > lead) lead = score[p];
+  if (score[me] >= lead * 0.85) return 0;
+  return Math.min(0.75, 0.35 + (raw - 1) * 0.4);
+}
 
 // ── ประเมินกระดานจากมุมของ me ──
 // ผลต่างกับ "ผู้นำ" ในหมู่ศัตรู (เล่นหลายคน: ไม่ไล่รังแกคนอ่อนจนผู้นำหนี) + ภัยที่จะโดนยึดในตาถัดไป − โอกาสที่เราจะยึดได้
@@ -333,8 +347,9 @@ function* decide(state, me, opts) {
   if (s.frozen[me] > 0 || s.moved[me]) return { type: 'skip' };
 
   const places = placeMoves(s, me, rng, hasCells(s, me) ? 0 : 8);
-  // easy: บางตาเดินมั่วเลย
-  if (lvl.blunder && places.length && rng() < lvl.blunder) { const m = places[Math.floor(rng() * places.length)]; return { type: 'place', r: m.r, c: m.c }; }
+  // easy: บางตาเดินมั่วเลย · ทุกระดับ: เกมมาราธอนและกำลังตามหลัง → หมดแรง (ดู fatigue)
+  const slip = Math.max(lvl.blunder, fatigue(s, me));
+  if (slip && places.length && rng() < slip) { const m = places[Math.floor(rng() * places.length)]; return { type: 'place', r: m.r, c: m.c }; }
 
   // ── การวาง: มองลึกขึ้นทีละชั้น (iterative deepening) หมดงบเมื่อไรใช้ผลของชั้นที่เสร็จล่าสุด ──
   let scored = places.map(m => ({ m, v: m.q }));
