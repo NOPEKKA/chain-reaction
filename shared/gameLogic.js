@@ -233,10 +233,11 @@ const FX_TIMING = {
 };
 const CARD_VFX_MS = {
   c1:560,c2:760,c3:620,c4:900,c5:560,c6:620,c7:440,c8:520,c9:820,c10:480,c11:680,c12:520,c13:820,c14:700,
-  u1:360,u2:640,u3:560,u4:620,u5:600,u6:620,u7:720,u8:640,u9:540,u10:900,u11:500,
-  r1:760,r2:900,r3:900,r4:1100,r5:1150,r6:700,r7:720,r8:1400,
+  u1:400,u2:640,u3:560,u4:620,u5:600,u6:620,u7:720,u8:640,u9:540,u10:900,u11:500,
+  r1:900,r2:900,r3:900,r4:1100,r5:1150,r6:700,r7:720,r8:1400,
   sr1:560,sr2:950,sr3:540,
-  ep3:1000,ep4:600,ep5:1000,ep6:1050,e1:400,e2:820,e3:560,e4:820,
+  ep3:1000,ep4:600,ep5:1000,ep6:1300,e1:520,e2:820,e3:820,e4:820,
+  e1b:460, // Meteor ลูกที่สอง (ตกหลังลูกโซ่รอบแรก ก่อนระเบิดรอบสอง)
   l1:1500,l2:1500,l3:1500,l4:1050,l5:1300,m1:1700,m2:1300,
 };
 // VFX ของการ์ดใบนี้ยาวกี่ ms — ทุกใบยาวคงที่ตามตาราง (ไม่ขึ้นกับจำนวนช่องที่โดน) ยกเว้น Rewind ที่ยาวตามขนาดของสิ่งที่ย้อน
@@ -251,7 +252,7 @@ function waveStepMs(n) { return Math.min(FX_TIMING.WAVE_MS, FX_TIMING.CHAIN_CAP_
 // เวลารวมที่ client ใช้เล่นเอฟเฟกต์ของ update หนึ่งก้อน
 function animMs(nWaves, cardId, vfxData) {
   const n = nWaves || 0;
-  return Math.round((cardId ? cardVfxMs(cardId, vfxData) + FX_TIMING.CARD_GAP_MS : 0) + n * waveStepMs(n) + (n || cardId ? FX_TIMING.SETTLE_MS : 0));
+  return Math.round((cardId ? cardVfxMs(cardId, vfxData) + FX_TIMING.CARD_GAP_MS : 0) + (cardId === 'e1' ? CARD_VFX_MS.e1b : 0) + n * waveStepMs(n) + (n || cardId ? FX_TIMING.SETTLE_MS : 0));
 }
 
 // ── บันทึกลูกโซ่ให้ client เล่นตาม (state._fx) ──

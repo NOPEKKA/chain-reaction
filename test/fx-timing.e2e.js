@@ -518,9 +518,11 @@ test('10 Reflect ออนไลน์: ทุกช่องของผู้�
 test('11 การ์ดทุกใบในโหมดออนไลน์: เอฟเฟกต์เล่นจบตามเวลาในตาราง กระดานบนจอตรงกับ server ไม่มีอะไรค้าง', { skip: SKIP, timeout: 900000 }, async () => {
   const g = await game({ rows: 8, cols: 8, players: 3 });
   await g.P.ev(`(() => { ${DOM_SIG}
-    const C = window.__cv = { last: null };
+    const C = window.__cv = { last: null, second: [] };
     const _s = window.spawnCardVfx;
-    window.spawnCardVfx = function (id) { const rec = { id, start: performance.now(), end: 0 }; C.last = rec; const pr = _s.apply(this, arguments); pr.then(() => { rec.end = performance.now(); }); return pr; };
+    window.spawnCardVfx = function (id) {
+      if (id === 'e1b') { C.second.push({ at: performance.now(), wavesBefore: window.__m.waves.length }); return _s.apply(this, arguments); } // Meteor ลูกที่สอง: ไม่ใช่การ์ดใบใหม่
+      const rec = { id, start: performance.now(), end: 0 }; C.last = rec; const pr = _s.apply(this, arguments); pr.then(() => { rec.end = performance.now(); }); return pr; };
   })()`);
   // A (หน้าเว็บ) ซ้ายบน · B ขวา · C ล่าง — สามกลุ่มไม่ติดกัน
   const layout = set => {
@@ -556,7 +558,7 @@ test('11 การ์ดทุกใบในโหมดออนไลน์: 
       }
       assert.ok(t, `${id}: หาเป้าหมายที่ถูกกติกาไม่ได้ในกระดานทดสอบ`);
     }
-    await g.P.ev(`window.__cv.last = null`);
+    await g.P.ev(`window.__cv.last = null; window.__cv.second = []; window.__m.reset()`);
     if (t && t.r2 !== undefined) await g.act(`(() => { if (STATE.current !== 0 || targetingCard) return; selectedHandCard = { playerIdx: 0, cardIdx: 0, cardId: '${id}' }; targetData = {}; window._onlineCellClick(${t.r}, ${t.c}); window._onlineCellClick(${t.r2}, ${t.c2}); })()`);
     else if (t) await g.cardAt(id, t.r, t.c);
     else if (def.anyTarget && id === 'e4') await g.cardAt(id, 0, 2);
@@ -573,6 +575,12 @@ test('11 การ์ดทุกใบในโหมดออนไลน์: 
     if (id !== 'sr2' && !/\b([5-9]|\d\d):/.test(srv) && m.dom !== srv) why.push('กระดานที่วาด ≠ server');
     if (want !== null && !['r2', 'r6'].includes(id) && Math.abs(m.ms - want) > 150) why.push(`เอฟเฟกต์ ${m.ms}ms ตาราง ${want}ms`);
     if (m.left || m.sprites || m.styled || m.clip) why.push(`ค้าง: data-fx ${m.left}, sprite ${m.sprites}, style ${m.styled}, overlay ${m.clip}`);
+    if (id === 'e1') { // ระเบิดสองรอบ = อุกกาบาตสองลูก
+      const e = await g.P.ev(`({ second: window.__cv.second, waves: window.__m.waves.length })`);
+      if (e.second.length !== 1) why.push(`อุกกาบาตลูกที่สองเล่น ${e.second.length} ครั้ง (ต้อง 1)`);
+      else if (!(e.second[0].wavesBefore >= 1 && e.second[0].wavesBefore < e.waves)) why.push(`ลูกที่สองต้องตกระหว่างลูกโซ่สองรอบ (ก่อนหน้า ${e.second[0].wavesBefore} wave จากทั้งหมด ${e.waves})`);
+      metrics['11 Meteor ออนไลน์'] = { wavesBeforeSecondStrike: e.second[0] && e.second[0].wavesBefore, wavesTotal: e.waves };
+    }
     rows.push(`${id}:${m.ms}`);
     if (why.length) bad.push(`${id} ${def.name}: ${why.join(' · ')}`);
   }

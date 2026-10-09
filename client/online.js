@@ -406,6 +406,9 @@ async function fxWaves(job, waves, alive) {
   }
   const n = waves.length, perWave = waveStepMs(n);
   const group = perWave >= WAVE_MIN_MS ? 1 : Math.ceil(WAVE_MIN_MS / perWave); // ลูกโซ่ยาวมาก: รวมหลาย wave เป็นขั้นภาพเดียว
+  // Meteor ระเบิดสองรอบ = อุกกาบาตสองลูก: ลูกที่สองตกก่อน wave แรกของรอบสอง (wave ที่มี b = ช่องเดิมถูกเติมเต็มอีกครั้ง)
+  const card = st.last && st.last.card;
+  const strike2 = card && card.cardId === 'e1' ? waves.findIndex((wv, i) => i > 0 && wv.b) : -1;
   FX.chainReset();
   let cursor = performance.now();
   for (let w = 0; w < n; w += group) {
@@ -414,6 +417,12 @@ async function fxWaves(job, waves, alive) {
     const explosions = [];
     part.forEach(wave => { for (let i = 0; i + 2 < wave.e.length; i += 3) explosions.push({ r: wave.e[i], c: wave.e[i + 1], owner: wave.e[i + 2] }); });
     await fxUntil(cursor, job); if (!alive()) return;
+    if (w > 0 && strike2 >= w && strike2 < w + group && !job.rush && !fxBehind() && window.spawnCardVfx) {
+      const ms2 = cardVfxMs('e1b');
+      FX.hold(ms2);
+      FX.track(spawnCardVfx('e1b', card.targets || {}, card.playerIdx, {}).catch(e => console.error('[vfx] e1b', e)));
+      cursor += ms2; await fxUntil(cursor, job); if (!alive()) return;
+    }
     if (part[0].b) { fxSet(part[0].b); if (!job.rush) renderGrid(false); } // เปลี่ยนก่อนระเบิด (เช่น Time Bomb เติมช่อง)
     if (!job.rush) { FX.wave(explosions, FX.chainStep()); FXQ.stats.waves += part.length; }
     job.played = true;

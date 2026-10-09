@@ -41,6 +41,28 @@ const some = (i, n) => n <= 28 || i % Math.ceil(n / 20) === 0;
 const HEX = 'polygon(25% 4%,75% 4%,100% 50%,75% 96%,25% 96%,0 50%)';
 const TRI = 'polygon(50% 100%,0 0,100% 0)';
 
+// อุกกาบาตหนึ่งลูกลงที่ช่องเป้าหมาย · second = ลูกที่สอง (มาจากอีกฝั่ง ร้อนขาวกว่า แรงกว่า)
+function meteor(x, second) { const { r, c, V, at, P, cs, t, u } = x, p = P(r, c), H = window.innerHeight, side = second ? -1 : 1, T1 = second ? 300 : 340;
+  const a = { x: p.x + side * Math.max(cs * 5, H * .5), y: p.y - Math.max(cs * 7, H * .78) }, head = Math.round(cs * (second ? .64 : .54)), EASE = 'cubic-bezier(.55,.085,.68,.53)';
+  const along = k => { const e = k * k; return { x: a.x + (p.x - a.x) * e, y: a.y + (p.y - a.y) * e }; };
+  // องก์ 1: ฟ้ามืด เป้าเตือนหุบเข้าหาช่อง
+  K.vignette('rgba(24,6,0,.62)', T1 + 520, t ? 1 : .5); SFX.fx('whistle');
+  K.ringIn(p.x, p.y, cs * 3.2, '#ff7a3c', .3, T1 - 40, 0, 3); K.ringIn(p.x, p.y, cs * 3.2, '#ffd9a8', .3, T1 - 140, 100, 2);
+  // องก์ 2: ลูกไฟ + หางไฟ + ควัน
+  K.comet(a, p, { color: second ? '#ffd9a8' : '#ff8a3c', size: Math.round(head * .9), tail: cs * 3.6, dur: T1, ease: EASE, prio: 2 });
+  K.fly(a, p, { color: '#fff3d6', size: head, dur: T1, ease: EASE, s0: 1, prio: 2 });
+  K.P.stream({ at: along, dur: T1, rate: 170, k: 'fire', jx: cs * .12, jy: cs * .12, v0: 10 * u, v1: 60 * u, l0: 240, l1: 460, s0: cs * .34, s1: cs * .06, drag: 2, al: .7 });
+  K.P.stream({ at: along, dur: T1, rate: 46, k: 'smoke', jx: cs * .2, jy: cs * .2, v0: 8 * u, v1: 40 * u, l0: 500, l1: 900, s0: cs * .3, s1: cs * .7, drag: 1.5, al: .6 });
+  // องก์ 3: กระแทก
+  at(T1, () => { V.reveal(r, c, 'ignite'); SFX.fx('impact'); K.flash(second ? '#fff1d6' : '#ffb46b', 240, second ? .42 : .34); K.shake(second ? 10 : 8, 340);
+    K.box(p.x, p.y, cs * 3.4, cs * 3.4, 'border-radius:50%;background:radial-gradient(circle,rgba(12,4,0,.78) 0,rgba(40,12,0,.5) 38%,rgba(0,0,0,0) 68%);', [{ opacity: 0, t: 'scale(.4)' }, { opacity: 1, t: 'scale(1)', offset: .12 }, { opacity: .8, t: 'scale(1)', offset: .6 }, { opacity: 0, t: 'scale(1.05)' }], { duration: 1100, easing: 'ease-out' });
+    if (t) K.rings(p.x, p.y, ['#ffffff', '#ff8a3c', '#b3260c'], cs, 4.2, 520, 80);
+    K.P.burst(p.x, p.y, 90, { k: 'fire', v0: 140 * u, v1: 640 * u, l0: 280, l1: 580, s0: cs * .34, s1: cs * .05, drag: 2.8, al: .55 });
+    K.P.burst(p.x, p.y, 12, { k: 'hot', v0: 40 * u, v1: 220 * u, l0: 160, l1: 300, s0: cs * .32, s1: cs * .06, drag: 3, al: .75 });
+    K.P.burst(p.x, p.y, 30, { k: 'lava', a0: -2.9, a1: -.25, v0: 260 * u, v1: 620 * u, g: 1300 * u, l0: 500, l1: 900, s0: cs * .13, s1: cs * .05, drag: .3 });
+    K.P.burst(p.x, p.y, 14, { k: 'smoke', v0: 30 * u, v1: 120 * u, vy: -40 * u, l0: 700, l1: 1200, s0: cs * .4, s1: cs * 1.1, drag: 1.2, al: .55 });
+    K.P.burst(p.x, p.y, 26, { k: 'ember', v0: 80 * u, v1: 300 * u, g: -80 * u, l0: 600, l1: 1100, s0: cs * .07, s1: cs * .02, drag: .8, wob: 40 * u }); }); }
+
 const CARD = {
   // ───────────── เติมลูกให้ตัวเอง ─────────────
   // Overload: ฟ้าผ่าลงช่องสองครั้ง ครั้งละลูก
@@ -76,69 +98,112 @@ const CARD = {
     at(100, () => { V.reveal(r, c, 'placed'); K.num(r, c, 1, { color: '#d9b8ff' }); });
     at(150, () => bs.forEach(([ro, co]) => K.fly(p, P(ro, co), { color: '#e7d2ff', size: Math.round(x.orb * .8), dur: 250, arc: cs * .45 })));
     at(400, () => bs.forEach(([ro, co]) => { V.reveal(ro, co, 'placed'); const q = P(ro, co); if (t) K.sparks(q.x, q.y, 3, '#d9b8ff', cs * .9, { white: true, dur: 260 }); })); },
-  // Mega Burst: พื้นใต้ 3×3 ร้อนแดง แล้วลูกไฟพุ่งขึ้นจากกลางไปตกทุกช่อง
-  r1(x) { const { r, c, V, at, P, cs, t, tk, d } = x, p = P(r, c), area = d.area || [];
-    K.box(p.x, p.y, cs * 3.3, cs * 3.3, 'border-radius:50%;background:radial-gradient(circle,rgba(255,170,60,.85) 0%,rgba(255,90,20,.45) 40%,transparent 70%);', [{ opacity: 0, t: 'scale(.4)' }, { opacity: 1, t: 'scale(1)', offset: .3 }, { opacity: 0, t: 'scale(1.15)' }], { duration: 560, easing: 'ease-out' });
-    tk(r, c, 'ignite');
-    at(170, () => { SFX.fx('thud'); K.shake(3.5, 220);
-      area.forEach(([ro, co]) => { if (ro === r && co === c) { V.reveal(ro, co, 'first'); return; } K.fly(p, P(ro, co), { color: '#ffb347', size: x.orb, dur: 250, lift: cs * .8 }); });
-      if (t) K.sparks(p.x, p.y, t === 2 ? 12 : 6, '#ff9a3c', cs * 2, { white: true, dur: 420, grav: 10 }); });
-    at(430, () => area.forEach(([ro, co]) => { if (!(ro === r && co === c)) V.reveal(ro, co, 'placed'); })); },
+  // Mega Burst: พื้นใต้ 3×3 แตกร้าวเรืองแสง → ปะทุเป็นน้ำพุลาวา → ก้อนลาวาโค้งไปตกทุกช่อง
+  r1(x) { const { r, c, V, at, P, cs, g, t, tk, d, u } = x, p = P(r, c), area = d.area || [], sz = Math.round(cs * 3.6), lx = (p.x - g.wx).toFixed(1), ly = (p.y - g.wy).toFixed(1);
+    // องก์ 1: รอยร้าวแผ่จากกลาง พื้นสั่น
+    SFX.fx('rumble'); K.shake(2, 260); tk(r, c, 'ignite');
+    const crack = K.clip(0, `width:${sz}px;height:${sz}px;margin:${-sz / 2}px 0 0 ${-sz / 2}px;border-radius:50%;background:repeating-conic-gradient(from 8deg,rgba(255,225,150,0) 0 13deg,rgba(255,225,150,.95) 13deg 15deg,rgba(255,225,150,0) 15deg 34deg,rgba(255,150,60,.9) 34deg 35.5deg,rgba(255,150,60,0) 35.5deg 52deg),radial-gradient(circle,rgba(255,214,130,.95) 0,rgba(255,96,20,.75) 26%,rgba(120,20,0,.5) 52%,rgba(0,0,0,0) 70%);-webkit-mask-image:radial-gradient(circle,#000 30%,transparent 70%);mask-image:radial-gradient(circle,#000 30%,transparent 70%);`);
+    if (crack) { const B = `translate(${lx}px,${ly}px)`; crack.animate([{ transform: B + ' scale(.2) rotate(0deg)', opacity: 0 }, { transform: B + ' scale(.82) rotate(6deg)', opacity: .9, offset: .24 }, { transform: B + ' scale(1) rotate(8deg)', opacity: 1, offset: .33 }, { transform: B + ' scale(1.04) rotate(9deg)', opacity: .7, offset: .72 }, { transform: B + ' scale(1.06) rotate(9deg)', opacity: 0 }], { duration: 880, easing: 'ease-out' }); K.hold(900); }
+    K.P.stream({ at: p, dur: 250, rate: 44, k: 'ember', jx: cs * 1.2, jy: cs * 1.2, a0: -2, a1: -1.1, v0: 60 * u, v1: 200 * u, g: -40 * u, l0: 400, l1: 800, s0: cs * .06, s1: cs * .02, drag: .6 });
+    // องก์ 2: ปะทุ
+    at(270, () => { SFX.fx('impact'); K.flash('#ff8a2a', 220, .24); K.shake(6, 300);
+      K.P.burst(p.x, p.y, 46, { k: 'lava', a0: -2.75, a1: -.4, v0: 300 * u, v1: 720 * u, g: 1500 * u, l0: 520, l1: 880, s0: cs * .15, s1: cs * .05, drag: .25 });
+      K.P.burst(p.x, p.y, 80, { k: 'fire', v0: 80 * u, v1: 440 * u, vy: -160 * u, l0: 320, l1: 620, s0: cs * .38, s1: cs * .06, drag: 2.4, al: .52, st: 1.3 });
+      K.P.burst(p.x, p.y, 10, { k: 'hot', v0: 40 * u, v1: 200 * u, l0: 180, l1: 320, s0: cs * .3, s1: cs * .06, drag: 3, al: .7 });
+      K.P.burst(p.x, p.y, 10, { k: 'smoke', v0: 20 * u, v1: 90 * u, vy: -70 * u, l0: 800, l1: 1200, s0: cs * .45, s1: cs * 1.2, drag: 1, al: .5 });
+      if (t) K.rings(p.x, p.y, ['#ffe2a8', '#ff7a1a'], cs, 3.6, 480, 80);
+      area.forEach(([ro, co]) => { if (ro === r && co === c) { V.reveal(ro, co, 'first'); return; }
+        const dist = Math.abs(ro - r) + Math.abs(co - c);
+        K.fly(p, P(ro, co), { color: '#ffb347', size: Math.round(x.orb * 1.15), dur: 300 + dist * 30, lift: cs * (1 + dist * .25), ease: 'cubic-bezier(.3,0,.7,1)', prio: 2 }); }); });
+    // องก์ 3: ลาวาตกถึงช่อง ไฟแลบแล้วมอด
+    area.forEach(([ro, co], i) => { if (ro === r && co === c) return; const dist = Math.abs(ro - r) + Math.abs(co - c);
+      at(555 + dist * 30, () => { V.reveal(ro, co, 'placed'); const q = P(ro, co); if (i % 3 === 0) SFX.fx('pop');
+        K.P.burst(q.x, q.y, 9, { k: 'fire', a0: -2.5, a1: -.64, v0: 80 * u, v1: 260 * u, l0: 260, l1: 460, s0: cs * .22, s1: cs * .04, drag: 2.2, al: .65 }); }); }); },
   // Nova: ช่องที่ใกล้ระเบิดที่สุดหดตัว → วาบเป็นดาว ยิงลูกคู่ไปช่องรอบข้าง
   ep5(x) { const { pi, at, land, P, cs, t, tk, d } = x; if (!d.best) return; const [br, bc] = d.best, p = P(br, bc), bs = d.boosted || [];
     K.ringIn(p.x, p.y, cs * 3, '#ffe07a', .3, 230); K.ringIn(p.x, p.y, cs * 3, '#ffffff', .3, 230, 130, 2); tk(br, bc, 'ignite'); SFX.fx('rise');
     at(310, () => { SFX.fx('boom'); K.flash('#ffe9a8', 240, .22); K.shake(4, 240);
       if (t) { K.rays(p.x, p.y, '#ffe07a', Math.round(cs * 5.5), 620, 0, .9); K.ring(p.x, p.y, cs, '#ffffff', 3.2, 420, 0, 2, 3); }
+      K.P.burst(p.x, p.y, 60, { k: 'gold', v0: 120 * x.u, v1: 560 * x.u, l0: 350, l1: 700, s0: cs * .14, s1: cs * .03, drag: 2.2 });
       bs.forEach(([ro, co]) => { const q = P(ro, co); K.fly(p, q, { color: '#ffe07a', size: x.orb, dur: 220 }); K.fly(p, q, { color: '#fff3c4', size: Math.round(x.orb * .8), dur: 220, delay: 70 }); }); });
     at(590, () => { bs.forEach(([ro, co]) => { land(ro, co, 'first', ce => { ce.count += 2; ce.owner = pi; }); K.num(ro, co, 2, { color: '#ffe07a' }); }); SFX.fx('chime'); }); },
-  // Inferno: แนวไฟกวาดเฉียงผ่านทุกช่องของตัวเอง
-  ep6(x) { const { at, land, P, cs, t, d } = x, cells = (d.cells || []).map(q => ({ q, p: P(q[0], q[1]) })), n = cells.length; if (!n) return;
-    K.vignette('rgba(255,70,0,.4)', 1000, t ? 1 : .5); SFX.fx('burn');
+  // Inferno: กระดานร้อนแดงจากด้านล่าง → แนวไฟกวาดเฉียง ทุกช่องของเรามีเปลวสูงลุกขึ้น → กำแพงไฟลุกท่วมทั้งกระดานจากขอบล่าง แล้วมอดเป็นควันกับสะเก็ดไฟ
+  ep6(x) { const { at, land, P, cs, g, t, d, u } = x, cells = (d.cells || []).map(q => ({ q, p: P(q[0], q[1]) })), n = cells.length; if (!n) return;
+    // องก์ 1: ความร้อนขึ้นจากพื้น
+    K.vignette('rgba(60,8,0,.72)', 1250, t ? 1 : .5); SFX.fx('rumble'); SFX.fx('burn');
+    const heat = K.clip(0, 'left:0;top:0;width:100%;height:100%;background:radial-gradient(ellipse 90% 70% at 50% 115%,rgba(255,120,20,.6),rgba(160,30,0,.35) 55%,rgba(20,0,0,.3));');
+    if (heat) { heat.animate([{ opacity: 0 }, { opacity: 1, offset: .18 }, { opacity: .85, offset: .7 }, { opacity: 0 }], { duration: 1250, easing: 'ease-out' }); K.hold(1280); }
+    // องก์ 2: แนวไฟกวาดเฉียง 8 จังหวะ — เปลวสูงราวช่องครึ่ง ฐานเหลือง ปลายแดง
     let lo = Infinity, hi = -Infinity; cells.forEach(o => { o.k = o.p.x + o.p.y; lo = Math.min(lo, o.k); hi = Math.max(hi, o.k); });
-    const G = 8, cap = t === 2 ? 40 : t === 1 ? 16 : 0, step = Math.max(1, Math.ceil(n / Math.max(1, cap))), groups = Array.from({ length: G }, () => []);
+    const G = 8, cap = t === 2 ? 20 : t === 1 ? 9 : 0, step = Math.max(1, Math.ceil(n / Math.max(1, cap))), groups = Array.from({ length: G }, () => []);
     cells.forEach((o, i) => { o.i = i; groups[hi > lo ? Math.min(G - 1, Math.floor((o.k - lo) / (hi - lo) * G)) : 0].push(o); });
     groups.forEach((gr, k) => { if (!gr.length) return;
-      at(120 + k * 62, () => gr.forEach(o => { land(o.q[0], o.q[1], some(o.i, n) ? 'placed' : '', ce => { ce.count++; });
-        if (cap && o.i % step === 0) {
-          K.tile(o.q[0], o.q[1], { origin: '50% 100%', radius: '46% 46% 22% 22% / 70% 70% 22% 22%', css: 'background:linear-gradient(0deg,#ff3d00,#ff9a1f 45%,#ffe07a 78%,rgba(255,224,122,0));', frames: [{ opacity: 0, t: 'scale(.8,.2)' }, { opacity: .95, t: 'scale(1,1.35)', offset: .35 }, { opacity: .8, t: 'scale(.9,1)', offset: .65 }, { opacity: 0, t: 'scale(.7,.5)' }], dur: 420 });
-          if (o.i % (step * 2) === 0) K.sparks(o.p.x, o.p.y, 3, '#ffb347', cs * 1.1, { dur: 420, grav: -12 });
-        } })); });
-    at(700, () => { K.flash('#ff7a1a', 260, .16); K.shake(3, 220); SFX.fx('thud'); }); },
+      at(140 + k * 70, () => { if (k % 3 === 0) SFX.fx('crackle');
+        gr.forEach(o => { land(o.q[0], o.q[1], some(o.i, n) ? 'placed' : '', ce => { ce.count++; });
+          const base = { x: o.p.x, y: o.p.y + cs * .4 };
+          if (cap && o.i % step === 0) {
+            K.P.stream({ at: base, dur: 460, rate: 74, k: 'fire', jx: cs * .3, a0: -1.72, a1: -1.42, v0: 210 * u, v1: 430 * u, l0: 360, l1: 660, s0: cs * .3, s1: cs * .04, drag: 1.3, wob: 46 * u, al: .5, st: 1.8 });
+            K.P.stream({ at: base, dur: 380, rate: 10, k: 'hot', jx: cs * .18, a0: -1.7, a1: -1.44, v0: 120 * u, v1: 240 * u, l0: 200, l1: 340, s0: cs * .16, s1: cs * .04, drag: 1.4, al: .7 });
+            K.P.stream({ at: base, dur: 520, rate: 8, k: 'ember', jx: cs * .35, a0: -2, a1: -1.1, v0: 220 * u, v1: 480 * u, g: -60 * u, l0: 600, l1: 1000, s0: cs * .06, s1: cs * .02, drag: .5, wob: 40 * u });
+            K.tile(o.q[0], o.q[1], { css: 'background:radial-gradient(ellipse 60% 45% at 50% 88%,rgba(255,170,60,.85),rgba(255,80,10,.4) 55%,rgba(255,60,0,0) 80%);', frames: [{ opacity: 0 }, { opacity: 1, offset: .25 }, { opacity: 0 }], dur: 560 });
+          } else K.P.burst(base.x, base.y, 8, { k: 'fire', jx: cs * .25, a0: -1.72, a1: -1.42, v0: 160 * u, v1: 360 * u, l0: 300, l1: 520, s0: cs * .26, s1: cs * .04, drag: 1.3, al: .5, st: 1.8 }); }); }); });
+    // องก์ 3: กำแพงไฟลุกท่วมจากขอบล่างของกระดาน แล้วมอด
+    at(760, () => { K.flash('#ff7a1a', 300, .18); K.shake(5, 300); SFX.fx('boom'); SFX.fx('burn');
+      const floor = () => ({ x: g.wx + Math.random() * g.ww, y: g.wy + g.wh });
+      K.P.stream({ at: floor, dur: 320, rate: 820, k: 'fire', jy: cs * .25, a0: -1.7, a1: -1.44, v0: 380 * u, v1: 940 * u, l0: 420, l1: 820, s0: cs * .5, s1: cs * .07, drag: 1.5, wob: 60 * u, al: .42, st: 2 });
+      K.P.stream({ at: floor, dur: 300, rate: 40, k: 'hot', a0: -1.7, a1: -1.44, v0: 200 * u, v1: 420 * u, l0: 220, l1: 380, s0: cs * .24, s1: cs * .05, drag: 1.6, al: .6 });
+      K.P.stream({ at: () => ({ x: g.wx + Math.random() * g.ww, y: g.wy + g.wh * (.35 + Math.random() * .65) }), delay: 120, dur: 380, rate: 150, k: 'ember', a0: -2, a1: -1.14, v0: 200 * u, v1: 560 * u, g: -50 * u, l0: 700, l1: 1300, s0: cs * .07, s1: cs * .02, drag: .45, wob: 50 * u }); });
+    at(1040, () => cells.forEach(o => { if (cap && o.i % (step * 2) === 0) K.P.burst(o.p.x, o.p.y, 2, { k: 'smoke', v0: 10 * u, v1: 40 * u, vy: -90 * u, l0: 600, l1: 1000, s0: cs * .35, s1: cs * .95, drag: .9, al: .4 }); })); },
   // Tsunami: คลื่นวิ่งตามแถว ช่องไหนโดนยอดคลื่นได้ลูกตอนนั้น
   e2(x) { const { r, V, at, P, cs, t, d } = x, cols = STATE.cells[0].length, a = P(r, 0), b = P(r, cols - 1), row = d.row || [], dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len,
       A = { x: a.x - ux * cs * .9, y: a.y - uy * cs * .9 }, B = { x: b.x + ux * cs * .4, y: b.y + uy * cs * .4 }; SFX.fx('water');
     K.line(A, B, { w: Math.round(cs * .86), bg: 'linear-gradient(90deg,rgba(60,140,255,0),rgba(90,170,255,.42) 30%,rgba(150,210,255,.55) 80%,rgba(255,255,255,.75))', dur: 760, grow: .62, hold: .72, glow: false });
     if (t) K.comet(A, B, { color: '#9fd8ff', size: Math.round(cs * .95), tail: cs * 1.4, dur: 500, ease: 'cubic-bezier(.3,0,.5,1)', prio: 2 });
+    K.P.stream({ at: k => ({ x: A.x + (B.x - A.x) * k, y: A.y + (B.y - A.y) * k }), dur: 500, rate: 130, k: 'water', jx: cs * .3, jy: cs * .3, a0: -2.5, a1: -.64, v0: 80 * x.u, v1: 300 * x.u, g: 900 * x.u, l0: 300, l1: 600, s0: cs * .12, s1: cs * .03, drag: .6 });
     row.forEach(([ro, co]) => { const q = P(ro, co), f = ((q.x - a.x) * ux + (q.y - a.y) * uy) / len; at(Math.round(70 + f * 430), () => V.reveal(ro, co, 'placed')); });
-    at(520, () => { SFX.fx('pop'); if (t) K.sparks(B.x, B.y, t === 2 ? 12 : 6, '#cfeaff', cs * 1.6, { white: true, dur: 380, grav: 8 }); }); },
+    at(520, () => { SFX.fx('splash'); if (t) K.sparks(B.x, B.y, t === 2 ? 12 : 6, '#cfeaff', cs * 1.6, { white: true, dur: 380, grav: 8 });
+      K.P.burst(B.x, B.y, 34, { k: 'water', a0: -2.9, a1: -.25, v0: 160 * x.u, v1: 460 * x.u, g: 1000 * x.u, l0: 350, l1: 650, s0: cs * .13, s1: cs * .03, drag: .5 }); }); },
   // Pillar: เสาแสงพุ่งผ่านทั้งแนว
   e4(x) { const { c, V, at, P, cs, t, d } = x, rows = STATE.cells.length, a = P(0, c), b = P(rows - 1, c), col = d.col || [], dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len,
       A = { x: a.x - ux * cs * .7, y: a.y - uy * cs * .7 }, B = { x: b.x + ux * cs * .6, y: b.y + uy * cs * .6 }; SFX.fx('rise');
     K.line(A, B, { w: Math.round(cs * .92), bg: 'linear-gradient(180deg,transparent,rgba(255,226,150,.75) 22%,#fff 50%,rgba(255,226,150,.75) 78%,transparent)', dur: 700, grow: .32, hold: .6, glow: false, prio: 2 });
+    K.P.stream({ at: k => ({ x: A.x + (B.x - A.x) * k, y: A.y + (B.y - A.y) * k }), dur: 260, rate: 170, k: 'gold', jx: cs * .35, jy: cs * .35, v0: 10 * x.u, v1: 60 * x.u, vy: -70 * x.u, l0: 400, l1: 800, s0: cs * .09, s1: cs * .02, drag: .8 });
     col.forEach(([ro, co]) => { const q = P(ro, co), f = ((q.x - a.x) * ux + (q.y - a.y) * uy) / len; at(Math.round(40 + f * 220), () => V.reveal(ro, co, 'placed')); });
     at(270, () => { SFX.fx('thud'); K.shake(3, 200); if (t) col.forEach(([ro, co], i) => { if (i % 2 === 0) { const q = P(ro, co); K.sparks(q.x, q.y, 3, '#ffe9a8', cs * 1.1, { dur: 420, grav: -10 }); } }); });
     at(430, () => SFX.fx('chime')); },
 
   // ───────────── ระเบิด ─────────────
-  // Instant Burst: วงแหวนหุบเข้าช่อง ช่องร้อนขาว แล้วลูกโซ่เริ่ม
-  u1(x) { const { r, c, V, at, P, cs, t, tk } = x, p = P(r, c); K.ringIn(p.x, p.y, cs * 2.8, '#ffffff', .25, 210, 0, 3); tk(r, c, 'ignite');
-    at(200, () => { V.reveal(r, c); SFX.fx('thud');
-      if (t) { K.sparks(p.x, p.y, t === 2 ? 10 : 5, '#ffd34d', cs * 1.5, { white: true, dur: 300 }); K.tile(r, c, { css: 'background:#fff;', frames: [{ opacity: .95 }, { opacity: 0 }], dur: 200 }); } }); },
-  // Meteor: อุกกาบาตพุ่งลงจากมุมบนขวา กระแทกช่อง
-  e1(x) { const { r, c, V, at, P, cs, t } = x, p = P(r, c), a = { x: p.x + cs * 3, y: p.y - cs * 4.2 }; SFX.fx('whoosh');
-    K.comet(a, p, { color: '#ff8a3c', size: Math.round(cs * .5), tail: cs * 2.6, dur: 300, prio: 2 }); K.comet(a, p, { color: '#ffe9b0', size: Math.round(cs * .26), tail: cs * 1.6, dur: 300, prio: 2 });
-    at(295, () => { V.reveal(r, c, 'ignite'); SFX.fx('boom'); K.flash('#ffb46b', 220, .3); K.shake(7, 300);
-      if (t) { K.rings(p.x, p.y, ['#ffffff', '#ff8a3c'], cs, 3.4, 480, 90); K.sparks(p.x, p.y, t === 2 ? 16 : 7, '#ff9a3c', cs * 2.4, { white: true, dur: 520, grav: 14 }); } }); },
+  // Instant Burst: ช่องหดตัวอัดแน่น → ระเบิดเล็กๆ (ไฟ + สะเก็ด + ควันบาง) แล้วลูกโซ่เริ่ม
+  u1(x) { const { r, c, V, at, P, cs, t, tk, u } = x, p = P(r, c);
+    K.ringIn(p.x, p.y, cs * 2.6, '#ffd9a8', .25, 180, 0, 3); tk(r, c, 'ignite'); SFX.fx('tick');
+    at(175, () => { V.reveal(r, c); SFX.fx('thud'); K.shake(3, 180);
+      K.tile(r, c, { size: 1.5, radius: '50%', css: 'background:radial-gradient(circle,#fff 0,#ffe2a8 45%,rgba(255,140,40,0) 78%);', frames: [{ opacity: 1, t: 'scale(.5)' }, { opacity: 0, t: 'scale(1.5)' }], dur: 240 });
+      if (t) K.ring(p.x, p.y, cs, '#ffb347', 2.6, 340, 0, 1, 3);
+      K.P.burst(p.x, p.y, 40, { k: 'fire', v0: 110 * u, v1: 400 * u, l0: 220, l1: 420, s0: cs * .27, s1: cs * .04, drag: 3, al: .58 });
+      K.P.burst(p.x, p.y, 5, { k: 'hot', v0: 30 * u, v1: 120 * u, l0: 140, l1: 240, s0: cs * .24, s1: cs * .05, drag: 3, al: .7 });
+      K.P.burst(p.x, p.y, 12, { k: 'ember', v0: 140 * u, v1: 380 * u, g: 500 * u, l0: 300, l1: 520, s0: cs * .07, s1: cs * .02, drag: 1 });
+      K.P.burst(p.x, p.y, 4, { k: 'smoke', v0: 10 * u, v1: 50 * u, vy: -50 * u, l0: 400, l1: 700, s0: cs * .3, s1: cs * .7, drag: 1.2, al: .4 }); }); },
+  // Meteor: ท้องฟ้ามืด เป้าเตือนหุบเข้า → ลูกไฟพุ่งลงมาพร้อมหางไฟและควัน → กระแทก: รอยไหม้ คลื่นกระแทก เศษหินร้อนกระเด็น
+  // ระเบิดสองรอบ = อุกกาบาตสองลูก: ลูกแรกจากขวาบน (e1) → ลูกโซ่รอบแรก → ลูกที่สองจากซ้ายบน (e1b) → ลูกโซ่รอบสอง
+  e1(x) { meteor(x, false); },
+  e1b(x) { meteor(x, true); },
   // Nuclear: ทุกช่องร้อนขาวเป็นคลื่นจากกลางกระดาน แล้วระเบิดใหญ่
   l2(x) { const { V, at, P } = x, m = K.mid(), cells = [];
     for (let ro = 0; ro < STATE.cells.length; ro++) for (let co = 0; co < STATE.cells[ro].length; co++) { const dd = V.get(ro, co), ce = STATE.cells[ro][co]; if (dd ? dd.toCount > 0 : ce.count > 0) { const p = P(ro, co); cells.push({ ro, co, dist: Math.hypot(p.x - m.x, p.y - m.y) }); } }
     cells.sort((a, b) => a.dist - b.dist); const n = cells.length, G = Math.min(Math.max(1, n), 6); SFX.fx('rise');
     for (let k = 0; k < G && n; k++) { const i0 = Math.floor(k * n / G), part = cells.slice(i0, Math.floor((k + 1) * n / G)); at(40 + k * 60, () => part.forEach((o, j) => V.reveal(o.ro, o.co, some(i0 + j, n) ? 'ignite' : ''))); }
-    at(420, () => { FX.HL.nuclear(); SFX.fx('boom'); }); },
+    at(420, () => { FX.HL.nuclear(); SFX.fx('impact'); const u = x.u, cs = x.cs;
+      K.P.burst(m.x, m.y, 150, { k: 'fire', v0: 200 * u, v1: 1100 * u, l0: 400, l1: 900, s0: cs * .5, s1: cs * .1, drag: 2.2, al: .55 });
+      K.P.burst(m.x, m.y, 70, { k: 'ember', v0: 200 * u, v1: 900 * u, g: 300 * u, l0: 600, l1: 1200, s0: cs * .08, s1: cs * .02, drag: .9 });
+      K.P.burst(m.x, m.y, 26, { k: 'smoke', v0: 60 * u, v1: 300 * u, vy: -60 * u, l0: 900, l1: 1500, s0: cs * .7, s1: cs * 2, al: .5, drag: 1.4 }); }); },
   // Big Bang: ทุกช่องของตัวเองร้อนขาว ยุบเข้ากลาง แล้วระเบิดออก
   m2(x) { const { V, at, d } = x, ex = d.exploded || []; SFX.fx('rise');
     ex.forEach(([ro, co], i) => V.reveal(ro, co, some(i, ex.length) ? 'ignite' : ''));
-    FX.HL.bigbang(); at(300, () => SFX.fx('boom')); },
+    FX.HL.bigbang();
+    at(300, () => { const m = K.mid(), u = x.u, cs = x.cs; SFX.fx('impact');
+      K.P.burst(m.x, m.y, 130, { k: 'fire', v0: 200 * u, v1: 1000 * u, l0: 400, l1: 850, s0: cs * .45, s1: cs * .08, drag: 2.2, al: .55 });
+      K.P.burst(m.x, m.y, 70, { k: 'violet', v0: 200 * u, v1: 900 * u, l0: 500, l1: 1000, s0: cs * .14, s1: cs * .03, drag: 1.6 });
+      K.P.burst(m.x, m.y, 60, { k: 'spark', v0: 300 * u, v1: 1100 * u, l0: 400, l1: 800, s0: cs * .08, s1: cs * .02, drag: 1.4 }); }); },
 
   // ───────────── โจมตี ─────────────
   // Sniper: เป้าเล็งหมุนเข้าล็อก → เส้นกระสุนจากป้ายคะแนนของผู้ยิง → โดน
@@ -169,23 +234,31 @@ const CARD = {
   // Barrage: ห่าธนูตกเฉียงลงทุกช่องของเหยื่อ
   r4(x) { const { V, at, land, P, cs, t, d } = x, hits = (d.hit && d.hit.length ? d.hit : V.diff.map(q => [q.r, q.c])), n = hits.length; if (!n) return;
     K.vignette('rgba(110,0,10,.5)', 1000, t ? 1 : .5); SFX.fx('whoosh');
-    const G = Math.min(n, 8), cap = t === 2 ? 34 : t === 1 ? 14 : 0, step = Math.max(1, Math.ceil(n / Math.max(1, cap))), ord = hits.map((h, i) => ({ h, p: P(h[0], h[1]), i })).sort((a, b) => (a.p.x + a.p.y) - (b.p.x + b.p.y));
+    const G = Math.min(n, 8), cap = t === 2 ? 48 : t === 1 ? 18 : 0, step = Math.max(1, Math.ceil(n / Math.max(1, cap))), ord = hits.map((h, i) => ({ h, p: P(h[0], h[1]), i })).sort((a, b) => (a.p.x + a.p.y) - (b.p.x + b.p.y));
     for (let k = 0; k < G; k++) { const i0 = Math.floor(k * n / G), part = ord.slice(i0, Math.floor((k + 1) * n / G)), tm = 200 + k * 62;
       part.forEach(o => { if (cap && o.i % step === 0) K.comet({ x: o.p.x - cs * 1.6, y: o.p.y - cs * 3.2 }, o.p, { color: '#ffd34d', size: Math.max(4, Math.round(cs * .12)), tail: cs * 1.3, dur: 190, delay: tm - 190 }); });
-      at(tm, () => { part.forEach((o, j) => { land(o.h[0], o.h[1], some(i0 + j, n) ? 'hit' : '', ce => { ce.count--; if (ce.count <= 0) ce.owner = -1; }); if (j === 0 && t) K.sparks(o.p.x, o.p.y, 3, '#ffb0b0', cs, { dur: 240 }); }); if (k % 3 === 0) SFX.fx('slash'); }); }
+      at(tm, () => { part.forEach((o, j) => { land(o.h[0], o.h[1], some(i0 + j, n) ? 'hit' : '', ce => { ce.count--; if (ce.count <= 0) ce.owner = -1; }); if (j === 0 && t) K.sparks(o.p.x, o.p.y, 3, '#ffb0b0', cs, { dur: 240 });
+          if (cap && o.i % step === 0) K.P.burst(o.p.x, o.p.y + cs * .2, 5, { k: 'dust', a0: -2.6, a1: -.54, v0: 40 * x.u, v1: 150 * x.u, l0: 300, l1: 520, s0: cs * .16, s1: cs * .42, al: .5, drag: 2 }); }); if (k % 3 === 0) SFX.fx('slash'); }); }
     at(200 + G * 62, () => { K.shake(5, 240); SFX.fx('thud'); }); },
-  // Steal: แสงม่วงตวัดผ่าน ช่องพลิกเป็นสีของเรา
-  e3(x) { const { r, c, V, at, P, cs, t, tk, col } = x, p = P(r, c); SFX.fx('slash');
-    K.comet({ x: p.x - cs * 1.8, y: p.y + cs * .5 }, { x: p.x + cs * 1.8, y: p.y - cs * .5 }, { color: '#c98bff', size: Math.max(5, Math.round(cs * .16)), tail: cs * 1.6, dur: 170, prio: 2 });
-    at(80, () => tk(r, c, 'flip'));
-    at(215, () => { V.reveal(r, c); SFX.fx('pop'); });
-    at(260, () => { if (t) { K.ring(p.x, p.y, cs, col, 2.1, 340, 0, 1, 3); K.sparks(p.x, p.y, t === 2 ? 8 : 4, '#c98bff', cs * 1.3, { white: true, dur: 320 }); } }); },
+  // Steal: ไฟดับ เหลือแสงส่องช่องเป้าหมาย → แสงม่วงตวัดผ่าน ช่องพลิกเป็นสีของเรา → ของที่ขโมยไหลกลับไปหาป้ายคะแนนของคนขโมย
+  e3(x) { const { r, c, V, at, P, cs, g, t, tk, col, from, u } = x, p = P(r, c); SFX.fx('dark');
+    const spot = K.clip(0, `left:0;top:0;width:100%;height:100%;background:radial-gradient(circle ${Math.round(cs * 1.5)}px at ${(p.x - g.wx).toFixed(1)}px ${(p.y - g.wy).toFixed(1)}px,rgba(0,0,0,0) 0,rgba(0,0,0,0) 52%,rgba(6,2,16,.84) 100%);`);
+    if (spot) { spot.animate([{ opacity: 0 }, { opacity: 1, offset: .16 }, { opacity: 1, offset: .62 }, { opacity: 0 }], { duration: 780, easing: 'ease-out' }); K.hold(800); }
+    K.ringIn(p.x, p.y, cs * 2.4, '#c98bff', .45, 240, 60, 2);
+    at(240, () => { SFX.fx('slash'); K.comet({ x: p.x - cs * 1.8, y: p.y + cs * .5 }, { x: p.x + cs * 1.8, y: p.y - cs * .5 }, { color: '#c98bff', size: Math.max(5, Math.round(cs * .16)), tail: cs * 1.6, dur: 170, prio: 2 }); });
+    at(300, () => tk(r, c, 'flip'));
+    at(435, () => { V.reveal(r, c); SFX.fx('pop'); if (t) K.ring(p.x, p.y, cs, col, 2.1, 340, 0, 1, 3);
+      K.P.burst(p.x, p.y, 18, { k: 'violet', v0: 60 * u, v1: 240 * u, l0: 260, l1: 480, s0: cs * .12, s1: cs * .03, drag: 2.4 }); });
+    at(470, () => { const dx = from.x - p.x, dy = from.y - p.y;
+      K.P.stream({ at: k => ({ x: p.x + dx * k, y: p.y + dy * k - Math.sin(k * 3.1416) * cs * .9 }), dur: 290, rate: 110, k: 'violet', jx: cs * .08, jy: cs * .08, v0: 5 * u, v1: 40 * u, l0: 200, l1: 380, s0: cs * .11, s1: cs * .03, drag: 1 });
+      K.fly(p, from, { color: K.mix(col, '#ffffff', .35), size: x.orb, dur: 290, lift: cs * .9, prio: 2 }); });
+    at(760, () => { SFX.fx('chime'); K.ring(from.x, from.y, 40, col, 2, 320, 0, 1, 3); }); },
   // Invasion: ลำแสงจากด้านบนลงทีละช่อง ช่องพลิกเป็นสีของเรา
   l4(x) { const { V, at, P, cs, g, t, tk, d, col } = x, inv = d.invaded || [], lite = K.mix(col, '#ffffff', .25); K.vignette('rgba(90,20,160,.45)', 950, t ? 1 : .5); SFX.fx('dark');
     inv.forEach(([ro, co], i) => { const p = P(ro, co), dl = i * 150;
       at(dl, () => { K.line({ x: p.x, y: g.wy - 40 }, { x: p.x, y: p.y + cs * .45 }, { w: Math.round(cs * .72), bg: `linear-gradient(180deg,transparent,${lite} 30%,#fff 50%,${lite} 70%,transparent)`, dur: 430, grow: .3, hold: .6, glow: false, prio: 2 }); SFX.fx('rise'); });
       at(dl + 150, () => tk(ro, co, 'flip'));
-      at(dl + 285, () => { V.reveal(ro, co); SFX.fx('pop'); if (t) { K.ring(p.x, p.y, cs, col, 2.2, 360, 0, 1, 3); K.sparks(p.x, p.y, t === 2 ? 6 : 3, col, cs * 1.2, { white: true, dur: 300 }); } }); }); },
+      at(dl + 285, () => { V.reveal(ro, co); SFX.fx('pop'); K.P.burst(p.x, p.y, 16, { k: 'violet', v0: 60 * x.u, v1: 260 * x.u, l0: 260, l1: 480, s0: cs * .12, s1: cs * .03, drag: 2.4 }); if (t) { K.ring(p.x, p.y, cs, col, 2.2, 360, 0, 1, 3); K.sparks(p.x, p.y, t === 2 ? 6 : 3, col, cs * 1.2, { white: true, dur: 300 }); } }); }); },
   // Annihilate: จอมืดแดง ฟันกากบาทข้ามทั้งกระดาน ช่องของเหยื่อสลายเป็นเถ้าจากกลางออกไป
   l1(x) { const { V, at, P, cs, g, t, tk, d } = x, cells = (d.wiped && d.wiped.length ? d.wiped : V.diff.map(q => [q.r, q.c])).map(q => ({ q, p: P(q[0], q[1]) })), n = cells.length;
     K.vignette('rgba(70,0,0,.8)', 1400, t ? 1 : .5); SFX.fx('dark');
@@ -196,9 +269,12 @@ const CARD = {
     if (n) { const m = K.mid(), G = Math.min(n, 8), cap = t === 2 ? 30 : t === 1 ? 12 : 0, step = Math.max(1, Math.ceil(n / Math.max(1, cap)));
       cells.forEach(o => { o.dist = Math.hypot(o.p.x - m.x, o.p.y - m.y); }); cells.sort((a, b) => a.dist - b.dist);
       for (let k = 0; k < G; k++) { const i0 = Math.floor(k * n / G), part = cells.slice(i0, Math.floor((k + 1) * n / G)), tm = 470 + k * 58;
-        at(tm, () => part.forEach((o, j) => { if (some(i0 + j, n)) tk(o.q[0], o.q[1], 'ash', 300); if (cap && (i0 + j) % step === 0) K.sparks(o.p.x, o.p.y, 4, '#8a2a2a', cs * 1.2, { dur: 520, grav: -16 }); }));
+        at(tm, () => part.forEach((o, j) => { if (some(i0 + j, n)) tk(o.q[0], o.q[1], 'ash', 300); if (cap && (i0 + j) % step === 0) { K.sparks(o.p.x, o.p.y, 4, '#8a2a2a', cs * 1.2, { dur: 520, grav: -16 });
+          K.P.burst(o.p.x, o.p.y, 6, { k: 'ash', jx: cs * .3, jy: cs * .3, v0: 10 * x.u, v1: 60 * x.u, vy: -70 * x.u, l0: 600, l1: 1100, s0: cs * .16, s1: cs * .42, al: .7, drag: .8, wob: 30 * x.u });
+          K.P.burst(o.p.x, o.p.y, 3, { k: 'ember', v0: 40 * x.u, v1: 160 * x.u, g: -90 * x.u, l0: 500, l1: 900, s0: cs * .06, s1: cs * .02, drag: .6 }); } }));
         at(tm + 255, () => part.forEach(o => V.reveal(o.q[0], o.q[1]))); } }
-    at(1010, () => { K.flash('#ff2a2a', 320, .26); K.shake(8, 320); SFX.fx('boom'); }); },
+    at(1010, () => { const m = K.mid(); K.flash('#ff2a2a', 320, .26); K.shake(8, 320); SFX.fx('impact');
+      K.P.burst(m.x, m.y, 90, { k: 'ember', jx: g.ww * .45, jy: g.wh * .45, v0: 60 * x.u, v1: 320 * x.u, g: -120 * x.u, l0: 600, l1: 1200, s0: cs * .08, s1: cs * .02, drag: .5, wob: 40 * x.u }); }); },
 
   // ───────────── ป้องกัน / ล็อก ─────────────
   // Shield: แผ่นหกเหลี่ยมกดลงล็อกช่อง
@@ -222,7 +298,7 @@ const CARD = {
   sr1(x) { const { r, c, r2, c2, at, P, cs, tk } = x;
     [[r, c], [r2, c2]].filter(q => q[0] !== undefined).forEach(([ro, co], i) => { const p = P(ro, co), dl = i * 130;
       at(dl, () => { K.line({ x: p.x - cs * .9, y: p.y - cs * .35 }, { x: p.x + cs * .9, y: p.y + cs * .35 }, { color: '#ffb199', w: Math.max(4, Math.round(cs * .09)), dur: 190, grow: .45, prio: 2 }); SFX.fx('slash'); });
-      at(dl + 80, () => { tk(ro, co, 'squash'); SFX.fx('lock');
+      at(dl + 80, () => { tk(ro, co, 'squash'); SFX.fx('lock'); K.P.burst(p.x, p.y, 12, { k: 'spark', v0: 80 * x.u, v1: 300 * x.u, g: 500 * x.u, l0: 180, l1: 360, s0: cs * .07, s1: cs * .02, drag: 1 });
         K.tile(ro, co, { css: 'box-shadow:inset 0 0 0 3px #ff6a3d,0 0 10px #ff6a3d;', frames: [{ opacity: 0, t: 'scale(1.35)' }, { opacity: 1, t: 'scale(1)', offset: .3 }, { opacity: 1, t: 'scale(1)', offset: .7 }, { opacity: 0, t: 'scale(1)' }], dur: 420 }); }); }); },
   // Freeze: น้ำแข็งพุ่งไปหาผู้เล่นที่โดน (FX.HL.freeze) + แผ่นน้ำแข็งเคลือบป้ายคะแนนและช่องของเขา
   r3(x) { const { at, t, d } = x, who = d.frozenPlayer === undefined ? -1 : d.frozenPlayer; FX.HL.freeze(who); if (who < 0) return;
@@ -271,6 +347,7 @@ const CARD = {
     const size = Math.round(Math.min(g.ww, g.wh) * .9), cy = g.wh / 2;
     const el = t ? K.clip(0, `width:${size}px;height:${size}px;margin:${-size / 2}px 0 0 ${-size / 2}px;border-radius:50%;background:conic-gradient(from 0deg,transparent,rgba(235,245,255,.75) 12%,transparent 26%,rgba(200,220,240,.6) 46%,transparent 60%,rgba(235,245,255,.7) 80%,transparent);-webkit-mask-image:radial-gradient(circle,transparent 8%,#000 26%,transparent 68%);mask-image:radial-gradient(circle,transparent 8%,#000 26%,transparent 68%);`) : null;
     if (el) { el.animate([{ transform: `translate(${-size * .3}px,${cy + g.wh * .12}px) rotate(0deg) scale(.7)`, opacity: 0 }, { transform: `translate(${g.ww * .25}px,${cy - g.wh * .1}px) rotate(300deg) scale(1)`, opacity: .9, offset: .25 }, { transform: `translate(${g.ww * .7}px,${cy + g.wh * .08}px) rotate(720deg) scale(1)`, opacity: .9, offset: .72 }, { transform: `translate(${g.ww + size * .3}px,${cy - g.wh * .05}px) rotate(1000deg) scale(.8)`, opacity: 0 }], { duration: 1000, easing: 'linear' }); K.hold(1040); }
+    K.P.stream({ at: k => ({ x: g.wx + g.ww * (-.05 + 1.1 * k), y: g.wy + cy + Math.sin(k * 6.2832) * g.wh * .1 }), dur: 1000, rate: 80, k: 'dust', jx: size * .3, jy: size * .3, v0: 60 * x.u, v1: 260 * x.u, l0: 300, l1: 700, s0: cs * .1, s1: cs * .24, al: .5, drag: 1 });
     const cap = t === 2 ? 28 : t === 1 ? 12 : 0;
     moves.forEach((mv, i) => { const a = P(mv.from[0], mv.from[1]), b = P(mv.to[0], mv.to[1]), tm = Math.round(150 + Math.max(0, Math.min(1, (a.x - g.wx) / g.ww)) * 560);
       at(tm, () => { V.reveal(mv.from[0], mv.from[1]); if (i < cap) K.fly(a, b, { color: K.mix(K.PC(mv.owner === undefined ? pi : mv.owner), '#ffffff', .3), size: x.orb, dur: 260, arc: cs * .5 }); });
@@ -304,6 +381,7 @@ const CARD = {
   // Void: ช่องยุบหมุนหายเข้าไปในหลุมดำสี่เหลี่ยม
   r7(x) { const { r, c, V, at, P, cs, t } = x, p = P(r, c), sp = K.sprite(r, c); SFX.fx('dark');
     K.ringIn(p.x, p.y, cs * 2.6, '#9d5cff', .3, 240, 0, 3);
+    K.P.stream({ at: p, to: p, dur: 240, rate: 110, k: 'violet', jx: cs * 1.5, jy: cs * 1.5, v0: 240 * x.u, v1: 420 * x.u, l0: 200, l1: 330, s0: cs * .1, s1: cs * .02, drag: 0 });
     if (sp) { V.blank(r, c); sp.go([{ x: 0, y: 0, t: 'scale(1) rotate(0deg)' }, { x: 0, y: 0, t: 'scale(.05) rotate(220deg)', offset: .9 }, { x: 0, y: 0, t: 'scale(.05) rotate(220deg)', opacity: 0 }], { duration: 270, easing: 'cubic-bezier(.6,0,.9,.5)' }); }
     K.tile(r, c, { prio: 2, dur: 640, delay: 60, css: 'background:radial-gradient(circle,#000 50%,#2a0d55 78%,#7b3fe0 100%);', frames: [{ opacity: 0, t: 'scale(.2)' }, { opacity: 1, t: 'scale(1.08)', offset: .35 }, { opacity: 1, t: 'scale(1)', offset: .75 }, { opacity: 0, t: 'scale(1)' }] });
     at(290, () => { V.reveal(r, c); if (t) K.sparks(p.x, p.y, t === 2 ? 8 : 4, '#b58cff', cs * 1.2, { dur: 320 }); }); },
@@ -312,6 +390,7 @@ const CARD = {
     K.box(p.x, p.y, sz, sz, 'border-radius:50%;background:radial-gradient(circle at 34% 30%,#8a8a96,#16161c 62%);box-shadow:0 0 0 2px #ff4d4d,0 0 12px #ff4d4d;',
       [{ opacity: 0, y: -cs * 1.8, t: 'scale(1.3)' }, { opacity: 1, y: -cs * 1.2, t: 'scale(1.3)', offset: .15 }, { opacity: 1, y: 0, t: 'scale(1.15,.85)', offset: .42 }, { opacity: 1, y: 0, t: 'scale(1)', offset: .55 }, { opacity: 1, y: 0, t: 'scale(1)', offset: .85 }, { opacity: 0, y: 0, t: 'scale(.7)' }], { duration: 560, easing: 'cubic-bezier(.5,0,.7,1)' }, 2);
     at(235, () => { tk(r, c, 'squash'); SFX.fx('thud'); });
+    K.P.stream({ at: { x: p.x + cs * .14, y: p.y - cs * .28 }, delay: 240, dur: 300, rate: 70, k: 'spark', a0: -2.4, a1: -.7, v0: 60 * x.u, v1: 220 * x.u, g: 500 * x.u, l0: 150, l1: 320, s0: cs * .07, s1: cs * .02 });
     [270, 430].forEach(dl => at(dl, () => { SFX.fx('tick'); K.ring(p.x, p.y, cs, '#ff4d4d', 2.1, 300, 0, 1, 2); })); },
   // Eclipse: กระดานมืดลง เงาดวงจันทร์เคลื่อนผ่าน มีวงแสงตอนบังเต็มดวง
   sr2(x) { const { at, g, t } = x, dm = Math.round(Math.min(g.ww, g.wh) * 1.1); SFX.fx('dark');
@@ -324,18 +403,21 @@ const CARD = {
   ep3(x) { const { V, at, P, cs, g, t } = x; SFX.fx('rise');
     const bar = K.clip(0, 'left:0;top:0;width:100%;height:6px;margin-top:-3px;background:linear-gradient(90deg,transparent,#cfe0ff 15%,#fff 50%,#cfe0ff 85%,transparent);box-shadow:0 0 14px #9cc4ff;');
     if (bar) { bar.animate([{ transform: 'translateY(0px)', opacity: 0 }, { transform: 'translateY(0px)', opacity: 1, offset: .12 }, { transform: `translateY(${g.wh}px)`, opacity: 1, offset: .78 }, { transform: `translateY(${g.wh}px)`, opacity: 0 }], { duration: 900, easing: 'linear' }); K.hold(940); }
+    K.P.stream({ at: k => ({ x: g.wx + Math.random() * g.ww, y: g.wy + k * g.wh }), delay: 108, dur: 594, rate: 120, k: 'ice', v0: 5 * x.u, v1: 50 * x.u, l0: 250, l1: 500, s0: cs * .1, s1: cs * .02, drag: 1 });
     const rows = {}, n = V.diff.length; V.diff.forEach((q, i) => { const p = P(q.r, q.c), k = Math.round((p.y - g.wy) / g.step); (rows[k] = rows[k] || []).push({ q, y: p.y - g.wy, i }); });
     Object.keys(rows).forEach(k => at(Math.round(108 + Math.max(0, Math.min(1, rows[k][0].y / g.wh)) * 594), () => rows[k].forEach(o => V.reveal(o.q.r, o.q.c, some(o.i, n) ? 'lvl' : ''))));
-    at(760, () => { SFX.fx('chime'); const m = K.mid(); if (t) K.ring(m.x, m.y, cs * 2, '#cfe0ff', Math.max(g.ww, g.wh) / (cs * 2), 520, 0, 1, 3); }); },
+    at(760, () => { SFX.fx('chime'); const m = K.mid(); K.P.burst(m.x, m.y, 40, { k: 'ice', v0: 80 * x.u, v1: 420 * x.u, l0: 300, l1: 600, s0: cs * .1, s1: cs * .02, drag: 2 }); if (t) K.ring(m.x, m.y, cs * 2, '#cfe0ff', Math.max(g.ww, g.wh) / (cs * 2), 520, 0, 1, 3); }); },
   // Dominion: รัศมีทองแผ่จากกลางกระดาน ช่องว่างถูกยึดเป็นวงออกไป
   l3(x) { const { at, land, P, cs, g, t, d, pi } = x, own = d.owner === undefined ? pi : d.owner, m = K.mid(),
       cells = (d.empties || []).map(q => { const p = P(q[0], q[1]); return { q, dist: Math.hypot(p.x - m.x, p.y - m.y) }; }).sort((a, b) => a.dist - b.dist), n = cells.length;
     K.flash('#ffd34d', 420, .2); SFX.fx('rise');
+    K.P.burst(m.x, m.y, 70, { k: 'gold', v0: 120 * x.u, v1: 700 * x.u, l0: 500, l1: 1000, s0: cs * .12, s1: cs * .02, drag: 1.6 });
     if (t) { K.rays(m.x, m.y, '#ffd34d', Math.round(Math.max(g.ww, g.wh) * 1.2), 1250, 0, .75); K.ring(m.x, m.y, cs * 2, '#ffe07a', Math.max(g.ww, g.wh) / (cs * 2) * 1.3, 950, 120, 2, 4); }
     const G = Math.min(Math.max(1, n), 8), cap = t === 2 ? 44 : t === 1 ? 18 : 0, step = Math.max(1, Math.ceil(n / Math.max(1, cap)));
     for (let k = 0; k < G && n; k++) { const i0 = Math.floor(k * n / G), part = cells.slice(i0, Math.floor((k + 1) * n / G));
       at(150 + k * 95, () => { part.forEach((o, j) => { land(o.q[0], o.q[1], some(i0 + j, n) ? 'placed' : '', ce => { ce.owner = own; ce.count = 1; });
-        if (cap && (i0 + j) % step === 0) K.tile(o.q[0], o.q[1], { css: 'background:linear-gradient(135deg,#fff6c9,#ffd34d 50%,#fff0a8);', frames: [{ opacity: .95, t: 'scale(1.15)' }, { opacity: 0, t: 'scale(1)' }], dur: 380 }); });
+        if (cap && (i0 + j) % step === 0) K.tile(o.q[0], o.q[1], { css: 'background:linear-gradient(135deg,#fff6c9,#ffd34d 50%,#fff0a8);', frames: [{ opacity: .95, t: 'scale(1.15)' }, { opacity: 0, t: 'scale(1)' }], dur: 380 });
+        if (cap && (i0 + j) % (step * 2) === 0) { const q = P(o.q[0], o.q[1]); K.P.burst(q.x, q.y, 4, { k: 'gold', jx: cs * .3, v0: 10 * x.u, v1: 60 * x.u, vy: -110 * x.u, l0: 500, l1: 900, s0: cs * .08, s1: cs * .02, drag: .7 }); } });
         if (k % 2 === 0) SFX.fx('chime'); }); }
     at(150 + G * 95 + 60, () => { K.shake(4, 260); SFX.fx('thud'); }); },
   // Singularity: จานหมุนที่ช่องเป้าหมาย ลูกจากทั้งกระดานพุ่งเข้าไปเป็นระลอกจากใกล้ไปไกล แล้วช่องเป้าหมายพองขึ้น
@@ -347,11 +429,14 @@ const CARD = {
     for (let k = 0; k < G && n; k++) { const i0 = Math.floor(k * n / G), part = src.slice(i0, Math.floor((k + 1) * n / G));
       at(180 + k * 85, () => part.forEach((o, j) => { V.reveal(o.q.r, o.q.c);
         if (cap && (i0 + j) % step === 0) K.comet(o.a, p, { color: K.mix(K.PC(o.q.fromOwner), '#ffffff', .25), size: Math.max(5, Math.round(cs * .2)), tail: cs * .9, dur: 280 }); })); }
+    K.P.stream({ at: () => { const a = Math.random() * 6.2832, rr = cs * (3.5 + Math.random() * 2.5); return { x: p.x + Math.cos(a) * rr, y: p.y + Math.sin(a) * rr }; }, to: p, delay: 120, dur: 980, rate: 130, k: 'violet', v0: 320 * x.u, v1: 640 * x.u, l0: 300, l1: 520, s0: cs * .1, s1: cs * .02, drag: 0 });
     at(700, () => SFX.fx('whoosh'));
-    at(1150, () => { V.reveal(r, c, 'first'); K.flash('#ffffff', 260, .4); K.shake(8, 320); SFX.fx('boom'); if (t) K.rings(p.x, p.y, ['#ffffff', '#b47cff', '#ff7ad9'], cs * 1.5, Math.max(g.ww, g.wh) / (cs * 1.5), 700, 90); }); },
+    at(1150, () => { V.reveal(r, c, 'first'); K.flash('#ffffff', 260, .4); K.shake(8, 320); SFX.fx('impact');
+      K.P.burst(p.x, p.y, 110, { k: 'violet', v0: 160 * x.u, v1: 900 * x.u, l0: 400, l1: 900, s0: cs * .16, s1: cs * .03, drag: 2 }); K.P.burst(p.x, p.y, 40, { k: 'spark', v0: 200 * x.u, v1: 700 * x.u, l0: 300, l1: 600, s0: cs * .08, s1: cs * .02, drag: 1.6 }); if (t) K.rings(p.x, p.y, ['#ffffff', '#b47cff', '#ff7ad9'], cs * 1.5, Math.max(g.ww, g.wh) / (cs * 1.5), 700, 90); }); },
   // Rebirth: เสาแสงพุ่งขึ้นจากช่องเกิดใหม่ (FX.HL.rebirth) ลูกสามลูกปรากฏตอนเสาแสงมาถึง
   l5(x) { const { r, c, V, at, d } = x, tg = d.target || [r, c]; FX.HL.rebirth(tg[0], tg[1]);
-    at(520, () => { V.reveal(tg[0], tg[1], 'first'); SFX.fx('chime'); }); },
+    at(520, () => { V.reveal(tg[0], tg[1], 'first'); SFX.fx('chime'); });
+    const q = K.pt(tg[0], tg[1]); K.P.stream({ at: q, delay: 480, dur: 520, rate: 90, k: 'ice', jx: x.cs * .45, a0: -1.75, a1: -1.39, v0: 120 * x.u, v1: 420 * x.u, l0: 400, l1: 800, s0: x.cs * .1, s1: x.cs * .02, drag: .6 }); },
 
   // ───────────── มือการ์ด / ผู้เล่น (ไม่ได้เกิดบนช่อง: เล่นกลางกระดาน + วงเล็กที่ป้ายคะแนนของผู้ใช้ให้รู้ว่าใครใช้) ─────────────
   // Cycle: ลูกศรโค้งสองชั้นหมุนสวนกันกลางกระดาน
@@ -373,6 +458,7 @@ const CARD = {
   sr3(x) { const { at, cs, t, from } = x, m = K.mid(); SFX.fx('lock');
     if (t) K.rays(m.x, m.y, '#ffd34d', Math.round(cs * 5), 600, 0, .8);
     K.rings(m.x, m.y, ['#ffd34d', '#fff3c4'], Math.round(cs * 1.2), 2.4, 420, 110);
+    K.P.burst(m.x, m.y, 36, { k: 'gold', v0: 60 * x.u, v1: 340 * x.u, l0: 350, l1: 650, s0: cs * .1, s1: cs * .02, drag: 2 });
     K.ring(from.x, from.y, 40, '#ffd34d', 1.8, 360, 0, 1, 2);
     at(150, () => { SFX.fx('chime'); K.glyph(m.x, m.y, '✦', { size: Math.round(cs * 1.5), color: '#fff8d6', glow: '#ffd34d', dur: 380, frames: [{ opacity: 0, transform: 'translate(-50%,-50%) scale(.2) rotate(-90deg)' }, { opacity: 1, transform: 'translate(-50%,-50%) scale(1.2) rotate(0deg)', offset: .4 }, { opacity: 1, transform: 'translate(-50%,-50%) scale(1) rotate(20deg)', offset: .7 }, { opacity: 0, transform: 'translate(-50%,-50%) scale(.6) rotate(60deg)' }] }); }); },
   // Delay: หน้าปัดนาฬิกากลางกระดาน เข็มหมุนสองรอบ แล้วขึ้น ×2
@@ -402,11 +488,11 @@ window.spawnCardVfx = async function spawnCardVfx(cardId, targets, playerIdx, vf
   await null;
   const total = CRLogic.cardVfxMs(cardId, vfxData), g = K.geo();
   if (!g || !STATE.cells) { await wait(total); return; }
-  const V = K.stage(cardDiff(vfxData, online));
+  const V = K.stage(cardId === 'e1b' ? [] : cardDiff(vfxData, online)); // e1b = Meteor ลูกที่สอง: กระดานตอนนั้นคือของจริงแล้ว ไม่มีอะไรต้องค้าง
   const at = (ms, fn) => setTimeout(() => { if (!V.live()) return; try { fn(); } catch (e) { console.error('[vfx]', cardId, e); } }, ms);
   const x = {
     r: targets.r, c: targets.c, r2: targets.r2, c2: targets.c2, pi: playerIdx, d: vfxData, online, V, at, g, cs: g.cs,
-    t: K.tier(), col: K.PC(playerIdx), orb: Math.max(7, Math.round(g.cs * .28)), from: K.badge(playerIdx),
+    t: K.tier(), col: K.PC(playerIdx), orb: Math.max(7, Math.round(g.cs * .28)), from: K.badge(playerIdx), u: g.cs / 52, // u = สเกลความเร็วของอนุภาคตามขนาดช่อง
     P: (r, c) => K.pt(r, c), tk: (r, c, name, ms) => K.tk(r, c, name, ms),
     // จังหวะที่ผลของการ์ดลงที่ช่อง (r,c): ออฟไลน์ การ์ดบางใบเปลี่ยน state ตรงนี้ (fn) · แล้วเผยค่าใหม่ของช่อง + ท่าของช่อง
     land: (r, c, token, fn) => { if (!online && fn) { const ce = STATE.cells[r] && STATE.cells[r][c]; if (ce) { fn(ce); updateCellDisplay(r, c); } } V.reveal(r, c, token); },

@@ -554,6 +554,7 @@ body{font-family:'Nunito','Noto Sans Thai',sans-serif;background:var(--bg);min-h
 #fx-tape{background:repeating-linear-gradient(0deg,rgba(255,255,255,.1) 0 1px,transparent 1px 4px),rgba(96,126,220,.2);}
 #fx-clip{position:absolute;inset:0;border-radius:inherit;overflow:hidden;pointer-events:none;z-index:7;}
 #fx-clip i{position:absolute;left:0;top:0;opacity:0;will-change:transform,opacity;}
+#fx-particles{position:absolute;left:0;top:0;pointer-events:none;}
 #fx-tape b{position:absolute;left:0;bottom:0;width:100%;height:5px;background:linear-gradient(90deg,#fff,#9cc4ff);box-shadow:0 0 10px #9cc4ff;transform-origin:0 50%;transform:scaleX(0);will-change:transform;}
 #fx-tape i{position:absolute;left:0;top:0;width:100%;height:13%;background:linear-gradient(180deg,transparent,rgba(255,255,255,.5) 45%,rgba(190,215,255,.3) 60%,transparent);will-change:transform;transform:translateY(-120%);}
 #game-screen{--turn:#ffffff;}
@@ -1385,11 +1386,11 @@ const FX=(()=>{
   }
   // สร้าง element ของ pool ไว้ล่วงหน้าตอนเริ่มเกม จะได้ไม่ไปสร้างกลางการระเบิดครั้งแรก
   let warmed=false;
-  function prewarm(){if(warmed||!canAnim)return;warmed=true;const L=ensureLayer(),n=tier()===2?96:64;for(let i=free.length+busy.length;i<n;i++){const el=document.createElement('div');el.className='fxp';L.appendChild(el);free.push(el);}}
+  function prewarm(){if(warmed||!canAnim)return;warmed=true;P.warm();const L=ensureLayer(),n=tier()===2?96:64;for(let i=free.length+busy.length;i<n;i++){const el=document.createElement('div');el.className='fxp';L.appendChild(el);free.push(el);}}
   function play(el,frames,opts){el._a=el.animate(frames,opts);el._until=performance.now()+(opts.delay||0)+opts.duration+40;if(!noHold)hold((opts.delay||0)+opts.duration+40);return el._a;}
   function clear(){
     busy.forEach(el=>{if(el._a){try{el._a.cancel();}catch(e){}}el._a=null;el._big=false;el.style.cssText='';free.push(el);});busy=[];
-    depth=0;wasEmpty=false;turnKey='';waveAt=0;busyUntil=0;pending=0;
+    depth=0;wasEmpty=false;turnKey='';waveAt=0;busyUntil=0;pending=0;P.clear();
     if(shakeA){try{shakeA.cancel();}catch(e){}shakeA=null;}
   }
 
@@ -1938,6 +1939,70 @@ const FX=(()=>{
     syncFlags();
   }
 
+  // ══ อนุภาคบน canvas: ไฟ / ลาวา / สะเก็ด / ควัน / เถ้า / ละอองน้ำ / ผงทอง — สำหรับเอฟเฟกต์การ์ดระดับสูง ══
+  // sprite วงกลมนุ่มเตรียมไว้ล่วงหน้า วาดแบบบวกแสง (ควัน/เถ้าวาดทับปกติ) · วนด้วย rAF เฉพาะตอนมีอนุภาค แล้วหยุดเอง
+  // ลดการเคลื่อนไหว = ปิดทั้งหมด · ระดับประหยัด = จำนวนครึ่งเดียว
+  const P=(()=>{
+    let cv=null,ctx=null,raf=0,last=0;const parts=[],streams=[],SPR={};
+    // ชนิด → [สีตามช่วงชีวิต 4 ช่วง, บวกแสงไหม]
+    const KIND={fire:['yoor',1],hot:['wyoo',1],lava:['yorr',1],ember:['yoor',1],spark:['wwyo',1],water:['wbbb',1],gold:['wggo',1],violet:['wvvv',1],ice:['wiii',1],smoke:['ssss',0],ash:['aass',0],dust:['dddd',0]};
+    const COL={w:'255,255,255',y:'255,226,120',o:'255,138,40',r:'214,48,18',b:'120,190,255',g:'255,211,77',v:'180,124,255',i:'190,236,255',s:'26,20,22',a:'120,110,112',d:'196,170,140'};
+    function spr(k){
+      if(SPR[k])return SPR[k];
+      const c=document.createElement('canvas');c.width=c.height=48;const g=c.getContext('2d'),gr=g.createRadialGradient(24,24,0,24,24,24),col=COL[k],soft=k==='s'||k==='a'||k==='d';
+      gr.addColorStop(0,`rgba(${col},${soft?.55:.85})`);gr.addColorStop(soft?.5:.42,`rgba(${col},${soft?.3:.32})`);gr.addColorStop(1,`rgba(${col},0)`);
+      g.fillStyle=gr;g.fillRect(0,0,48,48);return SPR[k]=c;
+    }
+    function size(){if(cv){cv.width=window.innerWidth;cv.height=window.innerHeight;}}
+    function ensure(){
+      if(cv)return!!ctx;if(!canAnim)return false;
+      cv=document.createElement('canvas');cv.id='fx-particles';ensureLayer().appendChild(cv);ctx=cv.getContext('2d');size();window.addEventListener('resize',size);return!!ctx;
+    }
+    const rnd=(a,b)=>a+Math.random()*(b-a),on=()=>tier()>0&&ensure(),mul=()=>tier()===2?1:.5;
+    // st = ยืดแนวตั้ง (เปลวไฟ = 1.8)
+    // o: k ชนิด · a0,a1 มุม (rad) · v0,v1 ความเร็ว (px/วิ) · vx,vy ความเร็วเสริม · to จุดที่พุ่งเข้าหา · g แรงโน้มถ่วง · drag · l0,l1 อายุ (ms) · s0→s1 รัศมี · jx,jy กระจายตำแหน่ง · wob ส่าย · al ความทึบ
+    function add(x,y,o){
+      if(parts.length>=(tier()===2?1300:550))return;
+      const px=x+(o.jx?rnd(-o.jx,o.jx):0),py=y+(o.jy?rnd(-o.jy,o.jy):0),sp=rnd(o.v0||0,o.v1===undefined?(o.v0||0):o.v1);let vx,vy;
+      if(o.to){const dx=o.to.x-px,dy=o.to.y-py,l=Math.hypot(dx,dy)||1;vx=dx/l*sp;vy=dy/l*sp;}
+      else{const a=rnd(o.a0===undefined?0:o.a0,o.a1===undefined?6.2832:o.a1);vx=Math.cos(a)*sp;vy=Math.sin(a)*sp;}
+      const s0=o.s0||10;
+      parts.push({x:px,y:py,vx:vx+(o.vx||0),vy:vy+(o.vy||0),g:o.g||0,drag:o.drag===undefined?1.6:o.drag,t:0,ttl:rnd(o.l0||400,o.l1===undefined?(o.l0||400):o.l1),s0,s1:o.s1===undefined?s0*.3:o.s1,k:KIND[o.k]||KIND.fire,al:o.al===undefined?1:o.al,wob:o.wob||0,st:o.st||1,ph:Math.random()*6.2832});
+    }
+    function kick(){if(!raf){last=performance.now();raf=requestAnimationFrame(tick);}}
+    function burst(x,y,n,o){if(!on())return;n=Math.max(1,Math.round(n*mul()));for(let i=0;i<n;i++)add(x,y,o);kick();hold((o.l1||o.l0||400)+60);}
+    // ปล่อยต่อเนื่อง dur ms · rate = อนุภาคต่อวินาที · at = {x,y} หรือฟังก์ชันของความคืบหน้า k (0→1)
+    function stream(o){if(!on())return;streams.push({o,t0:performance.now()+(o.delay||0),dur:o.dur||400,acc:0,rate:(o.rate||60)*mul()});kick();hold((o.delay||0)+(o.dur||400)+(o.l1||o.l0||400)+60);}
+    function clear(){parts.length=0;streams.length=0;if(ctx)ctx.clearRect(0,0,cv.width,cv.height);}
+    function tick(now){
+      raf=0;let dt=now-last;last=now;
+      if(dt>250)clear(); // แท็บเพิ่งกลับมา: ทิ้งของค้าง
+      dt=Math.max(0,Math.min(dt,40));const ds=dt/1000; // เวลาของ rAF คือเวลาเริ่มเฟรม อาจก่อน performance.now() ที่จดไว้ตอน kick() → เฟรมแรก dt ติดลบได้
+      for(let i=streams.length-1;i>=0;i--){const s=streams[i],e=now-s.t0;if(e<0)continue;
+        const p=typeof s.o.at==='function'?s.o.at(Math.min(1,e/s.dur)):s.o.at;s.acc+=s.rate*ds;
+        while(s.acc>=1){s.acc--;add(p.x,p.y,s.o);}
+        if(e>=s.dur)streams.splice(i,1);}
+      for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.t+=dt;
+        if(p.t>=p.ttl){parts[i]=parts[parts.length-1];parts.pop();continue;}
+        const d=Math.max(0,1-p.drag*ds);p.vx*=d;p.vy=p.vy*d+p.g*ds;p.x+=(p.vx+(p.wob?Math.sin(p.ph+p.t*.012)*p.wob:0))*ds;p.y+=p.vy*ds;}
+      ctx.clearRect(0,0,cv.width,cv.height);
+      for(let pass=0;pass<2;pass++){ctx.globalCompositeOperation=pass?'lighter':'source-over';
+        for(let i=0;i<parts.length;i++){const p=parts[i];if(p.k[1]!==pass)continue;const f=Math.max(0,Math.min(.999,p.t/p.ttl)),sz=p.s0+(p.s1-p.s0)*f;if(!(sz>=.5))continue;
+          ctx.globalAlpha=p.al*(f<.12?f/.12:1-(f-.12)/.88);ctx.drawImage(spr(p.k[0][Math.min(3,Math.floor(f*4))]),p.x-sz,p.y-sz*p.st,sz*2,sz*2*p.st);}}
+      ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
+      if(parts.length||streams.length)raf=requestAnimationFrame(tick);
+    }
+    // เตรียม canvas + sprite ไว้ล่วงหน้า (เรียกจาก prewarm ตอนเริ่มเกม) จะได้ไม่ไปสร้างกลางเอฟเฟกต์แรก
+    // + ซ้อมวนจริงสั้นๆ ด้วยอนุภาคที่แทบมองไม่เห็น: ให้ engine คอมไพล์ลูปและอัปโหลด sprite ตอนกระดานเพิ่งขึ้น ไม่ใช่กลางการ์ดใบแรก
+    function warm(){
+      if(!(tier()>0&&ensure()))return;
+      const kinds=Object.keys(KIND);Object.keys(COL).forEach(spr);
+      for(let i=0;i<260;i++)add(cv.width*Math.random(),cv.height*Math.random(),{k:kinds[i%kinds.length],v0:20,v1:120,l0:260,l1:420,s0:14,s1:4,al:.004,wob:10,g:40});
+      kick();
+    }
+    return{burst,stream,clear,warm,get live(){return parts.length;}};
+  })();
+
   // ══ ชุดเครื่องมือของเอฟเฟกต์การ์ด (ใช้โดย client/cardFx.js) — element จาก pool, animate เฉพาะ transform / opacity ══
   const glowCss=(c,px)=>tier()===2?`box-shadow:0 0 ${px}px ${c};`:'';
   // กล่องอิสระ กึ่งกลางอยู่ที่ (x,y) · frames = [{opacity, x, y (px), t:'scale(..) rotate(..)', offset}]
@@ -2036,7 +2101,7 @@ const FX=(()=>{
         if(!(empty&&(token==='placed'||token==='first')))tk(r,c,token,ms);},
       done(){if(!live())return;left.forEach(k=>{const d=map.get(k);paintCellAs(d.r,d.c,d.toCount,d.toOwner);});left.clear();}};
   }
-  const K={box,line,comet,fly,ringIn,tile,glyph,bolt,sprite,clip,badge,tk,stage,ring,sparks,dot,text,flash,vignette,shake,tier,hold,PC,mix,
+  const K={P,box,line,comet,fly,ringIn,tile,glyph,bolt,sprite,clip,badge,tk,stage,ring,sparks,dot,text,flash,vignette,shake,tier,hold,PC,mix,
     num:number,rays:raysEl,rings:burstRings,mid:()=>mid(),pt:center,geo:G,cellEl:cell};
 
   const api={K,S,save,tier,syncFlags,clear,center,cell,G,flash,flashCell,emoji,number,arrow,ripple,flyOrbs,sparks,ring,
@@ -2423,6 +2488,11 @@ const SFX=(()=>{
     dark:()=>tone({freq:90,freq2:40,type:'sawtooth',dur:.5,vol:.18,decay:.6,lp:500,raw:true}),
     ice:()=>seq([[2637,0],[3136,50],[3520,100]],{type:'sine',vol:.05,decay:.2,rev:.6,raw:true}),
     boom:()=>{tone({freq:80,freq2:28,type:'sine',dur:.5,vol:.42,decay:.6,raw:true,prio:2});noise({vol:.2,dur:.35,freq:3000,freq2:200,q:.5,type:'lowpass',prio:2});},
+    rumble:()=>{noise({vol:.16,dur:.5,freq:90,freq2:160,q:.8,type:'lowpass',swell:true});tone({freq:55,freq2:70,type:'sine',dur:.5,vol:.2,attack:.15,decay:.4,raw:true});},
+    crackle:()=>[0,.05,.11,.19].forEach((a,i)=>noise({vol:.08+.03*(i%2),dur:.03,freq:2600+i*700,q:1.5,type:'bandpass',at:a})),
+    impact:()=>{tone({freq:70,freq2:24,type:'sine',dur:.6,vol:.5,decay:.7,raw:true,prio:2});noise({vol:.28,dur:.4,freq:4200,freq2:160,q:.5,type:'lowpass',prio:2});noise({vol:.14,dur:.12,freq:6000,q:1,type:'highpass',prio:2});},
+    whistle:()=>tone({freq:1500,freq2:380,type:'sine',dur:.32,vol:.07,attack:.02,hold:.2,decay:.1,raw:true}),
+    splash:()=>noise({vol:.16,dur:.3,freq:2400,freq2:700,q:.6,type:'bandpass'}),
   };
   function fx(name){if(FXS[name])FXS[name]();}
   // Reflect: "ชิ้ง" ตอนแสงกวาด → แผ่นกระจกกระแทกลง (0.19 วิ) → กังวานแก้วสั้นๆ
@@ -3609,7 +3679,15 @@ async function executeCardInner(cardDef,playerIdx,cardIdx,targets){
     return;
   }
   await new Promise(res=>processExplosions(res));
-  if(cardDef.id==='e1'){STATE.cells[r][c].count=STATE.cells[r][c].cap;STATE.cells[r][c].owner=cur;renderGrid();await new Promise(res=>processExplosions(res));}
+  if(cardDef.id==='e1'){
+    // Meteor ระเบิดสองรอบ = อุกกาบาตสองลูก: ลูกที่สองตกหลังลูกโซ่รอบแรกนิ่ง แล้วช่องเดิมเต็มอีกครั้ง
+    animating=true;document.getElementById('blocker').classList.add('on');
+    FX.hold(CRLogic.cardVfxMs('e1b'));
+    await FX.track(spawnCardVfx('e1b',targets,cur,{}).catch(e=>console.error('[vfx] e1b',e)));
+    if((STATE._gameId||0)!==gid||STATE._dead)return;
+    animating=false;document.getElementById('blocker').classList.remove('on');
+    STATE.cells[r][c].count=STATE.cells[r][c].cap;STATE.cells[r][c].owner=cur;renderGrid();await new Promise(res=>processExplosions(res));
+  }
   if(cardDef.id==='m2'){
     // Supernova: +2 คืนให้ช่องที่ระเบิดไปแล้ว
     (vfxData.exploded||[]).forEach(([ro,co])=>{
